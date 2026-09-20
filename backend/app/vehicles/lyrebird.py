@@ -142,6 +142,7 @@ def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any
             "live_view_source": caps.get("liveViewSource"),
             "live_view_source_range": caps.get("liveViewSourceRange") or [],
             "capture_stored_sources": caps.get("captureStoredSources") or [],
+            "record_stored_sources": caps.get("recordStoredSources") or [],
             "capture_current_screen": caps.get("captureCurrentScreen"),
         }
 
