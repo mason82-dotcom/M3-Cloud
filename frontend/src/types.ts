@@ -1,3 +1,46 @@
+export interface RtkState {
+  enabled?: boolean | null;
+  connected?: boolean | null;
+  healthy?: boolean | null;
+  fix?: string | null;
+  raw_fix?: string | null;
+  age_ms?: number | null;
+  source?: string | null;
+  satellites?: number | null;
+  convergence?: string | null;
+  quality?: number | null;
+}
+
+export interface AircraftPositioning {
+  fix?: string | null;
+  position_source?: string | null;
+  gps_satellites?: number | null;
+  rtk_satellites?: number | null;
+  rtk_stale?: boolean;
+  rtk?: RtkState;
+}
+
+export interface AircraftState {
+  source?: string;
+  mode?: string | null;
+  armed?: boolean | null;
+  is_flying?: boolean | null;
+  failsafe?: boolean | null;
+  positioning?: AircraftPositioning;
+}
+
+export interface Vehicle {
+  id: string;
+  sn: string;
+  name: string;
+  model: string;
+  source: string;
+  online: boolean;
+  gateway_sn?: string | null;
+  updated_at_ms?: number | null;
+  telemetry?: Telemetry | null;
+}
+
 export interface Device {
   sn: string;
   role: string;
@@ -21,6 +64,7 @@ export interface BatteryState {
 }
 
 export interface Telemetry {
+  aircraft_state?: AircraftState;
   source_sn: string;
   gateway_sn?: string | null;
   last_seen_ms: number;

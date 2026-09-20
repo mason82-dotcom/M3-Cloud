@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { fetchDevices, fetchTelemetry } from "./api";
+import { fetchVehicles } from "./api";
 import { FleetSidebar } from "./FleetSidebar";
 import { useLiveEvents } from "./live";
 import { MapView } from "./MapView";
-import type { Device, LiveEvent, Telemetry } from "./types";
+import type { LiveEvent, Telemetry, Vehicle } from "./types";
 
 export default function App() {
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<Vehicle[]>([]);
   const [telemetry, setTelemetry] = useState<Record<string, Telemetry>>({});
   const [selectedSn, setSelectedSn] = useState<string | null>(null);
   const [liveConnected, setLiveConnected] = useState(false);
@@ -18,32 +18,11 @@ export default function App() {
 
     const load = async () => {
       try {
-        const loadedDevices = await fetchDevices();
-        const states = await Promise.all(
-          loadedDevices.map(async (device) => [
-            device.sn,
-            await fetchTelemetry(device.sn),
-          ] as const),
-        );
-
-        if (cancelled) {
-          return;
-        }
-
+        const loadedDevices = await fetchVehicles();
+        if (cancelled) return;
         setDevices(loadedDevices);
-        setTelemetry(
-          Object.fromEntries(
-            states.filter(
-              (entry): entry is readonly [string, Telemetry] =>
-                entry[1] !== null,
-            ),
-          ),
-        );
-
-        const firstAircraft =
-          loadedDevices.find((device) => device.role === "aircraft") ??
-          loadedDevices[0];
-        setSelectedSn((current) => current ?? firstAircraft?.sn ?? null);
+        setTelemetry(Object.fromEntries(loadedDevices.filter((v) => v.telemetry).map((v) => [v.sn, v.telemetry as Telemetry])));
+        setSelectedSn((current) => current ?? loadedDevices[0]?.sn ?? null);
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : String(error));
@@ -58,7 +37,7 @@ export default function App() {
     };
   }, []);
 
-  const upsertDevice = useCallback((device: Device) => {
+  const upsertDevice = useCallback((device: Vehicle) => {
     setDevices((current) => {
       const index = current.findIndex((item) => item.sn === device.sn);
       if (index < 0) {
@@ -112,10 +91,7 @@ export default function App() {
 
   useLiveEvents(handleLiveEvent, handleConnection);
 
-  const aircraft = useMemo(
-    () => devices.filter((device) => device.role === "aircraft"),
-    [devices],
-  );
+  const aircraft = useMemo(() => devices, [devices]);
 
   return (
     <main className="app-shell">

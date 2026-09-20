@@ -1,7 +1,7 @@
-import type { Device, Telemetry } from "./types";
+import type { Telemetry, Vehicle } from "./types";
 
 interface FleetSidebarProps {
-  devices: Device[];
+  devices: Vehicle[];
   telemetry: Record<string, Telemetry>;
   selectedSn: string | null;
   liveConnected: boolean;
@@ -39,7 +39,7 @@ export function FleetSidebar({
           devices.map((device) => {
             const state = telemetry[device.sn];
             const selected = device.sn === selectedSn;
-            const convergence = state?.position_state?.convergence ?? "UNKNOWN";
+            const positioning = state?.aircraft_state?.positioning;\n            const convergence = positioning?.fix ?? state?.position_state?.convergence ?? "UNKNOWN";
             const battery = state?.battery?.capacity_percent;
 
             return (
