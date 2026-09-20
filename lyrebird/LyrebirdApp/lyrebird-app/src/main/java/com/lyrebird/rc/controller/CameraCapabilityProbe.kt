@@ -40,6 +40,8 @@ internal object CameraCapabilityProbe {
         val liveSourceRange = key(CameraKey.KeyCameraVideoStreamSourceRange, index).get(emptyList())
         val captureSettings = key(CameraKey.KeyCaptureCameraStreamSettings, index)
             .get(CameraStreamSettingsInfo())
+        val recordSettings = key(CameraKey.KeyRecordCameraStreamSettings, index)
+            .get(CameraStreamSettingsInfo())
         val firmware = key(CameraKey.KeyFirmwareVersion, index).get("")
         val connected = key(CameraKey.KeyConnection, index).get(false)
 
@@ -54,6 +56,9 @@ internal object CameraCapabilityProbe {
             liveViewSource = liveSource?.name ?: "UNKNOWN",
             liveViewSourceRange = liveSourceRange.map { it.name },
             captureStoredSources = captureSettings?.cameraVideoStreamSources
+                ?.map { it.name }
+                .orEmpty(),
+            recordStoredSources = recordSettings?.cameraVideoStreamSources
                 ?.map { it.name }
                 .orEmpty(),
             captureCurrentScreen = captureSettings?.requestCurrentScreen ?: false,
@@ -74,6 +79,7 @@ internal data class CameraCapabilitySnapshot(
     val liveViewSource: String,
     val liveViewSourceRange: List<String>,
     val captureStoredSources: List<String>,
+    val recordStoredSources: List<String>,
     val captureCurrentScreen: Boolean,
     val thermalCapture: Boolean,
     val multispectralCapture: Boolean
@@ -89,6 +95,7 @@ internal data class CameraCapabilitySnapshot(
         .put("liveViewSource", liveViewSource)
         .put("liveViewSourceRange", JSONArray(liveViewSourceRange))
         .put("captureStoredSources", JSONArray(captureStoredSources))
+        .put("recordStoredSources", JSONArray(recordStoredSources))
         .put("captureCurrentScreen", captureCurrentScreen)
         .put("thermalCapture", thermalCapture)
         .put("multispectralCapture", multispectralCapture)
