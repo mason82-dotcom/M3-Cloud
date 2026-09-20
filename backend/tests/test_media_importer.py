@@ -8,7 +8,7 @@ from app.media.importer import MediaImporter
 from app.models import MediaAsset
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_external_media_scan_catalogs_and_deduplicates(tmp_path: Path) -> None:
     async with session_factory() as session:
         await session.execute(delete(MediaAsset))
@@ -67,7 +67,7 @@ async def test_external_media_scan_catalogs_and_deduplicates(tmp_path: Path) -> 
 
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_missing_import_root_does_not_mark_catalog_missing(tmp_path: Path) -> None:
     async with session_factory() as session:
         await session.execute(delete(MediaAsset))
@@ -111,7 +111,7 @@ async def test_missing_import_root_does_not_mark_catalog_missing(tmp_path: Path)
 
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_recent_visible_file_is_not_marked_missing(tmp_path: Path) -> None:
     async with session_factory() as session:
         await session.execute(delete(MediaAsset))
