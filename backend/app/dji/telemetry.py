@@ -280,7 +280,9 @@ class TelemetryStore:
             ),
         )
         if kind is TopicKind.OSD and self.observer is not None:
-            await self.observer.ingest(normalized)
+            sample_state = dict(normalized)
+            sample_state["source_timestamp_ms"] = message.timestamp
+            await self.observer.ingest(sample_state)
 
         return normalized
 
