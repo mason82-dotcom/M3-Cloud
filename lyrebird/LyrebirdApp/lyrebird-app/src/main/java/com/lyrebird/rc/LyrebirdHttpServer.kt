@@ -8,6 +8,7 @@ import dji.sdk.keyvalue.value.common.EmptyMsg
 import dji.sdk.keyvalue.value.common.LocationCoordinate3D
 import android.util.Log
 import android.widget.Switch
+import com.lyrebird.rc.controller.CameraCapabilityProbe
 import com.lyrebird.rc.controller.ControlAuthority
 import com.lyrebird.rc.controller.DroneController
 import com.lyrebird.rc.controller.Payload
@@ -836,6 +837,7 @@ internal class SimpleHttpServer(
                         """"hasThermal":${host.hasThermalCamera()}}"""
                 }
                 "/config/settings" -> host.readSettingsJson()
+                "/get/camera/capabilities" -> CameraCapabilityProbe.snapshot().toJson()
                 "/get/survey/latest" -> LyrebirdFlightLogger.latestSurveyInfoJson()
                 else -> "Use POST for commands. Telemetry available on port $TELEMETRY_PORT. " +
                     "Config available at GET /config; settings at GET /config/settings"
