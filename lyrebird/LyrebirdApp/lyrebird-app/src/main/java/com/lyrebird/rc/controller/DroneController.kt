@@ -1931,7 +1931,7 @@ object DroneController {
     /** The requested value while a DJI write is still pending, otherwise the confirmed value. */
     fun getEffectiveRTHAltitude(): Int {
         setupFlightLimitListeners()
-        return cachedRTHAltitude.takeIf { it >= 0 } ?: requestedRTHAltitude
+        return requestedRTHAltitude.takeIf { it >= 0 } ?: cachedRTHAltitude
     }
 
     /** confirmed, stale, pending, or not_reported. */
