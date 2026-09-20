@@ -75,6 +75,8 @@ internal interface LyrebirdCommandHost {
 
     /** Set the video source (drone/phone/mock); false when rejected. */
     fun setVideoSource(value: String): Boolean
+    /** Persist an explicitly selected payload-camera live source for this aircraft. */
+    fun setPreferredCameraLiveSource(value: String): Boolean
     /** Set the WebRTC resolution preset (auto/1080p/720p/480p); false when rejected. */
     fun setWebRtcResolution(value: String): Boolean
     /** Set the WebRTC frame rate (5/10/15/20/25/30); false when rejected. */
@@ -123,7 +125,15 @@ internal class LyrebirdHttpCommandHandler(
                 "Return to home command sent."
             },
             "/send/camera/live-source" to { postData ->
-                CameraLiveSourceController.setAndReadback(postData).toJson()
+                val result = CameraLiveSourceController.setAndReadback(postData)
+                if (
+                    result.setStatus == "OK" &&
+                    result.readStatus == "OK" &&
+                    result.source == result.requested
+                ) {
+                    host.setPreferredCameraLiveSource(result.requested)
+                }
+                result.toJson()
             },
             "/send/stick" to { postData ->
                 if (DroneController.shouldRejectAutonomousCommand("stick")) {
