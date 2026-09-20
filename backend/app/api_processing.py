@@ -132,6 +132,7 @@ async def download_processing_result(
         bucket = result.bucket
         object_key = result.object_key
         asset_name = result.asset_name
+        download_name = asset_name.replace("\\", "/").split("/")[-1] or "result"
         content_type = result.content_type
         size_bytes = result.size_bytes
 
@@ -157,7 +158,7 @@ async def download_processing_result(
         media_type=content_type,
         headers={
             "Content-Length": str(size_bytes),
-            "Content-Disposition": f'attachment; filename="{asset_name}"',
+            "Content-Disposition": f'attachment; filename="{download_name}"',
         },
     )
 
