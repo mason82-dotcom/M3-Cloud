@@ -161,6 +161,7 @@ import dji.sdk.keyvalue.value.common.LocationCoordinate3D
 import dji.sdk.keyvalue.value.common.Velocity3D
 import dji.sdk.keyvalue.value.camera.CameraMode
 import dji.sdk.keyvalue.value.camera.CameraType
+import dji.sdk.keyvalue.value.camera.CameraVideoStreamSourceType
 import dji.sdk.keyvalue.value.camera.CameraStorageInfos
 import dji.sdk.keyvalue.value.camera.CameraStorageLocation
 import dji.sdk.keyvalue.value.camera.SDCardLoadState
@@ -422,6 +423,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         private const val DEFAULT_DRONE_NAME = "lb_unknown"
         private val WEBRTC_FPS_OPTIONS = intArrayOf(5, 10, 15, 20, 25, 30)
     }
+
+    private var cameraLiveSourcePersistRunnable: Runnable? = null
+    @Volatile private var cameraLiveSourceProfileReady = false
+    @Volatile private var restoringCameraLiveSource = false
 
     private enum class StreamResolutionPreset(
         val prefValue: String,
@@ -5314,6 +5319,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             // Persist this aircraft's settings so the next flight on the same drone restores them.
             DroneSettingsProfiles.saveCurrentProfile(sharedPreferences, PER_DRONE_PROFILE_KEYS)
 
+            cameraLiveSourcePersistRunnable?.let(mainHandler::removeCallbacks)
             mainHandler.removeCallbacksAndMessages(null)
             stopPhoneCameraPreview()
 
@@ -5387,6 +5393,103 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         return true
     }
 
+    /**
+     * Persist only a stable operator-selected camera live source. M3M briefly falls back to
+     * RGB_CAMERA while entering PHOTO_NORMAL; the capture path restores the previous source, so
+     * a short debounce prevents that transient reset from overwriting the per-aircraft preference.
+     */
+    private fun setupCameraLiveSourcePreference() {
+        val sourceKey: DJIKey<CameraVideoStreamSourceType> =
+            KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, ComponentIndexType.LEFT_OR_MAIN)
+
+        KeyManager.getInstance().listen(sourceKey, this) { _, value ->
+            val source = value ?: return@listen
+            if (!cameraLiveSourceProfileReady || restoringCameraLiveSource) return@listen
+
+            cameraLiveSourcePersistRunnable?.let(mainHandler::removeCallbacks)
+            val expectedName = source.name
+            val persist = Runnable {
+                if (!cameraLiveSourceProfileReady || restoringCameraLiveSource) return@Runnable
+                val current = sourceKey.get(CameraVideoStreamSourceType.DEFAULT_CAMERA)
+                if (current?.name != expectedName) return@Runnable
+
+                sharedPreferences.edit()
+                    .putString(PREF_CAMERA_LIVE_SOURCE, expectedName)
+                    .apply()
+                DroneSettingsProfiles.saveCurrentProfile(sharedPreferences, PER_DRONE_PROFILE_KEYS)
+                Log.i(TAG, "Persisted camera live source: $expectedName")
+            }
+            cameraLiveSourcePersistRunnable = persist
+            mainHandler.postDelayed(persist, 1_200L)
+        }
+    }
+
+    private fun restorePreferredCameraLiveSource(attemptsRemaining: Int = 2) {
+        val preferredName = sharedPreferences.getString(PREF_CAMERA_LIVE_SOURCE, null)
+            ?.trim()
+            .orEmpty()
+        val preferred = CameraVideoStreamSourceType.values()
+            .firstOrNull { it.name == preferredName }
+
+        if (preferred == null) {
+            cameraLiveSourceProfileReady = true
+            return
+        }
+
+        val rangeKey: DJIKey<List<CameraVideoStreamSourceType>> =
+            KeyTools.createKey(CameraKey.KeyCameraVideoStreamSourceRange, ComponentIndexType.LEFT_OR_MAIN)
+        val sourceKey: DJIKey<CameraVideoStreamSourceType> =
+            KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, ComponentIndexType.LEFT_OR_MAIN)
+
+        restoringCameraLiveSource = true
+        KeyManager.getInstance().getValue(
+            rangeKey,
+            object : CommonCallbacks.CompletionCallbackWithParam<List<CameraVideoStreamSourceType>> {
+                override fun onSuccess(range: List<CameraVideoStreamSourceType>?) {
+                    if (preferred !in range.orEmpty()) {
+                        Log.w(TAG, "Saved camera live source $preferredName unsupported by current camera")
+                        restoringCameraLiveSource = false
+                        cameraLiveSourceProfileReady = true
+                        return
+                    }
+
+                    KeyManager.getInstance().setValue(
+                        sourceKey,
+                        preferred,
+                        object : CommonCallbacks.CompletionCallback {
+                            override fun onSuccess() {
+                                Log.i(TAG, "Restored camera live source: $preferredName")
+                                restoringCameraLiveSource = false
+                                cameraLiveSourceProfileReady = true
+                            }
+
+                            override fun onFailure(error: IDJIError) {
+                                retryRestoreCameraLiveSource(error.description(), attemptsRemaining)
+                            }
+                        }
+                    )
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    retryRestoreCameraLiveSource(error.description(), attemptsRemaining)
+                }
+            }
+        )
+    }
+
+    private fun retryRestoreCameraLiveSource(reason: String, attemptsRemaining: Int) {
+        if (attemptsRemaining > 1) {
+            mainHandler.postDelayed(
+                { restorePreferredCameraLiveSource(attemptsRemaining - 1) },
+                300L
+            )
+        } else {
+            Log.w(TAG, "Camera live-source restore unavailable: $reason")
+            restoringCameraLiveSource = false
+            cameraLiveSourceProfileReady = true
+        }
+    }
+
     // ==================== Utility Methods ====================
 
 
@@ -5420,6 +5523,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                             }
                             Log.i(TAG, "Applied per-drone settings profile for $droneSerialNumber")
                         }
+                        restorePreferredCameraLiveSource()
                     }
                     applyAutomaticDroneName()
                     if (!configuredMavlinkSystemIdIsManual() && previousSystemId != currentMavlinkSystemId()) {
