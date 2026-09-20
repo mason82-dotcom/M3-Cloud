@@ -98,6 +98,31 @@ class MediaAsset(Base):
 
 
 
+class MediaDatasetRecord(Base):
+    __tablename__ = "media_datasets"
+    __table_args__ = (
+        UniqueConstraint("platform", "prefix", name="uq_media_dataset_platform_prefix"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    prefix: Mapped[str] = mapped_column(String(1024), index=True)
+    platform: Mapped[str] = mapped_column(String(32), index=True)
+    flight_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("flights.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    present: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class ProcessingJob(Base):
     __tablename__ = "processing_jobs"
 
@@ -111,6 +136,12 @@ class ProcessingJob(Base):
     name: Mapped[str] = mapped_column(String(255))
     input_prefix: Mapped[str] = mapped_column(String(1024), index=True)
     platform: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    flight_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("flights.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     media_kinds: Mapped[list[str]] = mapped_column(JSON, default=list)
     options: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
 

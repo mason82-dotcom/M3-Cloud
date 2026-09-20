@@ -93,6 +93,25 @@ export async function fetchMediaDatasets(
   return response.json() as Promise<MediaDataset[]>;
 }
 
+export async function assignMediaDatasetFlight(
+  datasetId: string,
+  flightId: string | null,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(
+    `/api/v1/media/datasets/${encodeURIComponent(datasetId)}/flight`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ flight_id: flightId }),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Dataset assignment failed: ${response.status}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
 export async function fetchMediaDatasetManifest(
   prefix: string,
 ): Promise<MediaDatasetManifest> {

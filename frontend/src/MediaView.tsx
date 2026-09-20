@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  assignMediaDatasetFlight,
+  fetchFlights,
   fetchMedia,
   fetchMediaDatasetManifest,
   fetchMediaDatasets,
@@ -14,6 +16,7 @@ import type {
   MediaDatasetManifest,
   MediaGroup,
   MediaImportStatus,
+  FlightSummary,
 } from "./types";
 
 function bytes(value: number): string {
@@ -37,26 +40,30 @@ export function MediaView() {
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [datasets, setDatasets] = useState<MediaDataset[]>([]);
   const [groups, setGroups] = useState<MediaGroup[]>([]);
+  const [flights, setFlights] = useState<FlightSummary[]>([]);
   const [status, setStatus] = useState<MediaImportStatus | null>(null);
   const [platform, setPlatform] = useState("");
   const [mediaKind, setMediaKind] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [manifest, setManifest] = useState<MediaDatasetManifest | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [assigningDataset, setAssigningDataset] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [nextAssets, nextDatasets, nextGroups, nextStatus] = await Promise.all([
+      const [nextAssets, nextDatasets, nextGroups, nextStatus, nextFlights] = await Promise.all([
         fetchMedia(platform || undefined, mediaKind || undefined),
         fetchMediaDatasets(platform || undefined),
         fetchMediaGroups(platform || undefined),
         fetchMediaImportStatus(),
+        fetchFlights(undefined, 500),
       ]);
       setAssets(nextAssets);
       setDatasets(nextDatasets);
       setGroups(nextGroups);
       setStatus(nextStatus);
+      setFlights(nextFlights);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -180,6 +187,40 @@ export function MediaView() {
                   .map(([kind, count]) => `${kind} ${count}`)
                   .join(" · ")}
               </small>
+              <label className="datasetFlight">
+                Flight
+                <select
+                  disabled={!dataset.id || assigningDataset === dataset.id}
+                  value={dataset.flight_id ?? ""}
+                  onChange={(event) => {
+                    if (!dataset.id) return;
+                    const flightId = event.target.value || null;
+                    setAssigningDataset(dataset.id);
+                    void assignMediaDatasetFlight(dataset.id, flightId)
+                      .then(() => refresh())
+                      .catch((reason: unknown) =>
+                        setError(reason instanceof Error ? reason.message : String(reason)),
+                      )
+                      .finally(() => setAssigningDataset(null));
+                  }}
+                >
+                  <option value="">Unassigned</option>
+                  {flights.map((flight) => (
+                    <option key={flight.id} value={flight.id}>
+                      {flight.aircraft_sn} · {new Date(flight.started_at).toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {dataset.flight_id ? (
+                <small className="datasetFlightLink">
+                  Linked: {dataset.flight_aircraft_sn ?? "Aircraft"} · {
+                    dataset.flight_started_at
+                      ? new Date(dataset.flight_started_at).toLocaleString()
+                      : dataset.flight_id
+                  }
+                </small>
+              ) : null}
               <button
                 className="datasetManifestButton"
                 onClick={() => {

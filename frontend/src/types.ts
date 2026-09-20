@@ -240,8 +240,12 @@ export interface MediaWorkflowReadiness {
 }
 
 export interface MediaDataset {
+  id?: string | null;
   prefix: string;
   platform: string;
+  flight_id?: string | null;
+  flight_aircraft_sn?: string | null;
+  flight_started_at?: string | null;
   asset_count: number;
   size_bytes: number;
   media_kinds: Record<string, number>;
@@ -317,6 +321,7 @@ export interface ProcessingJob {
   name: string;
   input_prefix: string;
   platform?: string | null;
+  flight_id?: string | null;
   media_kinds: string[];
   options: Array<{ name: string; value: unknown }>;
   image_count: number;

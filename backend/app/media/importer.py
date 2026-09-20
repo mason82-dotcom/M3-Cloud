@@ -17,7 +17,8 @@ from app.media.classifier import (
     reconcile_group_platforms,
     supported_image,
 )
-from app.models import MediaAsset
+from app.media.datasets import build_media_datasets
+from app.models import MediaAsset, MediaDatasetRecord
 
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,11 @@ class MediaImporter:
                         1
                         for asset in present_assets
                         if asset.present and asset.duplicate_of is not None
+                    )
+                    await self._sync_dataset_records(
+                        session,
+                        present_assets,
+                        seen_at=started,
                     )
                     await session.commit()
 
@@ -326,6 +332,48 @@ class MediaImporter:
             canonical.duplicate_of = None
             for duplicate in members[1:]:
                 duplicate.duplicate_of = canonical.id
+
+    @staticmethod
+    async def _sync_dataset_records(
+        session: AsyncSession,
+        assets: list[MediaAsset],
+        *,
+        seen_at: datetime,
+    ) -> None:
+        summaries = build_media_datasets(assets)
+        existing = (
+            await session.scalars(select(MediaDatasetRecord))
+        ).all()
+        by_key = {
+            (record.platform, record.prefix): record
+            for record in existing
+        }
+        current_keys: set[tuple[str, str]] = set()
+
+        for summary in summaries:
+            platform = str(summary["platform"])
+            prefix = str(summary["prefix"])
+            key = (platform, prefix)
+            current_keys.add(key)
+            record = by_key.get(key)
+            if record is None:
+                session.add(
+                    MediaDatasetRecord(
+                        platform=platform,
+                        prefix=prefix,
+                        present=True,
+                        created_at=seen_at,
+                        updated_at=seen_at,
+                    )
+                )
+            else:
+                record.present = True
+                record.updated_at = seen_at
+
+        for key, record in by_key.items():
+            if key not in current_keys and record.present:
+                record.present = False
+                record.updated_at = seen_at
 
     @staticmethod
     def _stable_sha256(

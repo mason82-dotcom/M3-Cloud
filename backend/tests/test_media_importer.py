@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 
 from app.database import session_factory
 from app.media.importer import MediaImporter
-from app.models import MediaAsset
+from app.models import Flight, MediaAsset, MediaDatasetRecord
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -192,3 +192,54 @@ async def test_present_duplicate_is_promoted_when_original_disappears(tmp_path: 
         )
     assert remaining is not None
     assert remaining.duplicate_of is None
+
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_media_dataset_assignment_survives_rescan(tmp_path: Path) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(MediaDatasetRecord))
+        await session.execute(delete(MediaAsset))
+        await session.execute(delete(Flight))
+        await session.commit()
+
+    root = tmp_path / "media"
+    folder = root / "M3E" / "survey"
+    folder.mkdir(parents=True)
+    (folder / "DJI_0001_W.JPG").write_bytes(b"image-1")
+    (folder / "DJI_0002_W.JPG").write_bytes(b"image-2")
+
+    importer = MediaImporter(session_factory, root=str(root), min_age_seconds=0)
+    await importer.scan()
+
+    async with session_factory() as session:
+        dataset = await session.scalar(
+            select(MediaDatasetRecord).where(
+                MediaDatasetRecord.platform == "M3E",
+                MediaDatasetRecord.prefix == "M3E/survey",
+            )
+        )
+        assert dataset is not None
+
+        flight = Flight(
+            aircraft_sn="M3E-TEST",
+            status="COMPLETED",
+            started_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        session.add(flight)
+        await session.flush()
+        dataset.flight_id = flight.id
+        await session.commit()
+        dataset_id = dataset.id
+        flight_id = flight.id
+
+    await importer.scan()
+
+    async with session_factory() as session:
+        dataset = await session.get(MediaDatasetRecord, dataset_id)
+        assert dataset is not None
+        assert dataset.present is True
+        assert dataset.flight_id == flight_id

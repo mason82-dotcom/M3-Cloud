@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.database import session_factory
 from app.config import settings
 from app.media.datasets import build_dataset_manifest, build_media_datasets
-from app.models import MediaAsset
+from app.models import Flight, MediaAsset, MediaDatasetRecord
 
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
+
+
+class DatasetFlightAssignment(BaseModel):
+    flight_id: uuid.UUID | None = None
 
 
 def _asset(asset: MediaAsset) -> dict[str, Any]:
@@ -114,7 +120,81 @@ async def media_datasets(
 
     async with session_factory() as session:
         assets = (await session.scalars(statement)).all()
-        return build_media_datasets(assets)
+        summaries = build_media_datasets(assets)
+
+        records_statement = select(MediaDatasetRecord)
+        if platform:
+            records_statement = records_statement.where(
+                MediaDatasetRecord.platform == platform.upper()
+            )
+        records = (await session.scalars(records_statement)).all()
+        records_by_key = {
+            (record.platform, record.prefix): record
+            for record in records
+        }
+
+        flight_ids = {
+            record.flight_id
+            for record in records
+            if record.flight_id is not None
+        }
+        flights = (
+            await session.scalars(select(Flight).where(Flight.id.in_(flight_ids)))
+        ).all() if flight_ids else []
+        flights_by_id = {flight.id: flight for flight in flights}
+
+        result: list[dict[str, object]] = []
+        for summary in summaries:
+            item = dict(summary)
+            key = (str(summary["platform"]), str(summary["prefix"]))
+            record = records_by_key.get(key)
+            flight = flights_by_id.get(record.flight_id) if record else None
+            item.update(
+                {
+                    "id": str(record.id) if record else None,
+                    "flight_id": str(record.flight_id) if record and record.flight_id else None,
+                    "flight_aircraft_sn": flight.aircraft_sn if flight else None,
+                    "flight_started_at": flight.started_at.isoformat() if flight else None,
+                }
+            )
+            result.append(item)
+        return result
+
+
+@router.put("/datasets/{dataset_id}/flight")
+async def assign_dataset_flight(
+    dataset_id: uuid.UUID,
+    body: DatasetFlightAssignment,
+) -> dict[str, object]:
+    async with session_factory() as session:
+        dataset = await session.get(MediaDatasetRecord, dataset_id)
+        if dataset is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Media dataset not found",
+            )
+
+        flight = None
+        if body.flight_id is not None:
+            flight = await session.get(Flight, body.flight_id)
+            if flight is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Flight not found",
+                )
+
+        dataset.flight_id = body.flight_id
+        dataset.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+
+        return {
+            "id": str(dataset.id),
+            "platform": dataset.platform,
+            "prefix": dataset.prefix,
+            "flight_id": str(dataset.flight_id) if dataset.flight_id else None,
+            "flight_aircraft_sn": flight.aircraft_sn if flight else None,
+            "flight_started_at": flight.started_at.isoformat() if flight else None,
+        }
 
 
 @router.get("/groups")

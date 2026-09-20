@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
     MediaAsset,
+    MediaDatasetRecord,
     ProcessingJob,
     ProcessingJobAsset,
     ProcessingResult,
@@ -195,15 +196,6 @@ class ProcessingManager:
         profile_value = get_profile(profile)
         platform_value = platform.upper() if platform else None
 
-        if (
-            platform_value
-            and profile_value.platforms
-            and platform_value not in profile_value.platforms
-        ):
-            raise ValueError(
-                f"Profile {profile_value.key} is not valid for {platform_value}"
-            )
-
         statement = (
             select(MediaAsset)
             .where(
@@ -221,12 +213,39 @@ class ProcessingManager:
 
         async with self.sessions() as session:
             candidates = (await session.scalars(statement)).all()
+
+            if platform_value is None:
+                candidate_platforms = {asset.platform for asset in candidates}
+                if len(candidate_platforms) == 1:
+                    platform_value = next(iter(candidate_platforms))
+
+            if (
+                platform_value
+                and profile_value.platforms
+                and platform_value not in profile_value.platforms
+            ):
+                raise ValueError(
+                    f"Profile {profile_value.key} is not valid for {platform_value}"
+                )
+
             assets = select_profile_assets(candidates, profile_value)
             if len(assets) < profile_value.min_assets:
                 raise ValueError(
                     f"{profile_value.title} requires at least "
                     f"{profile_value.min_assets} eligible images"
                 )
+
+            dataset_statement = select(MediaDatasetRecord).where(
+                MediaDatasetRecord.prefix == normalized_prefix
+            )
+            if platform_value:
+                dataset_statement = dataset_statement.where(
+                    MediaDatasetRecord.platform == platform_value
+                )
+            dataset_records = (
+                await session.scalars(dataset_statement)
+            ).all()
+            dataset_record = dataset_records[0] if len(dataset_records) == 1 else None
 
             now = datetime.now(timezone.utc)
             job = ProcessingJob(
@@ -235,6 +254,7 @@ class ProcessingManager:
                 name=name.strip() or normalized_prefix.split("/")[-1],
                 input_prefix=normalized_prefix,
                 platform=platform_value,
+                flight_id=dataset_record.flight_id if dataset_record else None,
                 media_kinds=list(profile_value.media_kinds),
                 options=profile_value.as_options(),
                 image_count=len(assets),
