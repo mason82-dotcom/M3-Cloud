@@ -207,6 +207,7 @@ def build_dataset_manifest(
 
     root = import_root.rstrip("/")
     return {
+        "schema_version": 1,
         "prefix": normalized_prefix,
         "platform": platform,
         "external_path": f"{root}/{normalized_prefix}",

@@ -1292,3 +1292,20 @@ button { font: inherit; }
     grid-template-columns: 1fr;
   }
 }
+
+
+.manifestActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.manifestActions a {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--accent);
+  padding: 5px 7px;
+  font-size: 9px;
+  text-decoration: none;
+}

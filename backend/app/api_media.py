@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -105,6 +107,27 @@ async def media_dataset_manifest(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+
+@router.get("/datasets/manifest/download")
+async def download_media_dataset_manifest(
+    prefix: str = Query(min_length=1, max_length=1024),
+) -> Response:
+    manifest = await media_dataset_manifest(prefix)
+    payload = json.dumps(
+        manifest,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="m3-media-dataset-manifest.json"',
+            "Content-Length": str(len(payload)),
+        },
+    )
 
 
 @router.get("/datasets")

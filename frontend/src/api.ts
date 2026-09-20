@@ -112,6 +112,11 @@ export async function assignMediaDatasetFlight(
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+export function mediaDatasetManifestDownloadUrl(prefix: string): string {
+  const params = new URLSearchParams({ prefix });
+  return `/api/v1/media/datasets/manifest/download?${params.toString()}`;
+}
+
 export async function fetchMediaDatasetManifest(
   prefix: string,
 ): Promise<MediaDatasetManifest> {

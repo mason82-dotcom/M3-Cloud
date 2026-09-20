@@ -8,6 +8,7 @@ import {
   fetchMediaDatasets,
   fetchMediaGroups,
   fetchMediaImportStatus,
+  mediaDatasetManifestDownloadUrl,
   scanMediaImport,
 } from "./api";
 import type {
@@ -246,7 +247,12 @@ export function MediaView() {
               <h2>Dataset handoff</h2>
               <small>{manifest.platform} · originals remain external/read-only</small>
             </div>
-            <button onClick={() => setManifest(null)} type="button">Close</button>
+            <div className="manifestActions">
+              <a href={mediaDatasetManifestDownloadUrl(manifest.prefix)}>
+                Download JSON
+              </a>
+              <button onClick={() => setManifest(null)} type="button">Close</button>
+            </div>
           </div>
           <div className="manifestPath">
             <span>External path</span>

@@ -286,6 +286,7 @@ export interface MediaDatasetManifestGroup {
 }
 
 export interface MediaDatasetManifest {
+  schema_version: number;
   prefix: string;
   platform: string;
   external_path: string;

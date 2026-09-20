@@ -113,6 +113,7 @@ def test_m3t_manifest_keeps_original_paths_and_pair_completeness() -> None:
         import_root="/media-import",
     )
 
+    assert manifest["schema_version"] == 1
     assert manifest["platform"] == "M3T"
     assert manifest["external_path"] == "/media-import/M3T/site"
 
