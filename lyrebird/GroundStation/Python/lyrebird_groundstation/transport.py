@@ -1161,13 +1161,22 @@ class MavlinkTelemetrySource:
         self._detection_targets = []
         return True
 
-    def _apply_lyrebird_status(self, data: bytes) -> bool:
-        """Decode LYREBIRD_STATUS straight off the wire.
+    def _apply_custom_message(
+        self, data: bytes, crc_extra: int, decoder: Callable[[bytes], dict[str, Any]]
+    ) -> bool:
+        """Validate and merge one fixed-layout Lyrebird MAVLink message."""
+        if not _checksum_ok(data, crc_extra):
+            return False
+        with suppress(struct.error):
+            self._telemetry.update(decoder(data[10 : 10 + data[1]]))
+            return True
+        return False
 
-        pymavlink only parses ids it has definitions for, and generating a dialect module would
-        put a build step and a second copy of the definition into every consumer. One message is
-        cheaper to unpack by hand -- and lyrebird.xml stays the single source of truth, checked
-        against this code by a test.
+    def _apply_lyrebird_status(self, data: bytes) -> bool:
+        """Decode Lyrebird custom MAVLink messages straight off the wire.
+
+        lyrebird.xml remains the single source of truth; the hand decoders are checked against
+        the generated dialect by tests.
         """
         if len(data) < 12 or data[0] != MAVLINK2_MAGIC:
             return False
@@ -1176,36 +1185,17 @@ class MavlinkTelemetrySource:
             return self._collect_target(data)
         if message_id == AUTOSENSING_STATUS_ID:
             return self._publish_detection_cycle(data)
-        if message_id == LYREBIRD_RTK_STATUS_ID:
-            if not _checksum_ok(data, LYREBIRD_RTK_STATUS_CRC_EXTRA):
-                return False
-            with suppress(struct.error):
-                self._telemetry.update(decode_lyrebird_rtk_status(data[10 : 10 + data[1]]))
-                return True
+
+        decoders = {
+            LYREBIRD_RTK_STATUS_ID: (LYREBIRD_RTK_STATUS_CRC_EXTRA, decode_lyrebird_rtk_status),
+            LYREBIRD_CONFIG_ID: (LYREBIRD_CONFIG_CRC_EXTRA, decode_lyrebird_config),
+            LYREBIRD_STATUS_ID: (LYREBIRD_STATUS_CRC_EXTRA, decode_lyrebird_status),
+        }
+        definition = decoders.get(message_id)
+        if definition is None:
             return False
-        if message_id == LYREBIRD_CONFIG_ID:
-            if not _checksum_ok(data, LYREBIRD_CONFIG_CRC_EXTRA):
-                return False
-            with suppress(struct.error):
-                self._telemetry.update(decode_lyrebird_config(data[10 : 10 + data[1]]))
-                return True
-            return False
-        if message_id != LYREBIRD_STATUS_ID:
-            return False
-        if not _checksum_ok(data, LYREBIRD_STATUS_CRC_EXTRA):
-            # An aircraft running an older build sends an older layout of this message, and
-            # padding it out and decoding anyway produces confident nonsense: a string read
-            # twelve bytes late, focal lengths that are really ASCII pairs. The CRC_EXTRA is
-            # derived from the field definitions, so it changes when they do -- which makes it
-            # exactly the check that tells the two versions apart. Refusing is the honest
-            # outcome; the fields simply stay absent until the aircraft is updated.
-            return False
-        payload = data[10 : 10 + data[1]]
-        try:
-            self._telemetry.update(decode_lyrebird_status(payload))
-        except struct.error:
-            return False
-        return True
+        crc_extra, decoder = definition
+        return self._apply_custom_message(data, crc_extra, decoder)
 
 
 # --------------------------------------------------------------------------------------------
