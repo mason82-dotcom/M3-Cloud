@@ -34,3 +34,22 @@ def test_dji_positioning_does_not_translate_quality_into_mavlink_fix_type():
     assert common["positioning"]["rtk_fixed"] is False
     assert common["positioning"]["fix"]=="UNKNOWN"
     assert common["positioning"]["native"]=={"dji_quality":10,"dji_convergence":"CONVERGING"}
+
+def test_lyrebird_stale_rtk_overrides_retained_fixed_gps_state():
+    telemetry={
+        "positioning":{"fix":"FIXED","position_source":"RTK_FUSED","gps_satellites":24},
+        "rtk":{"fix":"STALE","enabled":True,"connected":True,"healthy":False,"age_ms":3501},
+    }
+    common=normalize_aircraft_state(telemetry,source="lyrebird")["aircraft_state"]
+    assert common["positioning"]["fix"]=="STALE"
+    assert common["positioning"]["rtk_stale"] is True
+    assert common["positioning"]["position_source"]=="FLIGHT_CONTROLLER"
+    assert common["positioning"]["gps_satellites"]==24
+
+def test_lyrebird_fresh_rtk_restores_fused_position_source():
+    telemetry={"positioning":{"fix":"SINGLE","position_source":"FLIGHT_CONTROLLER"},
+               "rtk":{"fix":"FIXED","enabled":True,"connected":True,"healthy":True,"age_ms":50}}
+    positioning=normalize_aircraft_state(telemetry,source="lyrebird")["aircraft_state"]["positioning"]
+    assert positioning["fix"]=="FIXED"
+    assert positioning["rtk_stale"] is False
+    assert positioning["position_source"]=="RTK_FUSED"

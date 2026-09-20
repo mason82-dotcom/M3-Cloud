@@ -56,14 +56,25 @@ def normalize_aircraft_state(telemetry: dict[str, Any] | None, *, source: str) -
     common: dict[str, Any] = {"source": source}
 
     if source == "lyrebird":
-        positioning = result.get("positioning") if isinstance(result.get("positioning"), dict) else {}
+        positioning = deepcopy(result.get("positioning")) if isinstance(result.get("positioning"), dict) else {}
+        rtk = result.get("rtk") if isinstance(result.get("rtk"), dict) else {}
+        # The private RTK diagnostic message is authoritative for freshness. In particular,
+        # STALE must override an older GPS_RAW_INT FIXED/FLOAT value retained by deep merge.
+        if rtk.get("fix") == "STALE":
+            positioning["fix"] = "STALE"
+            positioning["rtk_stale"] = True
+            positioning["position_source"] = "FLIGHT_CONTROLLER"
+        elif rtk.get("fix") in ("FIXED", "FLOAT"):
+            positioning["fix"] = rtk["fix"]
+            positioning["rtk_stale"] = False
+            positioning["position_source"] = "RTK_FUSED"
         common.update({
             "mode": native.get("mode") or result.get("flight_mode"),
             "armed": native.get("armed"),
             "is_flying": native.get("is_flying"),
             "failsafe": native.get("failsafe"),
             "landed_state": native.get("landed_state"),
-            "positioning": deepcopy(positioning),
+            "positioning": positioning,
         })
         common["native"] = {
             "mavlink_custom_mode": native.get("custom_mode"),
