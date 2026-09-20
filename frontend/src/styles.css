@@ -1559,3 +1559,236 @@ button { font: inherit; }
   font-size: 8px;
   overflow-wrap: anywhere;
 }
+
+
+.projectsView {
+  display: grid;
+  grid-template-columns: 260px 300px minmax(0, 1fr);
+  gap: 10px;
+  min-height: calc(100vh - 94px);
+}
+
+.projectsRail,
+.surveysRail {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.projectCreate,
+.surveyCreate {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border-bottom: 1px solid var(--line);
+}
+
+.projectCreate {
+  grid-template-columns: 1fr auto;
+}
+
+.surveyCreate {
+  grid-template-columns: 1fr;
+}
+
+.projectCreate input,
+.surveyCreate input,
+.surveyCreate select,
+.projectCreate button,
+.surveyCreate button,
+.surveyAssign select {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0e151e;
+  color: var(--text);
+  padding: 7px 8px;
+  font-size: 10px;
+}
+
+.projectCreate button,
+.surveyCreate button {
+  cursor: pointer;
+  background: var(--panel2);
+}
+
+.projectList,
+.surveyList {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.projectItem,
+.surveyItem {
+  width: 100%;
+  margin-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0e151e;
+  color: var(--text);
+  padding: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectItem.selected,
+.surveyItem.selected {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.projectItem strong,
+.projectItem small,
+.surveyItem strong,
+.surveyItem small {
+  display: block;
+}
+
+.projectItem strong,
+.surveyItem strong {
+  font-size: 11px;
+}
+
+.projectItem small,
+.surveyItem small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.surveyItem > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.surveyItem span {
+  color: var(--info);
+  font-size: 8px;
+}
+
+.surveyWorkspace {
+  min-width: 0;
+}
+
+.surveyTitle {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 3px 2px;
+}
+
+.surveyTitle h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.surveyTitle p,
+.surveyTitle span {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.surveyColumns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.surveyMemberPanel {
+  min-height: 360px;
+  overflow: hidden;
+}
+
+.surveyMembers {
+  max-height: 430px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.surveyMembers article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 8px;
+  border: 1px solid #1d2935;
+  border-radius: 7px;
+  background: #0e151e;
+}
+
+.surveyMembers strong,
+.surveyMembers small {
+  display: block;
+}
+
+.surveyMembers strong {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.surveyMembers small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.surveyMembers button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--muted);
+  padding: 4px 6px;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.surveyMembers > article > span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.surveyAssign {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.projectsError {
+  grid-column: 1 / -1;
+  border: 1px solid #8d4c4c;
+  border-radius: 8px;
+  background: rgb(70 26 26 / 92%);
+  padding: 8px 10px;
+  color: #ffdada;
+  font-size: 10px;
+}
+
+@media (max-width: 1200px) {
+  .projectsView {
+    grid-template-columns: 220px 250px minmax(0, 1fr);
+  }
+
+  .surveyColumns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 850px) {
+  .projectsView {
+    grid-template-columns: 1fr;
+  }
+
+  .projectsRail,
+  .surveysRail {
+    max-height: 300px;
+  }
+}

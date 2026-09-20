@@ -14,10 +14,107 @@ import type {
   ProcessingProfile,
   ProcessingSceneInfo,
   ProcessingResult,
+  Project,
+  Survey,
   ThermogramHandoff,
   SystemHealth,
   Vehicle,
 } from "./types";
+
+export async function fetchProjects(): Promise<Project[]> {
+  const response = await fetch("/api/v1/projects");
+  if (!response.ok) {
+    throw new Error(`Projects request failed: ${response.status}`);
+  }
+  return response.json() as Promise<Project[]>;
+}
+
+export async function createProject(input: {
+  name: string;
+  description?: string;
+}): Promise<Project> {
+  const response = await fetch("/api/v1/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Project create failed: ${response.status}`);
+  }
+  return response.json() as Promise<Project>;
+}
+
+export async function fetchProjectSurveys(projectId: string): Promise<Survey[]> {
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/surveys`,
+  );
+  if (!response.ok) {
+    throw new Error(`Surveys request failed: ${response.status}`);
+  }
+  return response.json() as Promise<Survey[]>;
+}
+
+export async function createSurvey(
+  projectId: string,
+  input: {
+    name: string;
+    kind: string;
+    description?: string;
+  },
+): Promise<Survey> {
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/surveys`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Survey create failed: ${response.status}`);
+  }
+  return response.json() as Promise<Survey>;
+}
+
+export async function assignFlightSurvey(
+  flightId: string,
+  surveyId: string | null,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(
+    `/api/v1/flights/${encodeURIComponent(flightId)}/survey`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ survey_id: surveyId }),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Flight survey assignment failed: ${response.status}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function assignMediaDatasetSurvey(
+  datasetId: string,
+  surveyId: string | null,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(
+    `/api/v1/media/datasets/${encodeURIComponent(datasetId)}/survey`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ survey_id: surveyId }),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Dataset survey assignment failed: ${response.status}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
 
 export async function fetchVehicles(): Promise<Vehicle[]> {
   const response = await fetch("/api/v1/vehicles");

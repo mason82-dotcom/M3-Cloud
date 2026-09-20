@@ -6,6 +6,7 @@ import { useLiveEvents } from "./live";
 import { MapView } from "./MapView";
 import { MediaView } from "./MediaView";
 import { ProcessingView } from "./ProcessingView";
+import { ProjectsView } from "./ProjectsView";
 import type {
   ComponentHealth,
   LiveEvent,
@@ -16,6 +17,7 @@ import type {
 
 type ViewName =
   | "operations"
+  | "projects"
   | "fleet"
   | "missions"
   | "live"
@@ -26,6 +28,7 @@ type ViewName =
 
 const NAV: Array<[ViewName, string, string]> = [
   ["operations", "Operations", "Fleet, RTK und Missionen im Überblick"],
+  ["projects", "Projects", "Projects und Surveys mit Flight-, Media- und Processing-Lineage."],
   ["fleet", "Fleet", "Aircraft, Payloads, RTK und Verbindungsstatus."],
   ["missions", "Missions", "Waylines, Missionsplanung, Preflight und Ausführungsstatus."],
   ["live", "Live", "Aircraft, RTK, Controller, Gimbal und Payload in Echtzeit"],
@@ -600,6 +603,12 @@ export default function App() {
           </section>
         ) : null}
 
+        {activeView === "projects" ? (
+          <section className="view active">
+            <ProjectsView />
+          </section>
+        ) : null}
+
         {activeView === "live" ? (
           <section className="view active">
             <LiveView vehicle={selectedVehicle} />
@@ -637,7 +646,7 @@ export default function App() {
           </section>
         ) : null}
 
-        {!["operations", "live", "flights", "media", "processing", "system"].includes(activeView) ? (
+        {!["operations", "projects", "live", "flights", "media", "processing", "system"].includes(activeView) ? (
           <section className="view active">
             <div className="placeholder">
               <h2>{nav[1]}</h2>

@@ -151,11 +151,36 @@ export interface TopologyEvent {
   devices?: unknown[];
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: "ACTIVE" | "ARCHIVED" | string;
+  survey_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Survey {
+  id: string;
+  project_id: string;
+  name: string;
+  kind: "GENERIC" | "MAPPING" | "THERMAL" | "MULTISPECTRAL" | "INSPECTION" | string;
+  description?: string | null;
+  status: "ACTIVE" | "COMPLETED" | "ARCHIVED" | string;
+  flight_count: number;
+  dataset_count: number;
+  processing_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FlightSummary {
   id: string;
   aircraft_sn: string;
   gateway_sn?: string | null;
   dji_track_id?: string | null;
+  survey_id?: string | null;
   status: string;
   started_at: string;
   ended_at?: string | null;
@@ -358,6 +383,7 @@ export interface MediaDataset {
   prefix: string;
   platform: string;
   flight_id?: string | null;
+  survey_id?: string | null;
   flight_aircraft_sn?: string | null;
   flight_started_at?: string | null;
   capture_started_at?: string | null;
@@ -449,6 +475,7 @@ export interface ProcessingJob {
   input_prefix: string;
   platform?: string | null;
   flight_id?: string | null;
+  survey_id?: string | null;
   media_kinds: string[];
   options: Array<{ name: string; value: unknown }>;
   image_count: number;
