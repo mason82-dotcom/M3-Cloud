@@ -20,7 +20,7 @@ from app.media.classifier import (
 from app.media.datasets import build_media_datasets, dataset_prefix
 from app.media.matching import capture_time_from_filename, match_flight_by_capture_window
 from app.media.metadata import METADATA_VERSION, ExtractedMetadata, extract_media_metadata
-from app.models import MediaAsset, MediaDatasetRecord
+from app.models import Flight, MediaAsset, MediaDatasetRecord
 
 
 logger = logging.getLogger(__name__)
@@ -523,6 +523,13 @@ class MediaImporter:
                     ]
                     record.flight_match_details = match.details
                     record.flight_id = match.flight_id
+                    if record.survey_id is None and match.flight_id is not None:
+                        matched_flight = await session.get(Flight, match.flight_id)
+                        if (
+                            matched_flight is not None
+                            and matched_flight.survey_id is not None
+                        ):
+                            record.survey_id = matched_flight.survey_id
                 else:
                     record.flight_assignment_source = "AUTO"
                     record.flight_match_status = "DISABLED"

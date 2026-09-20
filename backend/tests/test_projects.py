@@ -11,6 +11,7 @@ from app.api_projects import (
     assign_flight_survey,
     create_project,
     create_survey,
+    survey_lineage,
 )
 from app.database import session_factory
 from app.models import (
@@ -139,6 +140,14 @@ async def test_project_survey_assignments_and_processing_inheritance(tmp_path) -
 
     assert job.flight_id is None
     assert job.survey_id == survey_id
+
+    lineage = await survey_lineage(survey_id)
+    assert lineage["project"]["name"] == "Site Alpha"
+    assert lineage["survey"]["name"] == "Survey 01"
+    assert len(lineage["flights"]) == 1
+    assert len(lineage["datasets"]) == 1
+    assert len(lineage["processing_jobs"]) == 1
+    assert lineage["processing_jobs"][0]["id"] == str(job.id)
 
     async with session_factory() as session:
         stored = await session.get(ProcessingJob, job.id)

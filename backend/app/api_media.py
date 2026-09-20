@@ -233,6 +233,8 @@ async def assign_dataset_flight(
                 )
 
         dataset.flight_id = body.flight_id
+        if dataset.survey_id is None and flight is not None and flight.survey_id is not None:
+            dataset.survey_id = flight.survey_id
         dataset.flight_assignment_source = "MANUAL"
         dataset.flight_match_status = "MANUAL"
         dataset.flight_match_candidates = (
@@ -319,6 +321,10 @@ async def auto_match_dataset_flight(
         ]
         dataset.flight_match_details = match.details
         dataset.flight_id = match.flight_id
+        if dataset.survey_id is None and match.flight_id is not None:
+            matched_flight = await session.get(Flight, match.flight_id)
+            if matched_flight is not None and matched_flight.survey_id is not None:
+                dataset.survey_id = matched_flight.survey_id
         dataset.updated_at = datetime.now(timezone.utc)
         await session.commit()
 

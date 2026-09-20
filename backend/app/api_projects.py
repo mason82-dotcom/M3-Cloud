@@ -6,10 +6,17 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.database import session_factory
-from app.models import Flight, MediaDatasetRecord, ProcessingJob, Project, Survey
+from app.models import (
+    Flight,
+    MediaDatasetRecord,
+    ProcessingJob,
+    ProcessingResult,
+    Project,
+    Survey,
+)
 
 
 router = APIRouter(prefix="/api/v1", tags=["projects"])
@@ -292,7 +299,24 @@ async def assign_flight_survey(
         survey = await _resolve_survey(session, body.survey_id)
         flight.survey_id = survey.id if survey else None
         if survey:
-            survey.updated_at = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
+            survey.updated_at = now
+            await session.execute(
+                update(MediaDatasetRecord)
+                .where(
+                    MediaDatasetRecord.flight_id == flight.id,
+                    MediaDatasetRecord.survey_id.is_(None),
+                )
+                .values(survey_id=survey.id, updated_at=now)
+            )
+            await session.execute(
+                update(ProcessingJob)
+                .where(
+                    ProcessingJob.flight_id == flight.id,
+                    ProcessingJob.survey_id.is_(None),
+                )
+                .values(survey_id=survey.id, updated_at=now)
+            )
         await session.commit()
         return {
             "flight_id": str(flight.id),
@@ -317,8 +341,145 @@ async def assign_dataset_survey(
         dataset.updated_at = datetime.now(timezone.utc)
         if survey:
             survey.updated_at = dataset.updated_at
+            await session.execute(
+                update(ProcessingJob)
+                .where(
+                    ProcessingJob.input_prefix == dataset.prefix,
+                    ProcessingJob.platform == dataset.platform,
+                    ProcessingJob.survey_id.is_(None),
+                )
+                .values(
+                    survey_id=survey.id,
+                    updated_at=dataset.updated_at,
+                )
+            )
         await session.commit()
         return {
             "dataset_id": str(dataset.id),
             "survey_id": str(dataset.survey_id) if dataset.survey_id else None,
+        }
+
+
+@router.get("/surveys/{survey_id}/lineage")
+async def survey_lineage(survey_id: uuid.UUID) -> dict[str, Any]:
+    async with session_factory() as session:
+        survey = await session.get(Survey, survey_id)
+        if survey is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Survey not found",
+            )
+        project = await session.get(Project, survey.project_id)
+        if project is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
+            )
+
+        flights = (
+            await session.scalars(
+                select(Flight)
+                .where(Flight.survey_id == survey_id)
+                .order_by(Flight.started_at)
+            )
+        ).all()
+        datasets = (
+            await session.scalars(
+                select(MediaDatasetRecord)
+                .where(MediaDatasetRecord.survey_id == survey_id)
+                .order_by(MediaDatasetRecord.prefix)
+            )
+        ).all()
+        jobs = (
+            await session.scalars(
+                select(ProcessingJob)
+                .where(ProcessingJob.survey_id == survey_id)
+                .order_by(ProcessingJob.created_at)
+            )
+        ).all()
+
+        job_ids = [job.id for job in jobs]
+        results = (
+            await session.scalars(
+                select(ProcessingResult)
+                .where(ProcessingResult.job_id.in_(job_ids))
+                .order_by(ProcessingResult.created_at, ProcessingResult.asset_name)
+            )
+        ).all() if job_ids else []
+
+        results_by_job: dict[uuid.UUID, list[dict[str, Any]]] = {}
+        for result in results:
+            results_by_job.setdefault(result.job_id, []).append(
+                {
+                    "id": str(result.id),
+                    "asset_name": result.asset_name,
+                    "content_type": result.content_type,
+                    "size_bytes": result.size_bytes,
+                    "sha256": result.sha256,
+                    "details": result.details or {},
+                    "created_at": result.created_at.isoformat(),
+                }
+            )
+
+        return {
+            "project": _project(
+                project,
+                int(
+                    await session.scalar(
+                        select(func.count(Survey.id)).where(
+                            Survey.project_id == project.id
+                        )
+                    )
+                    or 0
+                ),
+            ),
+            "survey": await _survey_payload(session, survey),
+            "flights": [
+                {
+                    "id": str(flight.id),
+                    "aircraft_sn": flight.aircraft_sn,
+                    "status": flight.status,
+                    "started_at": flight.started_at.isoformat(),
+                    "ended_at": flight.ended_at.isoformat() if flight.ended_at else None,
+                    "distance_m": flight.distance_m,
+                    "duration_s": flight.duration_s,
+                }
+                for flight in flights
+            ],
+            "datasets": [
+                {
+                    "id": str(dataset.id),
+                    "platform": dataset.platform,
+                    "prefix": dataset.prefix,
+                    "flight_id": str(dataset.flight_id) if dataset.flight_id else None,
+                    "present": dataset.present,
+                    "flight_match_status": dataset.flight_match_status,
+                    "capture_started_at": (
+                        dataset.capture_started_at.isoformat()
+                        if dataset.capture_started_at
+                        else None
+                    ),
+                    "capture_ended_at": (
+                        dataset.capture_ended_at.isoformat()
+                        if dataset.capture_ended_at
+                        else None
+                    ),
+                }
+                for dataset in datasets
+            ],
+            "processing_jobs": [
+                {
+                    "id": str(job.id),
+                    "kind": job.kind,
+                    "status": job.status,
+                    "name": job.name,
+                    "platform": job.platform,
+                    "input_prefix": job.input_prefix,
+                    "flight_id": str(job.flight_id) if job.flight_id else None,
+                    "created_at": job.created_at.isoformat(),
+                    "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+                    "results": results_by_job.get(job.id, []),
+                }
+                for job in jobs
+            ],
         }
