@@ -122,7 +122,13 @@ def merge_transport_telemetry(mavlink: dict[str, Any] | None, tcp: dict[str, Any
 def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any] | None = None, camera_capabilities: dict[str, Any] | None = None) -> VehicleSnapshot:
     name = str(config.get("droneName") or host)
     caps = camera_capabilities or {}
+    # Lyrebird exposes both the raw DJI CameraType and its normalized platform.
+    # Prefer CameraType, but accept the explicit normalized platform as a safe fallback.
+    # Both values are product identity; capability flags such as hasThermal are deliberately
+    # not used to infer M3E/M3T/M3M.
     platform = platform_from_camera_type(caps.get("cameraType"))
+    if platform == AircraftPlatform.UNKNOWN:
+        platform = platform_from_camera_type(caps.get("platform"))
     model = platform.value if platform != AircraftPlatform.UNKNOWN else "LYREBIRD_AIRCRAFT"
     enriched = attach_payload_capabilities(normalize_aircraft_state(telemetry, source="lyrebird"), platform)
     if enriched is not None and caps:
