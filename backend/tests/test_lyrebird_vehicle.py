@@ -68,3 +68,16 @@ def test_has_thermal_alone_does_not_claim_m3t():
     vehicle = normalize_config("10.0.0.8", {"droneName": "unknown", "hasThermal": True}, {})
     assert vehicle.model == "LYREBIRD_AIRCRAFT"
     assert vehicle.telemetry["payload"]["platform"] == "UNKNOWN"
+
+
+def test_camera_capability_probe_accepts_explicit_platform_fallback():
+    vehicle = normalize_config(
+        "192.168.1.42",
+        {"droneName": "field-drone", "hasThermal": False},
+        {},
+        {"cameraType": "NOT_SUPPORTED", "platform": "M3M", "connected": True},
+    )
+    assert vehicle.model == "M3M"
+    assert vehicle.telemetry["payload"]["platform"] == "M3M"
+    assert vehicle.telemetry["payload"]["multispectral"] is True
+    assert vehicle.telemetry["payload"]["thermal"] is False
