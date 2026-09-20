@@ -8,8 +8,11 @@ import dji.sdk.keyvalue.value.camera.CameraStreamSettingsInfo
 import dji.sdk.keyvalue.value.camera.CameraType
 import dji.sdk.keyvalue.value.camera.CameraVideoStreamSourceType
 import dji.sdk.keyvalue.value.common.ComponentIndexType
+import dji.v5.common.callback.CommonCallbacks
+import dji.v5.common.error.IDJIError
 import dji.v5.et.get
 import dji.v5.et.set
+import dji.v5.manager.KeyManager
 
 internal data class CameraPrepareResult(
     val success: Boolean,
@@ -85,28 +88,48 @@ internal object CameraCaptureConfigurator {
                 captureKey.set(
                     settings,
                     onSuccess = {
-                        val readback = captureKey.get(CameraStreamSettingsInfo())
-                            ?.cameraVideoStreamSources
-                            .orEmpty()
-                        val expected = profile.storedSourceNames.toSet()
-                        val actual = readback.map { it.name }.toSet()
-                        if (actual == expected) {
-                            callback(
-                                CameraPrepareResult(
-                                    true,
-                                    profile,
-                                    "PHOTO_NORMAL; sources=${expected.sorted()}"
-                                )
-                            )
-                        } else {
-                            callback(
-                                CameraPrepareResult(
-                                    false,
-                                    profile,
-                                    "Capture source readback mismatch: expected=$expected actual=$actual"
-                                )
-                            )
-                        }
+                        // Verify against a fresh MSDK read, not the synchronous key cache. M3M
+                        // field testing showed that stream-setting keys can be absent/stale in
+                        // the local cache even though the camera has accepted the write.
+                        KeyManager.getInstance().getValue(
+                            captureKey,
+                            object : CommonCallbacks.CompletionCallbackWithParam<CameraStreamSettingsInfo> {
+                                override fun onSuccess(readback: CameraStreamSettingsInfo?) {
+                                    val expected = profile.storedSourceNames.toSet()
+                                    val actual = readback?.cameraVideoStreamSources
+                                        .orEmpty()
+                                        .map { it.name }
+                                        .toSet()
+                                    if (actual == expected) {
+                                        callback(
+                                            CameraPrepareResult(
+                                                true,
+                                                profile,
+                                                "PHOTO_NORMAL; sources=${expected.sorted()}"
+                                            )
+                                        )
+                                    } else {
+                                        callback(
+                                            CameraPrepareResult(
+                                                false,
+                                                profile,
+                                                "Capture source readback mismatch: expected=$expected actual=$actual"
+                                            )
+                                        )
+                                    }
+                                }
+
+                                override fun onFailure(error: IDJIError) {
+                                    callback(
+                                        CameraPrepareResult(
+                                            false,
+                                            profile,
+                                            "Capture-stream readback failed: ${error.description()}"
+                                        )
+                                    )
+                                }
+                            }
+                        )
                     },
                     onFailure = { error ->
                         callback(
