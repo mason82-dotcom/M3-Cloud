@@ -260,7 +260,7 @@ function LiveView({ vehicle }: { vehicle: Vehicle | null }) {
           <div className="liveMetrics">
             {metrics.map(([label, value, unit]) => (
               <div className="liveMetric" key={label}>
-                <span>{label}</span>
+                <span>{String(label)}</span>
                 <strong>{textValue(value)}{value !== null && value !== undefined ? unit : ""}</strong>
               </div>
             ))}
@@ -281,7 +281,7 @@ function LiveView({ vehicle }: { vehicle: Vehicle | null }) {
               ["RTK satellites", rtk?.satellites ?? positioning?.rtk_satellites],
             ].map(([label, value]) => (
               <div className="liveMetric" key={String(label)}>
-                <span>{label}</span><strong>{textValue(value)}</strong>
+                <span>{String(label)}</span><strong>{textValue(value)}</strong>
               </div>
             ))}
           </div>
@@ -299,7 +299,7 @@ function LiveView({ vehicle }: { vehicle: Vehicle | null }) {
               ["Controller heading", controller.heading_deg],
             ].map(([label, value]) => (
               <div className="liveMetric" key={String(label)}>
-                <span>{label}</span><strong>{textValue(value)}</strong>
+                <span>{String(label)}</span><strong>{textValue(value)}</strong>
               </div>
             ))}
           </div>
@@ -317,7 +317,7 @@ function LiveView({ vehicle }: { vehicle: Vehicle | null }) {
               ["Gimbal yaw", gimbal.yaw_deg ?? gimbal.joint_yaw_deg],
             ].map(([label, value]) => (
               <div className="liveMetric" key={String(label)}>
-                <span>{label}</span><strong>{textValue(value)}</strong>
+                <span>{String(label)}</span><strong>{textValue(value)}</strong>
               </div>
             ))}
           </div>
@@ -335,7 +335,7 @@ function LiveView({ vehicle }: { vehicle: Vehicle | null }) {
               ["Home lat", home.latitude],
             ].map(([label, value]) => (
               <div className="liveMetric" key={String(label)}>
-                <span>{label}</span><strong>{textValue(value)}</strong>
+                <span>{String(label)}</span><strong>{textValue(value)}</strong>
               </div>
             ))}
           </div>
@@ -353,7 +353,7 @@ function LiveView({ vehicle }: { vehicle: Vehicle | null }) {
               ["Flying", aircraft?.is_flying],
             ].map(([label, value]) => (
               <div className="liveMetric" key={String(label)}>
-                <span>{label}</span><strong>{textValue(value)}</strong>
+                <span>{String(label)}</span><strong>{textValue(value)}</strong>
               </div>
             ))}
           </div>
