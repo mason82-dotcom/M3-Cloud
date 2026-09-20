@@ -8,6 +8,7 @@ media list, so this module never invents a separate daily mapping/geo.txt contra
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import json
 import mimetypes
@@ -337,10 +338,8 @@ def _parse_option(raw: str) -> dict[str, Any]:
     if not name:
         raise argparse.ArgumentTypeError("WebODM option name cannot be empty")
     value: Any = raw_value.strip()
-    try:
+    with contextlib.suppress(json.JSONDecodeError):
         value = json.loads(value)
-    except json.JSONDecodeError:
-        pass
     return {"name": name, "value": value}
 
 
