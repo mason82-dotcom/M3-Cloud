@@ -303,3 +303,22 @@ GET /api/v1/processing/jobs/<UUID>/inputs/download
 
 WebODM verifies each source file against this snapshot immediately before upload. A changed source
 aborts processing instead of silently changing the job input.
+
+
+### Automatic media-to-flight matching
+
+DJI filenames such as `DJI_20260920120000_0001_W.JPG` contain local camera time but no
+timezone offset. M3-Cloud can normalize that timestamp and conservatively associate a media
+dataset with a recorded flight.
+
+Configure the timezone that was active on the aircraft/controller when the media was captured:
+
+```dotenv
+M3CLOUD_MEDIA_FILENAME_TIMEZONE=Europe/Berlin
+M3CLOUD_MEDIA_AUTO_MATCH_FLIGHTS=true
+M3CLOUD_MEDIA_AUTO_MATCH_MARGIN_SECONDS=300
+```
+
+Automatic assignment is performed only when exactly one flight contains the complete dataset
+capture window within the configured margin. Zero matches remain unassigned; multiple matches are
+reported as `AMBIGUOUS`. A manual flight assignment is never overwritten by later scans.

@@ -1394,3 +1394,42 @@ button { font: inherit; }
 .processingJobAudit a:hover {
   text-decoration: underline;
 }
+
+
+.datasetCaptureTime {
+  display: grid;
+  gap: 2px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.datasetCaptureTime b {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.datasetMatchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 8px;
+}
+
+.datasetMatchRow button {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 4px 7px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.datasetMatchRow button:disabled {
+  opacity: .45;
+  cursor: default;
+}

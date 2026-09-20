@@ -71,6 +71,9 @@ async def lifespan(app: FastAPI):
             session_factory,
             root=settings.media_import_root,
             min_age_seconds=settings.media_import_min_age_seconds,
+            filename_timezone=settings.media_filename_timezone,
+            auto_match_flights=settings.media_auto_match_flights,
+            auto_match_margin_seconds=settings.media_auto_match_margin_seconds,
         )
         media_watcher = MediaImportWatcher(
             media_importer,

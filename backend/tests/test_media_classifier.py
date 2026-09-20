@@ -52,3 +52,25 @@ def test_folder_hint_keeps_m3e_wide_and_zoom_unambiguous() -> None:
 
     assert wide.platform == "M3E"
     assert zoom.platform == "M3E"
+
+
+
+def test_dji_filename_capture_time_uses_configured_timezone() -> None:
+    from app.media.matching import capture_time_from_filename
+
+    captured = capture_time_from_filename(
+        PurePosixPath("M3E/site/DJI_20260920120000_0001_W.JPG"),
+        timezone_name="Europe/Berlin",
+    )
+
+    assert captured is not None
+    assert captured.isoformat() == "2026-09-20T10:00:00+00:00"
+
+
+def test_filename_without_dji_timestamp_has_no_capture_time() -> None:
+    from app.media.matching import capture_time_from_filename
+
+    assert capture_time_from_filename(
+        PurePosixPath("M3E/site/DJI_0001_W.JPG"),
+        timezone_name="UTC",
+    ) is None

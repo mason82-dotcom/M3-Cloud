@@ -126,6 +126,18 @@ class Settings(BaseSettings):
         default=5.0,
         validation_alias="M3CLOUD_MEDIA_IMPORT_MIN_AGE_SECONDS",
     )
+    media_filename_timezone: str = Field(
+        default="UTC",
+        validation_alias="M3CLOUD_MEDIA_FILENAME_TIMEZONE",
+    )
+    media_auto_match_flights: bool = Field(
+        default=True,
+        validation_alias="M3CLOUD_MEDIA_AUTO_MATCH_FLIGHTS",
+    )
+    media_auto_match_margin_seconds: float = Field(
+        default=300.0,
+        validation_alias="M3CLOUD_MEDIA_AUTO_MATCH_MARGIN_SECONDS",
+    )
     media_import_handoff_root: str = Field(
         default="",
         validation_alias="M3CLOUD_MEDIA_IMPORT_HANDOFF_ROOT",

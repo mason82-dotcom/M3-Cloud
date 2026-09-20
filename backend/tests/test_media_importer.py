@@ -243,3 +243,135 @@ async def test_media_dataset_assignment_survives_rescan(tmp_path: Path) -> None:
         assert dataset is not None
         assert dataset.present is True
         assert dataset.flight_id == flight_id
+
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_unique_capture_window_auto_matches_dataset_to_flight(tmp_path: Path) -> None:
+    from datetime import datetime, timezone
+
+    async with session_factory() as session:
+        await session.execute(delete(MediaDatasetRecord))
+        await session.execute(delete(MediaAsset))
+        await session.execute(delete(Flight))
+        await session.commit()
+
+        flight = Flight(
+            aircraft_sn="M3E-AUTO-MATCH",
+            status="COMPLETED",
+            started_at=datetime(2026, 9, 20, 11, 59, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 20, 12, 2, tzinfo=timezone.utc),
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        session.add(flight)
+        await session.commit()
+        flight_id = flight.id
+
+    root = tmp_path / "media"
+    folder = root / "M3E" / "survey"
+    folder.mkdir(parents=True)
+    (folder / "DJI_20260920120000_0001_W.JPG").write_bytes(b"image-1")
+    (folder / "DJI_20260920120100_0002_W.JPG").write_bytes(b"image-2")
+
+    importer = MediaImporter(
+        session_factory,
+        root=str(root),
+        min_age_seconds=0,
+        filename_timezone="UTC",
+        auto_match_flights=True,
+        auto_match_margin_seconds=30,
+    )
+    await importer.scan()
+
+    async with session_factory() as session:
+        dataset = await session.scalar(
+            select(MediaDatasetRecord).where(
+                MediaDatasetRecord.platform == "M3E",
+                MediaDatasetRecord.prefix == "M3E/survey",
+            )
+        )
+        assert dataset is not None
+        assert dataset.flight_id == flight_id
+        assert dataset.flight_assignment_source == "AUTO"
+        assert dataset.flight_match_status == "MATCHED"
+        assert dataset.flight_match_candidates == [str(flight_id)]
+        assert dataset.capture_started_at == datetime(
+            2026, 9, 20, 12, 0, tzinfo=timezone.utc
+        )
+        assert dataset.capture_ended_at == datetime(
+            2026, 9, 20, 12, 1, tzinfo=timezone.utc
+        )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_manual_dataset_assignment_survives_auto_matching(tmp_path: Path) -> None:
+    from datetime import datetime, timezone
+
+    async with session_factory() as session:
+        await session.execute(delete(MediaDatasetRecord))
+        await session.execute(delete(MediaAsset))
+        await session.execute(delete(Flight))
+        await session.commit()
+
+        auto_flight = Flight(
+            aircraft_sn="AUTO",
+            status="COMPLETED",
+            started_at=datetime(2026, 9, 20, 11, 59, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 20, 12, 2, tzinfo=timezone.utc),
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        manual_flight = Flight(
+            aircraft_sn="MANUAL",
+            status="COMPLETED",
+            started_at=datetime(2026, 9, 19, 10, 0, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 19, 10, 5, tzinfo=timezone.utc),
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        session.add_all([auto_flight, manual_flight])
+        await session.commit()
+        manual_flight_id = manual_flight.id
+
+    root = tmp_path / "media"
+    folder = root / "M3E" / "survey"
+    folder.mkdir(parents=True)
+    (folder / "DJI_20260920120000_0001_W.JPG").write_bytes(b"image-1")
+    (folder / "DJI_20260920120100_0002_W.JPG").write_bytes(b"image-2")
+
+    importer = MediaImporter(
+        session_factory,
+        root=str(root),
+        min_age_seconds=0,
+        filename_timezone="UTC",
+        auto_match_flights=True,
+        auto_match_margin_seconds=30,
+    )
+    await importer.scan()
+
+    async with session_factory() as session:
+        dataset = await session.scalar(
+            select(MediaDatasetRecord).where(
+                MediaDatasetRecord.platform == "M3E",
+                MediaDatasetRecord.prefix == "M3E/survey",
+            )
+        )
+        assert dataset is not None
+        dataset.flight_id = manual_flight_id
+        dataset.flight_assignment_source = "MANUAL"
+        dataset.flight_match_status = "MANUAL"
+        await session.commit()
+        dataset_id = dataset.id
+
+    await importer.scan()
+
+    async with session_factory() as session:
+        dataset = await session.get(MediaDatasetRecord, dataset_id)
+        assert dataset is not None
+        assert dataset.flight_id == manual_flight_id
+        assert dataset.flight_assignment_source == "MANUAL"
+        assert dataset.flight_match_status == "MANUAL"

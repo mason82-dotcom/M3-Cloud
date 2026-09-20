@@ -114,6 +114,20 @@ export async function assignMediaDatasetFlight(
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+export async function autoMatchMediaDatasetFlight(
+  datasetId: string,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(
+    `/api/v1/media/datasets/${encodeURIComponent(datasetId)}/auto-match`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Dataset auto-match failed: ${response.status}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
 export function mediaDatasetManifestDownloadUrl(prefix: string): string {
   const params = new URLSearchParams({ prefix });
   return `/api/v1/media/datasets/manifest/download?${params.toString()}`;

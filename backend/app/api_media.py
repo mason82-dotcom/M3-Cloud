@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from app.database import session_factory
 from app.config import settings
 from app.media.datasets import build_dataset_manifest, build_media_datasets
+from app.media.matching import match_flight_by_capture_window
 from app.models import Flight, MediaAsset, MediaDatasetRecord
 
 
@@ -32,6 +33,7 @@ def _asset(asset: MediaAsset) -> dict[str, Any]:
         "size_bytes": asset.size_bytes,
         "mtime_ns": asset.mtime_ns,
         "sha256": asset.sha256,
+        "capture_time_utc": asset.capture_time_utc.isoformat() if asset.capture_time_utc else None,
         "platform": asset.platform,
         "media_kind": asset.media_kind,
         "capture_group": asset.capture_group,
@@ -178,6 +180,23 @@ async def media_datasets(
                     "flight_id": str(record.flight_id) if record and record.flight_id else None,
                     "flight_aircraft_sn": flight.aircraft_sn if flight else None,
                     "flight_started_at": flight.started_at.isoformat() if flight else None,
+                    "capture_started_at": (
+                        record.capture_started_at.isoformat()
+                        if record and record.capture_started_at
+                        else None
+                    ),
+                    "capture_ended_at": (
+                        record.capture_ended_at.isoformat()
+                        if record and record.capture_ended_at
+                        else None
+                    ),
+                    "flight_assignment_source": (
+                        record.flight_assignment_source if record else None
+                    ),
+                    "flight_match_status": record.flight_match_status if record else None,
+                    "flight_match_candidates": (
+                        record.flight_match_candidates if record else []
+                    ),
                 }
             )
             result.append(item)
@@ -207,6 +226,11 @@ async def assign_dataset_flight(
                 )
 
         dataset.flight_id = body.flight_id
+        dataset.flight_assignment_source = "MANUAL"
+        dataset.flight_match_status = "MANUAL"
+        dataset.flight_match_candidates = (
+            [str(body.flight_id)] if body.flight_id is not None else []
+        )
         dataset.updated_at = datetime.now(timezone.utc)
         await session.commit()
 
@@ -217,6 +241,50 @@ async def assign_dataset_flight(
             "flight_id": str(dataset.flight_id) if dataset.flight_id else None,
             "flight_aircraft_sn": flight.aircraft_sn if flight else None,
             "flight_started_at": flight.started_at.isoformat() if flight else None,
+            "flight_assignment_source": dataset.flight_assignment_source,
+            "flight_match_status": dataset.flight_match_status,
+            "flight_match_candidates": dataset.flight_match_candidates,
+        }
+
+
+@router.post("/datasets/{dataset_id}/auto-match")
+async def auto_match_dataset_flight(
+    dataset_id: uuid.UUID,
+) -> dict[str, object]:
+    async with session_factory() as session:
+        dataset = await session.get(MediaDatasetRecord, dataset_id)
+        if dataset is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Media dataset not found",
+            )
+
+        match = await match_flight_by_capture_window(
+            session,
+            capture_started_at=dataset.capture_started_at,
+            capture_ended_at=dataset.capture_ended_at,
+            margin_seconds=settings.media_auto_match_margin_seconds,
+        )
+        dataset.flight_assignment_source = "AUTO"
+        dataset.flight_match_status = match.status
+        dataset.flight_match_candidates = [
+            str(candidate_id) for candidate_id in match.candidate_ids
+        ]
+        dataset.flight_id = match.flight_id
+        dataset.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+
+        flight = await session.get(Flight, match.flight_id) if match.flight_id else None
+        return {
+            "id": str(dataset.id),
+            "platform": dataset.platform,
+            "prefix": dataset.prefix,
+            "flight_id": str(dataset.flight_id) if dataset.flight_id else None,
+            "flight_aircraft_sn": flight.aircraft_sn if flight else None,
+            "flight_started_at": flight.started_at.isoformat() if flight else None,
+            "flight_assignment_source": dataset.flight_assignment_source,
+            "flight_match_status": dataset.flight_match_status,
+            "flight_match_candidates": dataset.flight_match_candidates,
         }
 
 

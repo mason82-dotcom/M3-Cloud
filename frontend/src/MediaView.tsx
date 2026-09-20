@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   assignMediaDatasetFlight,
+  autoMatchMediaDatasetFlight,
   fetchFlights,
   fetchMedia,
   fetchMediaDatasetManifest,
@@ -188,6 +189,17 @@ export function MediaView() {
                   .map(([kind, count]) => `${kind} ${count}`)
                   .join(" · ")}
               </small>
+              <div className="datasetCaptureTime">
+                <span>Capture</span>
+                <b>{
+                  dataset.capture_started_at
+                    ? new Date(dataset.capture_started_at).toLocaleString()
+                    : "No DJI filename timestamp"
+                }</b>
+                {dataset.capture_ended_at && dataset.capture_ended_at !== dataset.capture_started_at ? (
+                  <small>to {new Date(dataset.capture_ended_at).toLocaleString()}</small>
+                ) : null}
+              </div>
               <label className="datasetFlight">
                 Flight
                 <select
@@ -213,15 +225,38 @@ export function MediaView() {
                   ))}
                 </select>
               </label>
-              {dataset.flight_id ? (
+              <div className="datasetMatchRow">
                 <small className="datasetFlightLink">
-                  Linked: {dataset.flight_aircraft_sn ?? "Aircraft"} · {
-                    dataset.flight_started_at
-                      ? new Date(dataset.flight_started_at).toLocaleString()
-                      : dataset.flight_id
-                  }
+                  {dataset.flight_id
+                    ? `Linked: ${dataset.flight_aircraft_sn ?? "Aircraft"} · ${
+                        dataset.flight_started_at
+                          ? new Date(dataset.flight_started_at).toLocaleString()
+                          : dataset.flight_id
+                      }`
+                    : `Match: ${dataset.flight_match_status ?? "NO_CAPTURE_TIME"}`}
+                  {dataset.flight_assignment_source
+                    ? ` · ${dataset.flight_assignment_source}`
+                    : ""}
                 </small>
-              ) : null}
+                {dataset.id ? (
+                  <button
+                    disabled={assigningDataset === dataset.id}
+                    onClick={() => {
+                      if (!dataset.id) return;
+                      setAssigningDataset(dataset.id);
+                      void autoMatchMediaDatasetFlight(dataset.id)
+                        .then(() => refresh())
+                        .catch((reason: unknown) =>
+                          setError(reason instanceof Error ? reason.message : String(reason)),
+                        )
+                        .finally(() => setAssigningDataset(null));
+                    }}
+                    type="button"
+                  >
+                    Auto match
+                  </button>
+                ) : null}
+              </div>
               <button
                 className="datasetManifestButton"
                 onClick={() => {

@@ -227,6 +227,7 @@ export interface MediaAsset {
   size_bytes: number;
   mtime_ns: number;
   sha256: string;
+  capture_time_utc?: string | null;
   platform: string;
   media_kind: string;
   capture_group?: string | null;
@@ -261,6 +262,11 @@ export interface MediaDataset {
   flight_id?: string | null;
   flight_aircraft_sn?: string | null;
   flight_started_at?: string | null;
+  capture_started_at?: string | null;
+  capture_ended_at?: string | null;
+  flight_assignment_source?: "AUTO" | "MANUAL" | string | null;
+  flight_match_status?: string | null;
+  flight_match_candidates?: string[];
   asset_count: number;
   size_bytes: number;
   media_kinds: Record<string, number>;
@@ -275,6 +281,7 @@ export interface MediaDatasetManifestFile {
   media_kind: string;
   size_bytes: number;
   sha256: string;
+  capture_time_utc?: string | null;
 }
 
 export interface MediaDatasetManifestGroup {

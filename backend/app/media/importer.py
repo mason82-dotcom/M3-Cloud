@@ -18,6 +18,7 @@ from app.media.classifier import (
     supported_image,
 )
 from app.media.datasets import build_media_datasets
+from app.media.matching import capture_time_from_filename, match_flight_by_capture_window
 from app.models import MediaAsset, MediaDatasetRecord
 
 
@@ -59,6 +60,7 @@ class Candidate:
     size_bytes: int
     mtime_ns: int
     classification: MediaClassification
+    capture_time_utc: datetime | None
 
 
 class MediaImporter:
@@ -68,10 +70,16 @@ class MediaImporter:
         *,
         root: str,
         min_age_seconds: float = 5.0,
+        filename_timezone: str = "UTC",
+        auto_match_flights: bool = True,
+        auto_match_margin_seconds: float = 300.0,
     ):
         self.sessions = sessions
         self.root = Path(root)
         self.min_age_seconds = max(0.0, min_age_seconds)
+        self.filename_timezone = filename_timezone
+        self.auto_match_flights = auto_match_flights
+        self.auto_match_margin_seconds = max(0.0, auto_match_margin_seconds)
         self._scan_lock = asyncio.Lock()
         self.last_result: ImportScanResult | None = None
         self.last_error: str | None = None
@@ -114,6 +122,7 @@ class MediaImporter:
                         size_bytes=item.size_bytes,
                         mtime_ns=item.mtime_ns,
                         classification=classifications[item.relative_path],
+                        capture_time_utc=item.capture_time_utc,
                     )
                     for item in raw
                 ]
@@ -221,6 +230,10 @@ class MediaImporter:
                     size_bytes=stat.st_size,
                     mtime_ns=stat.st_mtime_ns,
                     classification=classify_media(relative),
+                    capture_time_utc=capture_time_from_filename(
+                        relative,
+                        timezone_name=self.filename_timezone,
+                    ),
                 )
             )
 
@@ -249,10 +262,12 @@ class MediaImporter:
                 existing.platform != candidate.classification.platform
                 or existing.media_kind != candidate.classification.media_kind
                 or existing.capture_group != candidate.classification.capture_group
+                or existing.capture_time_utc != candidate.capture_time_utc
             ):
                 existing.platform = candidate.classification.platform
                 existing.media_kind = candidate.classification.media_kind
                 existing.capture_group = candidate.classification.capture_group
+                existing.capture_time_utc = candidate.capture_time_utc
                 return "updated"
             return "unchanged"
 
@@ -284,6 +299,7 @@ class MediaImporter:
                 size_bytes=candidate.size_bytes,
                 mtime_ns=candidate.mtime_ns,
                 sha256=digest,
+                capture_time_utc=candidate.capture_time_utc,
                 platform=candidate.classification.platform,
                 media_kind=candidate.classification.media_kind,
                 capture_group=candidate.classification.capture_group,
@@ -302,6 +318,7 @@ class MediaImporter:
         existing.size_bytes = candidate.size_bytes
         existing.mtime_ns = candidate.mtime_ns
         existing.sha256 = digest
+        existing.capture_time_utc = candidate.capture_time_utc
         existing.platform = candidate.classification.platform
         existing.media_kind = candidate.classification.media_kind
         existing.capture_group = candidate.classification.capture_group
@@ -333,8 +350,8 @@ class MediaImporter:
             for duplicate in members[1:]:
                 duplicate.duplicate_of = canonical.id
 
-    @staticmethod
     async def _sync_dataset_records(
+        self,
         session: AsyncSession,
         assets: list[MediaAsset],
         *,
@@ -356,19 +373,48 @@ class MediaImporter:
             key = (platform, prefix)
             current_keys.add(key)
             record = by_key.get(key)
+            capture_started_at = summary.get("capture_started_at")
+            capture_ended_at = summary.get("capture_ended_at")
+
             if record is None:
-                session.add(
-                    MediaDatasetRecord(
-                        platform=platform,
-                        prefix=prefix,
-                        present=True,
-                        created_at=seen_at,
-                        updated_at=seen_at,
-                    )
+                record = MediaDatasetRecord(
+                    platform=platform,
+                    prefix=prefix,
+                    present=True,
+                    capture_started_at=capture_started_at,
+                    capture_ended_at=capture_ended_at,
+                    flight_assignment_source="AUTO",
+                    flight_match_status="NO_CAPTURE_TIME",
+                    flight_match_candidates=[],
+                    created_at=seen_at,
+                    updated_at=seen_at,
                 )
+                session.add(record)
             else:
                 record.present = True
+                record.capture_started_at = capture_started_at
+                record.capture_ended_at = capture_ended_at
                 record.updated_at = seen_at
+
+            if record.flight_assignment_source != "MANUAL":
+                if self.auto_match_flights:
+                    match = await match_flight_by_capture_window(
+                        session,
+                        capture_started_at=capture_started_at,
+                        capture_ended_at=capture_ended_at,
+                        margin_seconds=self.auto_match_margin_seconds,
+                    )
+                    record.flight_assignment_source = "AUTO"
+                    record.flight_match_status = match.status
+                    record.flight_match_candidates = [
+                        str(candidate_id) for candidate_id in match.candidate_ids
+                    ]
+                    record.flight_id = match.flight_id
+                else:
+                    record.flight_assignment_source = "AUTO"
+                    record.flight_match_status = "DISABLED"
+                    record.flight_match_candidates = []
+                    record.flight_id = None
 
         for key, record in by_key.items():
             if key not in current_keys and record.present:

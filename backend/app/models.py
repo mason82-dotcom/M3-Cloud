@@ -77,6 +77,11 @@ class MediaAsset(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     mtime_ns: Mapped[int] = mapped_column(BigInteger)
     sha256: Mapped[str] = mapped_column(String(64), index=True)
+    capture_time_utc: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
 
     platform: Mapped[str] = mapped_column(String(32), default="UNKNOWN", index=True)
     media_kind: Mapped[str] = mapped_column(String(32), default="UNKNOWN", index=True)
@@ -118,6 +123,23 @@ class MediaDatasetRecord(Base):
         index=True,
     )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    capture_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    capture_ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    flight_assignment_source: Mapped[str] = mapped_column(
+        String(32),
+        default="AUTO",
+    )
+    flight_match_status: Mapped[str] = mapped_column(
+        String(32),
+        default="NO_CAPTURE_TIME",
+    )
+    flight_match_candidates: Mapped[list[str]] = mapped_column(JSON, default=list)
     present: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

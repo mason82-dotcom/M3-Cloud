@@ -55,6 +55,11 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
     for (platform, prefix), items in grouped.items():
         counts = Counter(asset.media_kind for asset in items)
         total_bytes = sum(asset.size_bytes for asset in items)
+        capture_times = sorted(
+            asset.capture_time_utc
+            for asset in items
+            if asset.capture_time_utc is not None
+        )
 
         by_capture: dict[str, set[str]] = defaultdict(set)
         for asset in items:
@@ -131,6 +136,10 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
                 "size_bytes": total_bytes,
                 "media_kinds": dict(sorted(counts.items())),
                 "capture_group_count": len(by_capture),
+                "capture_started_at": capture_times[0] if capture_times else None,
+                "capture_ended_at": capture_times[-1] if capture_times else None,
+                "capture_time_count": len(capture_times),
+                "capture_time_complete": len(capture_times) == len(items),
                 "workflows": workflows,
             }
         )
@@ -199,6 +208,11 @@ def build_dataset_manifest(
                         "media_kind": asset.media_kind,
                         "size_bytes": asset.size_bytes,
                         "sha256": asset.sha256,
+                        "capture_time_utc": (
+                            asset.capture_time_utc.isoformat()
+                            if asset.capture_time_utc
+                            else None
+                        ),
                     }
                     for asset in members
                 ],
@@ -224,6 +238,11 @@ def build_dataset_manifest(
                 "media_kind": asset.media_kind,
                 "size_bytes": asset.size_bytes,
                 "sha256": asset.sha256,
+                "capture_time_utc": (
+                    asset.capture_time_utc.isoformat()
+                    if asset.capture_time_utc
+                    else None
+                ),
             }
             for asset in ungrouped
         ],
