@@ -104,3 +104,41 @@ async def test_osd_uses_property_parser_and_telemetry_store() -> None:
     assert telemetry.calls[0]["kind"].value == "osd"
     assert telemetry.calls[0]["message"].gateway == "RC123"
     assert publisher.messages == []
+
+
+@pytest.mark.asyncio
+async def test_state_need_reply_is_acknowledged() -> None:
+    registry = FakeRegistry()
+    publisher = FakePublisher()
+    telemetry = FakeTelemetry()
+    router = DJIMessageRouter(registry, publisher, telemetry)
+
+    payload = json.dumps(
+        {
+            "tid": "t-state",
+            "bid": "b-state",
+            "timestamp": 321,
+            "gateway": "RC123",
+            "from": "M3T123",
+            "need_reply": 1,
+            "data": {
+                "home_latitude": 49.2,
+                "home_longitude": 8.5,
+            },
+        }
+    ).encode()
+
+    await router.handle("thing/product/M3T123/state", payload)
+
+    assert len(telemetry.calls) == 1
+    assert len(publisher.messages) == 1
+
+    topic, raw, qos, retain = publisher.messages[0]
+    assert topic == "thing/product/M3T123/state_reply"
+    assert qos == 0
+    assert retain is False
+
+    reply = json.loads(raw)
+    assert reply["tid"] == "t-state"
+    assert reply["bid"] == "b-state"
+    assert reply["data"]["result"] == 0
