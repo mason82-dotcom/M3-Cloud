@@ -137,6 +137,11 @@ async def processing_inputs(job_id: uuid.UUID) -> dict[str, Any]:
                     "sha256": item.sha256,
                     "media_kind": item.media_kind,
                     "capture_group": item.capture_group,
+                    "capture_time_utc": (
+                        item.capture_time_utc.isoformat()
+                        if item.capture_time_utc
+                        else None
+                    ),
                 }
                 for item in inputs
             ],

@@ -368,6 +368,7 @@ export interface ThermogramHandoffFile {
   media_kind: "WIDE" | "THERMAL" | string;
   size_bytes: number;
   sha256: string;
+  capture_time_utc?: string | null;
 }
 
 export interface ThermogramHandoffGroup {

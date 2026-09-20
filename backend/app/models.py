@@ -202,6 +202,10 @@ class ProcessingJobAsset(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     media_kind: Mapped[str] = mapped_column(String(32))
     capture_group: Mapped[str | None] = mapped_column(String(768), nullable=True)
+    capture_time_utc: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 

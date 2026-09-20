@@ -118,6 +118,11 @@ def build_thermogram_handoff(
                         "media_kind": asset.media_kind,
                         "size_bytes": asset.size_bytes,
                         "sha256": asset.sha256,
+                        "capture_time_utc": (
+                            asset.capture_time_utc.isoformat()
+                            if asset.capture_time_utc
+                            else None
+                        ),
                     }
                     for asset in sorted(
                         members,
@@ -424,6 +429,7 @@ class ProcessingManager:
                         sha256=asset.sha256,
                         media_kind=asset.media_kind,
                         capture_group=asset.capture_group,
+                        capture_time_utc=asset.capture_time_utc,
                     )
                     for index, asset in enumerate(assets)
                 ]
@@ -501,6 +507,12 @@ class ProcessingManager:
                         job_id=job.id,
                         media_asset_id=asset.id,
                         ordinal=index,
+                        relative_path=asset.relative_path,
+                        size_bytes=asset.size_bytes,
+                        sha256=asset.sha256,
+                        media_kind=asset.media_kind,
+                        capture_group=asset.capture_group,
+                        capture_time_utc=asset.capture_time_utc,
                     )
                     for index, asset in enumerate(assets)
                 ]
@@ -534,6 +546,7 @@ class ProcessingManager:
                 source.sha256 = item.sha256
                 source.media_kind = item.media_kind
                 source.capture_group = item.capture_group
+                source.capture_time_utc = item.capture_time_utc
                 assets.append(source)
 
             handoff = build_thermogram_handoff(

@@ -322,3 +322,11 @@ M3CLOUD_MEDIA_AUTO_MATCH_MARGIN_SECONDS=300
 Automatic assignment is performed only when exactly one flight contains the complete dataset
 capture window within the configured margin. Zero matches remain unassigned; multiple matches are
 reported as `AMBIGUOUS`. A manual flight assignment is never overwritten by later scans.
+
+
+### Processing input capture timestamps
+
+Processing input snapshots also freeze each original's normalized capture time. This applies to
+both WebODM and Thermogram jobs. Thermogram job creation now freezes the same path, byte size,
+SHA-256, media kind, capture group, and capture timestamp contract as WebODM, so later media
+catalog rescans cannot silently change an external handoff.
