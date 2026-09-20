@@ -61,6 +61,10 @@ object Payload {
      */
     data class GeneratedMediaEvent(
         val mediaIndex: Int?,
+        /**
+         * Diagnostic SDK hint only. Do not use this field as the authoritative M3E/M3T/M3M
+         * capture-channel contract; reconciliation is index/file based.
+         */
         val lens: String,
         val receivedAtEpochMs: Long
     )
@@ -174,10 +178,9 @@ object Payload {
     private const val CAPTURE_PULL_COUNT = 16
     private const val NARROW_PULL_FALLBACK_TRIES = 4
 
-    // Event-driven resolve (KeyNewlyGeneratedMediaFile). The camera pushes one event per file the
-    // shutter writes — index + lens (dcf_type) but NO downloadable handle. We wait on these cheap
-    // local signals (zero camera round trips) to learn the shot's files have landed, then do ONE
-    // list pull to materialise the handles.
+    // Event-driven resolve (KeyNewlyGeneratedMediaFile). The authoritative portable datum used
+    // here is the generated media index. Any SDK-specific lens hint is diagnostic only. We wait
+    // for a quiet period, then do one list pull to materialise the handles.
     private const val EVENT_SETTLE_MS = 1500L       // no new file event this long => shot's files all landed
     private const val EVENT_FIRST_TIMEOUT_MS = 6000L // no event AT ALL this long => key lagged; use pull loop
 
@@ -188,6 +191,9 @@ object Payload {
     // matching the mediaVM the host activity wires up. Null until the camera is connected.
     private val cameraTypeKey: DJIKey<CameraType> = CameraKey.KeyCameraType.create()
     private fun activeCameraType(): CameraType? = cameraTypeKey.get()
+
+    fun cameraCapabilities(): CameraPlatformCapabilities =
+        CameraPlatformCapabilities.fromCameraTypeName(activeCameraType()?.name)
 
     // Fires when the camera writes a new photo to the SD card; carries the new file's index.
     private val keyNewlyGeneratedMediaFile = KeyTools.createKey(CameraKey.KeyNewlyGeneratedMediaFile)
@@ -291,12 +297,6 @@ object Payload {
         }
     }
 
-    // Lens of a pushed event, from its DCF camera type (handle-free; no list pull needed).
-    private fun isThermalLens(t: DCFCameraType?): Boolean = t == DCFCameraType.INFRARED
-    private fun isWideLens(t: DCFCameraType?): Boolean =
-        t == DCFCameraType.WIDE || t == DCFCameraType.VISIBLE || t == DCFCameraType.RGB
-    private fun isZoomLens(t: DCFCameraType?): Boolean = t == DCFCameraType.ZOOM
-
     @Volatile
     private var mediaWarmedUp = false
 
@@ -370,10 +370,14 @@ object Payload {
         // Thermal: the _T file by name; failing that the SMALLEST image (the radiometric R-JPEG is
         // far smaller than the full-res wide/zoom visuals), which is a much safer fallback than
         // blindly trusting the first-reported file.
+        // Never infer "thermal" from file size. That heuristic can mislabel an M3M band or
+        // another sidecar as thermal. Legacy hybrid thermal capture requires an explicit _T asset.
         val thermal = all.firstOrNull { isThermalName(it.fileName) }
-            ?: all.minByOrNull { it.fileSize }
-            ?: newFiles.first()
-        // Wide visual (RGB) and zoom siblings, distinguished by lens suffix.
+        if (thermal == null) {
+            Log.w(TAG, "Thermal-capable camera produced no explicit _T media asset")
+            return ThermalCapture(null, null, null)
+        }
+        // Wide visual (RGB) and zoom siblings, distinguished by the legacy hybrid suffix scheme.
         val visual = all.firstOrNull { isWideName(it.fileName) && it.fileName != thermal.fileName }
         val zoom = all.firstOrNull { isZoomName(it.fileName) && it.fileName != thermal.fileName }
 
@@ -398,16 +402,42 @@ object Payload {
      *
      * Blocking; call from a worker thread. Returns null when the shutter produced nothing.
      */
-    fun capturePhoto(mediaVM: MediaVM): MediaFile? {
-        val files = captureNewMediaFiles(mediaVM)
-        if (files.isEmpty()) return null
-        // Prefer a real image over any sidecar the payload may also have written.
-        val imageTypes = setOf(MediaFileType.JPEG, MediaFileType.DNG, MediaFileType.TIFF)
-        return files.firstOrNull { it.fileType in imageTypes } ?: files.first()
+    data class CapturedExposure(
+        val cameraType: String,
+        val platform: CameraPlatform,
+        val files: List<MediaFile>
+    ) {
+        fun primaryImage(): MediaFile? {
+            val imageTypes = setOf(MediaFileType.JPEG, MediaFileType.DNG, MediaFileType.TIFF)
+            return files.firstOrNull { it.fileType in imageTypes } ?: files.firstOrNull()
+        }
     }
 
-    // Returns null if the shutter produced no thermal file. Blocking, call from a worker thread.
+    /**
+     * One shutter may create multiple assets (especially M3M RGB + multispectral). Keep the whole
+     * exposure intact; legacy callers that need one representative file can call [capturePhoto].
+     */
+    fun captureExposure(mediaVM: MediaVM): CapturedExposure? {
+        val files = captureNewMediaFiles(mediaVM)
+        if (files.isEmpty()) return null
+        val cameraType = activeCameraType()?.name ?: "UNKNOWN"
+        return CapturedExposure(
+            cameraType = cameraType,
+            platform = CameraPlatformCapabilities.fromCameraTypeName(cameraType).platform,
+            files = files
+        )
+    }
+
+    fun capturePhoto(mediaVM: MediaVM): MediaFile? =
+        captureExposure(mediaVM)?.primaryImage()
+
+    // Returns null if thermal is not a declared platform capability or no thermal file surfaced.
     fun captureThermal(mediaVM: MediaVM): String? {
+        val capabilities = cameraCapabilities()
+        if (!capabilities.supportsThermalCapture) {
+            Log.w(TAG, "Thermal capture rejected for platform ${capabilities.platform}")
+            return null
+        }
         val capture = takeThermalAndVisual(mediaVM)
         if (capture.thermal == null) return null
         return "{\"thermal\":${jsonName(capture.thermal.fileName)}," +
@@ -421,9 +451,6 @@ object Payload {
     /** What the camera's push events reported for one shutter. */
     private data class ShutterEvents(
         val indices: Set<Int>,
-        val thermal: Boolean,
-        val wide: Boolean,
-        val zoom: Boolean,
         val elapsedMs: Long
     )
 
@@ -449,9 +476,7 @@ object Payload {
 
             val events = awaitShutterEvents(baselineIndex, overallDeadline)
             collectingEvents = false
-            Log.i(TAG, "Events after shutter in ${events.elapsedMs}ms: " +
-                "indices=${events.indices} " +
-                "(thermal=${events.thermal} wide=${events.wide} zoom=${events.zoom})")
+            Log.i(TAG, "Events after shutter in ${events.elapsedMs}ms: indices=${events.indices}")
 
             resolveFromSinglePull(mediaVM, baselineIndex, events.indices)?.let { return it }
 
@@ -502,7 +527,6 @@ object Payload {
      */
     private fun awaitShutterEvents(baselineIndex: Int?, overallDeadline: Long): ShutterEvents {
         val seenIndices = HashSet<Int>()
-        var thermalSeen = false; var wideSeen = false; var zoomSeen = false
         val phaseStart = System.currentTimeMillis()
         while (System.currentTimeMillis() < overallDeadline) {
             val waitMs = (overallDeadline - System.currentTimeMillis()).coerceAtMost(EVENT_SETTLE_MS)
@@ -511,24 +535,17 @@ object Payload {
                 val idx = ev.index ?: continue
                 if (baselineIndex == null || idx > baselineIndex) {
                     seenIndices.add(idx)
-                    when {
-                        isThermalLens(ev.dcf_type) -> thermalSeen = true
-                        isWideLens(ev.dcf_type) -> wideSeen = true
-                        isZoomLens(ev.dcf_type) -> zoomSeen = true
-                    }
                 }
-                if (thermalSeen && wideSeen && zoomSeen) break          // COMPLETE
-            } else if (thermalSeen || seenIndices.isNotEmpty()) {
-                break                                                   // SETTLED (event gap elapsed)
+            } else if (seenIndices.isNotEmpty()) {
+                // Generic quiet-period completion: no M3-family platform is required to produce
+                // thermal/wide/zoom as a three-file set.
+                break
             } else if (System.currentTimeMillis() - phaseStart >= EVENT_FIRST_TIMEOUT_MS) {
-                break                                                   // nothing landed -> fall back
+                break
             }
         }
         return ShutterEvents(
             indices = seenIndices,
-            thermal = thermalSeen,
-            wide = wideSeen,
-            zoom = zoomSeen,
             elapsedMs = System.currentTimeMillis() - phaseStart
         )
     }
@@ -591,65 +608,65 @@ object Payload {
 
         while (System.currentTimeMillis() < overallDeadline) {
             val narrow = narrowPullSupported
-            val data = if (narrow)
+            val data = if (narrow) {
                 mediaVM.pullAndAwait(
                     MEDIA_PULL_TIMEOUT_MS,
                     CAPTURE_PULL_COUNT,
                     FileListRequestTimeOrderType.NEW_FIRST
                 )
-            else
+            } else {
                 mediaVM.pullAndAwait(MEDIA_PULL_TIMEOUT_MS)
+            }
 
-            val anchor = data.filter { baselineIndex == null || it.fileIndex > baselineIndex }
-                .maxByOrNull { it.fileIndex }
+            val aboveBaseline =
+                if (baselineIndex != null) data.filter { it.fileIndex > baselineIndex }
+                else emptyList()
+            val anchor = aboveBaseline.maxByOrNull { it.fileIndex }
 
-            // Detect a firmware that ignores NEW_FIRST: a FULL newest-window whose max index is
-            // strictly BELOW the baseline can only be the oldest files (wrong order). A shot that
-            // simply hasn't landed yet leaves max == baseline, so this never misfires on a slow
-            // write. After a few such pulls, drop to full pulls for the rest of the session.
             if (narrow && baselineIndex != null && data.size >= CAPTURE_PULL_COUNT &&
                 (data.maxOfOrNull { it.fileIndex } ?: Int.MAX_VALUE) < baselineIndex) {
                 if (++emptyNarrowPulls >= NARROW_PULL_FALLBACK_TRIES) {
                     narrowPullSupported = false
-                    Log.w(TAG, "Narrow pull returned only files older than baseline $baselineIndex " +
-                        "($emptyNarrowPulls times); firmware ignores NEW_FIRST — using full pulls for the session")
+                    Log.w(
+                        TAG,
+                        "Narrow pull returned only files older than baseline $baselineIndex " +
+                            "($emptyNarrowPulls times); using full pulls for the session"
+                    )
                 }
             }
+
             if (anchor != null) {
-                // This shutter's lens files, identified two independent ways and unioned:
-                //   1. sharing the anchor's DCF base name (the co-exposed _T/_W/_Z siblings), and
-                //   2. newer than the pre-shutter baseline (captures are serial).
-                // Both are index-encoding agnostic, so this works across the H20T/H20N/H30T.
+                // Baseline/index grouping is the primary generic rule and works for one-file M3E,
+                // M3T and multi-asset M3M exposures. The legacy DCF base-name rule is only a
+                // supplementary way to recover same-shutter H20-family siblings.
                 val groupBase = lensGroupBase(anchor.fileName)
-                val byBase = data.filter { lensGroupBase(it.fileName) == groupBase }
-                val byBaseline =
-                    if (baselineIndex != null) data.filter { it.fileIndex > baselineIndex } else emptyList()
-                val group = (byBase + byBaseline).distinctBy { it.fileName }.ifEmpty { listOf(anchor) }
+                val byLegacyBase = data.filter { lensGroupBase(it.fileName) == groupBase }
+                val group = (aboveBaseline + byLegacyBase)
+                    .distinctBy { it.fileName }
+                    .ifEmpty { listOf(anchor) }
 
-                if (group.size > bestGroup.size) bestGroup = group
-                val names = bestGroup.map { it.fileName }.toSet()
-                val hasThermal = bestGroup.any { isThermalName(it.fileName) }
+                if (group.size >= bestGroup.size) bestGroup = group
+                val names = bestGroup.mapNotNull { it.fileName }.toSet()
 
-                // (1) Complete: all three exposed lenses present — return immediately, no extra pull.
-                val complete = hasThermal &&
-                    bestGroup.any { isWideName(it.fileName) } &&
-                    bestGroup.any { isZoomName(it.fileName) }
-                // (2) Quiescent: this refresh added nothing new to the group, thermal present.
-                if (complete || (hasThermal && names == prevGroupNames)) {
-                    Log.i(TAG, "Resolved ${bestGroup.size} file(s) above baseline $baselineIndex " +
-                        "(${if (complete) "complete" else "settled"}): " +
-                        bestGroup.joinToString { "${it.fileName}#${it.fileIndex}" })
+                if (names.isNotEmpty() && names == prevGroupNames) {
+                    Log.i(
+                        TAG,
+                        "Resolved ${bestGroup.size} file(s) above baseline $baselineIndex (settled): " +
+                            bestGroup.joinToString { "${it.fileName}#${it.fileIndex}" }
+                    )
                     return bestGroup
                 }
                 prevGroupNames = names
             }
         }
 
-        // Hit the safety cap before the group settled. Return the best (largest) group seen so the
-        // caller still gets whatever lenses did surface; empty only if nothing ever matched.
         if (bestGroup.isNotEmpty()) {
-            Log.w(TAG, "Group above baseline $baselineIndex did not settle with thermal; returning " +
-                "best-effort ${bestGroup.size} file(s): " + bestGroup.joinToString { "${it.fileName}#${it.fileIndex}" })
+            Log.w(
+                TAG,
+                "Media group above baseline $baselineIndex reached the hard timeout; returning " +
+                    "best-effort ${bestGroup.size} file(s): " +
+                    bestGroup.joinToString { "${it.fileName}#${it.fileIndex}" }
+            )
             return bestGroup
         }
         Log.e(TAG, "No new files surfaced above baseline $baselineIndex after shutter")
