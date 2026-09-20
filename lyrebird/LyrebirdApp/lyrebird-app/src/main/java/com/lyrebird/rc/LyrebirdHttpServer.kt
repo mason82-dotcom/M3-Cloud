@@ -13,6 +13,7 @@ import com.lyrebird.rc.controller.CameraLiveSourceController
 import com.lyrebird.rc.controller.ControlAuthority
 import com.lyrebird.rc.controller.DroneController
 import com.lyrebird.rc.controller.Payload
+import com.lyrebird.rc.controller.VisionAssistProbe
 import com.lyrebird.rc.logger.LyrebirdFlightLogger
 import com.lyrebird.rc.mavlink.GimbalRotation
 import com.lyrebird.rc.mavlink.GimbalRotationMode
@@ -34,6 +35,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.Executors
 import kotlin.concurrent.thread
+import org.json.JSONObject
 
 internal const val HTTP_PORT = 8080
 internal const val TELEMETRY_PORT = 8081
@@ -846,7 +848,10 @@ internal class SimpleHttpServer(
                         """"hasThermal":${host.hasThermalCamera()}}"""
                 }
                 "/config/settings" -> host.readSettingsJson()
-                "/get/camera/capabilities" -> CameraCapabilityProbe.snapshot().toJson()
+                "/get/camera/capabilities" -> JSONObject(CameraCapabilityProbe.snapshot().toJson())
+                    .put("visionAssist", VisionAssistProbe.snapshot().toJsonObject())
+                    .toString()
+                "/get/camera/vision-assist" -> VisionAssistProbe.snapshot().toJsonObject().toString()
                 "/get/camera/live-source" -> CameraLiveSourceController.readCurrent().toJson()
                 "/get/survey/latest" -> LyrebirdFlightLogger.latestSurveyInfoJson()
                 else -> "Use POST for commands. Telemetry available on port $TELEMETRY_PORT. " +

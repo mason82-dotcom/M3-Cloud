@@ -147,6 +147,19 @@ def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any
             "record_storage_read_status": caps.get("recordStorageReadStatus"),
             "capture_current_screen": caps.get("captureCurrentScreen"),
         }
+        vision = caps.get("visionAssist")
+        if isinstance(vision, dict):
+            enriched["payload"]["vision_assist"] = {
+                "component_index": vision.get("componentIndex"),
+                "available": vision.get("available"),
+                "available_camera_indices": vision.get("availableCameraIndices") or [],
+                "stream_enabled": vision.get("streamEnabled"),
+                "enabled": vision.get("enabled"),
+                "direction": vision.get("direction"),
+                "direction_range": vision.get("directionRange") or [],
+                "availability_read_status": vision.get("availabilityReadStatus"),
+                "status_read_status": vision.get("statusReadStatus"),
+            }
 
     serial = aircraft_serial(config)
     if serial is None:

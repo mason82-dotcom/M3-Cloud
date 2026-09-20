@@ -59,6 +59,17 @@ def test_camera_capability_probe_provides_explicit_m3m_identity():
             "captureStorageReadStatus": "OK",
             "recordStorageReadStatus": "NOT_APPLICABLE",
             "captureCurrentScreen": False,
+            "visionAssist": {
+                "componentIndex": "VISION_ASSIST",
+                "available": True,
+                "availableCameraIndices": ["LEFT_OR_MAIN", "VISION_ASSIST"],
+                "streamEnabled": True,
+                "enabled": True,
+                "direction": "FRONT",
+                "directionRange": ["FRONT", "LEFT", "RIGHT", "UP", "DOWN", "AUTO"],
+                "availabilityReadStatus": "OK",
+                "statusReadStatus": "OK",
+            },
         },
     )
     assert vehicle.model == "M3M"
@@ -69,6 +80,10 @@ def test_camera_capability_probe_provides_explicit_m3m_identity():
     assert vehicle.telemetry["payload"]["camera"]["capture_storage_read_status"] == "OK"
     assert vehicle.telemetry["payload"]["camera"]["record_storage_read_status"] == "NOT_APPLICABLE"
     assert "MS_NIR_CAMERA" in vehicle.telemetry["payload"]["camera"]["capture_stored_sources"]
+    assert vehicle.telemetry["payload"]["vision_assist"]["component_index"] == "VISION_ASSIST"
+    assert vehicle.telemetry["payload"]["vision_assist"]["available"] is True
+    assert vehicle.telemetry["payload"]["vision_assist"]["direction"] == "FRONT"
+    assert "AUTO" in vehicle.telemetry["payload"]["vision_assist"]["direction_range"]
 
 def test_has_thermal_alone_does_not_claim_m3t():
     vehicle = normalize_config("10.0.0.8", {"droneName": "unknown", "hasThermal": True}, {})
