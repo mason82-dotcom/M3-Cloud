@@ -112,6 +112,28 @@ async def test_mission_plan_is_persistent_hashed_and_non_executable() -> None:
         assert stored.item_count == 1
 
 
+def test_mission_runtime_id_matches_lyrebird_golden_vector() -> None:
+    plan = normalize_plan(
+        [
+            {
+                "seq": 0,
+                "frame": 6,
+                "command": 16,
+                "param1": 0.0,
+                "param2": 0.0,
+                "param3": 0.0,
+                "param4": None,
+                "latitude_deg": 46.518,
+                "longitude_deg": 6.566,
+                "altitude_m": 30.0,
+                "autocontinue": True,
+            }
+        ]
+    )
+    wire = compile_mission_item_int(plan)
+    assert mission_runtime_id(wire) == 0xD495F750
+
+
 def test_plan_validation_rejects_non_contiguous_sequence_and_reports_unsupported() -> None:
     with pytest.raises(ValueError):
         normalize_plan(
