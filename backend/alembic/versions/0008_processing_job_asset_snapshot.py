@@ -1,6 +1,6 @@
 """Freeze processing input metadata on each job asset.
 
-Revision ID: 0008_processing_job_asset_snapshot
+Revision ID: 0008_job_asset_snapshot
 Revises: 0007_media_dataset_flights
 """
 
@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0008_processing_job_asset_snapshot"
+revision = "0008_job_asset_snapshot"
 down_revision = "0007_media_dataset_flights"
 branch_labels = None
 depends_on = None
