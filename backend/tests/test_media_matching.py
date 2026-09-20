@@ -135,3 +135,106 @@ async def test_time_only_match_is_explicit_when_dataset_has_no_gps() -> None:
     assert match.status == "MATCHED_TIME_ONLY"
     assert match.flight_id == flight.id
     assert match.details["validation"] == "TIME_ONLY"
+
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_gps_resolves_ambiguous_time_window() -> None:
+    async with session_factory() as session:
+        await session.execute(delete(TelemetrySample))
+        await session.execute(delete(Flight))
+        await session.commit()
+
+        near = Flight(
+            aircraft_sn="M3E-NEAR",
+            status="COMPLETED",
+            started_at=datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 20, 12, 5, tzinfo=timezone.utc),
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        far = Flight(
+            aircraft_sn="M3E-FAR",
+            status="COMPLETED",
+            started_at=datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 20, 12, 5, tzinfo=timezone.utc),
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        session.add_all([near, far])
+        await session.flush()
+        session.add_all(
+            [
+                TelemetrySample(
+                    flight_id=near.id,
+                    recorded_at=datetime(2026, 9, 20, 12, 1, tzinfo=timezone.utc),
+                    source_timestamp_ms=1_800_000_000_000,
+                    source="lyrebird",
+                    position=WKTElement("POINT Z (8.0 49.0 150)", srid=4326),
+                ),
+                TelemetrySample(
+                    flight_id=far.id,
+                    recorded_at=datetime(2026, 9, 20, 12, 1, tzinfo=timezone.utc),
+                    source_timestamp_ms=1_800_000_000_000,
+                    source="lyrebird",
+                    position=WKTElement("POINT Z (9.0 50.0 150)", srid=4326),
+                ),
+            ]
+        )
+        await session.commit()
+        near_id = near.id
+
+        match = await match_flight_by_capture_window(
+            session,
+            capture_started_at=datetime(2026, 9, 20, 12, 1, tzinfo=timezone.utc),
+            capture_ended_at=datetime(2026, 9, 20, 12, 2, tzinfo=timezone.utc),
+            margin_seconds=30,
+            gps_points=[(49.0001, 8.0001)],
+            max_distance_m=100,
+            min_gps_fraction=0.8,
+        )
+
+    assert match.status == "MATCHED_TIME_GPS"
+    assert match.flight_id == near_id
+    assert len(match.candidate_ids) == 2
+    assert sum(
+        1 for item in match.details["candidates"] if item["spatial_pass"]
+    ) == 1
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_dataset_gps_requires_flight_track_for_auto_assignment() -> None:
+    async with session_factory() as session:
+        await session.execute(delete(TelemetrySample))
+        await session.execute(delete(Flight))
+        await session.commit()
+
+        flight = Flight(
+            aircraft_sn="M3E-NO-TRACK",
+            status="COMPLETED",
+            started_at=datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 20, 12, 5, tzinfo=timezone.utc),
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        session.add(flight)
+        await session.commit()
+        flight_id = flight.id
+
+        match = await match_flight_by_capture_window(
+            session,
+            capture_started_at=datetime(2026, 9, 20, 12, 1, tzinfo=timezone.utc),
+            capture_ended_at=datetime(2026, 9, 20, 12, 2, tzinfo=timezone.utc),
+            margin_seconds=30,
+            gps_points=[(49.0, 8.0)],
+            max_distance_m=100,
+            min_gps_fraction=0.8,
+        )
+
+    assert match.status == "GPS_UNVERIFIED"
+    assert match.flight_id is None
+    assert match.candidate_ids == (flight_id,)
+    assert match.details["candidates"][0]["spatial_status"] == "NO_FLIGHT_GPS"
