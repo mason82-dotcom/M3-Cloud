@@ -75,6 +75,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import com.lyrebird.rc.controller.CameraCaptureConfigurator
+import com.lyrebird.rc.controller.CameraCapabilityProbe
+import com.lyrebird.rc.controller.CameraLiveSourceController
 import com.lyrebird.rc.controller.CameraFocalLensPolicy
 import com.lyrebird.rc.controller.CameraFocalLensRole
 import com.lyrebird.rc.controller.ControlAuthority
@@ -1650,7 +1652,24 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             )
             append("\"missionExecutor\":\"${missionExecutor.prefValue}\",")
             append("\"videoSource\":\"${getVideoSourceMode().prefValue}\",")
-            append("\"cameraLiveSource\":\"${jsonEscape(sharedPreferences.getString(PREF_CAMERA_LIVE_SOURCE, "") ?: "")}\",")
+            val preferredCameraLiveSource =
+                sharedPreferences.getString(PREF_CAMERA_LIVE_SOURCE, "").orEmpty()
+            val actualCameraLiveSource = CameraLiveSourceController.cachedReadback()
+            append(
+                "\"cameraLiveSource\":\"" +
+                    jsonEscape(actualCameraLiveSource.source.orEmpty()) +
+                    "\","
+            )
+            append(
+                "\"cameraLiveSourcePreferred\":\"" +
+                    jsonEscape(preferredCameraLiveSource) +
+                    "\","
+            )
+            append(
+                "\"cameraLiveSourceStatus\":\"" +
+                    jsonEscape(actualCameraLiveSource.readStatus) +
+                    "\","
+            )
             append("\"streamingMode\":\"${getStreamingMode().prefValue}\",")
             append("\"webrtcResolution\":\"${getWebRTCResolutionPreset().prefValue}\",")
             append("\"webrtcFps\":${getWebRTCFps()},")
@@ -1699,6 +1718,8 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             append("\"controlProfile\":\"identity\",")
             append("\"videoSource\":\"video\",")
             append("\"cameraLiveSource\":\"video\",")
+            append("\"cameraLiveSourcePreferred\":\"video\",")
+            append("\"cameraLiveSourceStatus\":\"video\",")
             append("\"streamingMode\":\"video\",")
             append("\"webrtcResolution\":\"video\",")
             append("\"webrtcFps\":\"video\",")
