@@ -1,0 +1,1 @@
+"""Lyrebird vehicle adapter."""
