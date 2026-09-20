@@ -49,9 +49,8 @@ services:
     restart: unless-stopped
     command: ["server", "-s3"]
     environment:
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-m3cloud}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-change-me-minio}
-      S3_BUCKET: m3-media,m3-waylines,m3-results
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-m3cloud}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-change-me-s3}
     volumes:
       - object_storage_data:/data
     ports:
@@ -65,9 +64,9 @@ services:
       M3CLOUD_ENVIRONMENT: ${M3CLOUD_ENVIRONMENT:-development}
       M3CLOUD_POSTGRES_DSN: postgresql+asyncpg://${POSTGRES_USER:-m3cloud}:${POSTGRES_PASSWORD:-change-me-postgres}@postgres:5432/${POSTGRES_DB:-m3cloud}
       M3CLOUD_REDIS_URL: redis://redis:6379/0
-      M3CLOUD_MINIO_ENDPOINT: http://seaweedfs:8333
-      M3CLOUD_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-m3cloud}
-      M3CLOUD_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me-minio}
+      M3CLOUD_S3_ENDPOINT: http://seaweedfs:8333
+      M3CLOUD_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-m3cloud}
+      M3CLOUD_S3_SECRET_KEY: ${S3_SECRET_KEY:-change-me-s3}
       M3CLOUD_EMQX_HOST: emqx
       M3CLOUD_EMQX_PORT: 1883
       M3CLOUD_DJI_MQTT_ENABLED: ${M3CLOUD_DJI_MQTT_ENABLED:-false}
