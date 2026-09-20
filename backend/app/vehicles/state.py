@@ -152,6 +152,23 @@ def normalize_aircraft_state(telemetry: dict[str, Any] | None, *, source: str) -
             positioning["fix"] = rtk["fix"]
             positioning["rtk_stale"] = False
             positioning["position_source"] = "RTK_FUSED"
+        # DJI commonly publishes 0/0 plus a meaningless absolute altitude before any
+        # geodetic fix exists. Only sanitize that explicit no-fix sentinel combination; do not
+        # reject real coordinates merely because GPS is unavailable.
+        fix = positioning.get("fix")
+        no_fix = fix in (None, "NONE", "UNKNOWN")
+        if no_fix and result.get("latitude") == 0.0 and result.get("longitude") == 0.0:
+            result["latitude"] = None
+            result["longitude"] = None
+            result["amsl_altitude_m"] = None
+            altitude = result.get("altitude")
+            if isinstance(altitude, dict):
+                altitude["amsl_m"] = None
+
+        # A numeric zero is not a known distance when DJI says no home point exists.
+        if result.get("home_set") is False:
+            result["distance_to_home_m"] = None
+
         common.update({
             "mode": _lyrebird_mode(native.get("mode"), result.get("flight_mode")),
             "armed": native.get("armed"),
