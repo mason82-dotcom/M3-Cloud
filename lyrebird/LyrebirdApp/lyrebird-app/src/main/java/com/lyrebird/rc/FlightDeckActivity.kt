@@ -5411,7 +5411,8 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         }
     }
 
-    private fun restorePreferredCameraLiveSource(attemptsRemaining: Int = 2) {        val preferredName = sharedPreferences.getString(PREF_CAMERA_LIVE_SOURCE, null)
+    private fun restorePreferredCameraLiveSource(attemptsRemaining: Int = 2) {
+        val preferredName = sharedPreferences.getString(PREF_CAMERA_LIVE_SOURCE, null)
             ?.trim()
             .orEmpty()
         val preferred = CameraVideoStreamSourceType.values()
