@@ -77,6 +77,22 @@ class Settings(BaseSettings):
         default="m3:live",
         validation_alias="M3CLOUD_LIVE_REDIS_CHANNEL",
     )
+    lyrebird_enabled: bool = Field(
+        default=False,
+        validation_alias="M3CLOUD_LYREBIRD_ENABLED",
+    )
+    lyrebird_hosts: str = Field(
+        default="",
+        validation_alias="M3CLOUD_LYREBIRD_HOSTS",
+    )
+    lyrebird_http_port: int = Field(
+        default=8080,
+        validation_alias="M3CLOUD_LYREBIRD_HTTP_PORT",
+    )
+    lyrebird_timeout_seconds: float = Field(
+        default=1.5,
+        validation_alias="M3CLOUD_LYREBIRD_TIMEOUT_SECONDS",
+    )
 
 
 @lru_cache

@@ -4,6 +4,7 @@ from app.vehicles.dji_cloud import DJICloudVehicleProvider
 from app.vehicles.lyrebird import LyrebirdVehicleProvider
 from app.vehicles.registry import VehicleRegistry
 from app.redis_client import redis_client
+from app.config import settings
 
 
 router = APIRouter(prefix="/api/v1", tags=["operations"])
@@ -39,8 +40,8 @@ async def system_health(request: Request) -> dict[str, object]:
                 "status": "enabled" if dji_service is not None else "unavailable",
             },
             "lyrebird": {
-                "ok": False,
-                "status": "adapter_pending",
+                "ok": settings.lyrebird_enabled,
+                "status": "enabled" if settings.lyrebird_enabled else "disabled",
             },
         },
     }
