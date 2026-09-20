@@ -27,17 +27,17 @@ class Settings(BaseSettings):
         validation_alias="M3CLOUD_REDIS_URL",
     )
 
-    minio_endpoint: str = Field(
-        default="http://minio:9000",
-        validation_alias="M3CLOUD_MINIO_ENDPOINT",
+    s3_endpoint: str = Field(
+        default="http://seaweedfs:8333",
+        validation_alias=AliasChoices("M3CLOUD_S3_ENDPOINT", "M3CLOUD_MINIO_ENDPOINT"),
     )
-    minio_access_key: str = Field(
+    s3_access_key: str = Field(
         default="m3cloud",
-        validation_alias="M3CLOUD_MINIO_ACCESS_KEY",
+        validation_alias=AliasChoices("M3CLOUD_S3_ACCESS_KEY", "M3CLOUD_MINIO_ACCESS_KEY"),
     )
-    minio_secret_key: str = Field(
+    s3_secret_key: str = Field(
         default="change-me",
-        validation_alias="M3CLOUD_MINIO_SECRET_KEY",
+        validation_alias=AliasChoices("M3CLOUD_S3_SECRET_KEY", "M3CLOUD_MINIO_SECRET_KEY"),
     )
 
     emqx_host: str = Field(
