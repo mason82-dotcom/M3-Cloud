@@ -10,19 +10,19 @@ class CameraCaptureConfiguratorTest {
     fun directProfilesStayPlatformSpecific() {
         assertEquals(
             CameraCaptureProfile.M3E_MAPPING,
-            CameraCaptureConfigurator.defaultDirectProfile(
+            CameraCapturePolicy.defaultDirectProfile(
                 CameraPlatformCapabilities.fromCameraTypeName("M3E")
             )
         )
         assertEquals(
             CameraCaptureProfile.M3T_WIDE,
-            CameraCaptureConfigurator.defaultDirectProfile(
+            CameraCapturePolicy.defaultDirectProfile(
                 CameraPlatformCapabilities.fromCameraTypeName("M3T")
             )
         )
         assertEquals(
             CameraCaptureProfile.M3M_RGB,
-            CameraCaptureConfigurator.defaultDirectProfile(
+            CameraCapturePolicy.defaultDirectProfile(
                 CameraPlatformCapabilities.fromCameraTypeName("M3M")
             )
         )
@@ -30,12 +30,12 @@ class CameraCaptureConfiguratorTest {
 
     @Test
     fun m3mSurveyUsesRgbAndAllDocumentedMultispectralSources() {
-        val profile = CameraCaptureConfigurator.defaultSurveyProfile(
+        val profile = CameraCapturePolicy.defaultSurveyProfile(
             CameraPlatformCapabilities.fromCameraTypeName("M3M")
         )!!
         assertEquals(CameraCaptureProfile.M3M_RGB_MULTISPECTRAL, profile)
         assertEquals(
-            setOf("RGB_CAMERA", "NDVI_CAMERA", "MS_G_CAMERA", "MS_R_CAMERA", "MS_RE_CAMERA", "MS_NIR_CAMERA"),
+            listOf("RGB_CAMERA", "NDVI_CAMERA", "MS_G_CAMERA", "MS_R_CAMERA", "MS_RE_CAMERA", "MS_NIR_CAMERA"),
             profile.storedSourceNames
         )
     }
@@ -44,17 +44,17 @@ class CameraCaptureConfiguratorTest {
     fun thermalProfileExistsOnlyForM3t() {
         assertEquals(
             CameraCaptureProfile.M3T_THERMAL,
-            CameraCaptureConfigurator.thermalProfile(
+            CameraCapturePolicy.thermalProfile(
                 CameraPlatformCapabilities.fromCameraTypeName("M3T")
             )
         )
         assertNull(
-            CameraCaptureConfigurator.thermalProfile(
+            CameraCapturePolicy.thermalProfile(
                 CameraPlatformCapabilities.fromCameraTypeName("M3E")
             )
         )
         assertNull(
-            CameraCaptureConfigurator.thermalProfile(
+            CameraCapturePolicy.thermalProfile(
                 CameraPlatformCapabilities.fromCameraTypeName("M3M")
             )
         )
