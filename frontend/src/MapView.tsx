@@ -3,10 +3,10 @@ import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map, StyleSpecification } from "maplibre-gl";
 import type { FeatureCollection, Point } from "geojson";
 
-import type { Device, Telemetry } from "./types";
+import type { Telemetry, Vehicle } from "./types";
 
 interface MapViewProps {
-  devices: Device[];
+  devices: Vehicle[];
   telemetry: Record<string, Telemetry>;
   selectedSn: string | null;
 }
@@ -51,7 +51,7 @@ const FALLBACK_STYLE: StyleSpecification = {
 };
 
 function featureCollection(
-  devices: Device[],
+  devices: Vehicle[],
   telemetry: Record<string, Telemetry>,
 ): FeatureCollection<Point> {
   return {

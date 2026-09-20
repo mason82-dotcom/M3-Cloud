@@ -71,15 +71,35 @@ export default function App() {
         return;
       }
 
-      if (event.type === "device_online" || event.type === "device_offline") {
-        upsertDevice(event.device);
+      if (event.type === "vehicle_telemetry") {
+        upsertDevice(event.vehicle);
+        if (event.vehicle.telemetry) {
+          setTelemetry((current) => ({
+            ...current,
+            [event.vehicle.sn]: event.vehicle.telemetry as Telemetry,
+          }));
+        }
         return;
       }
 
+      if (event.type === "device_online" || event.type === "device_offline") {
+        setDevices((current) =>
+          current.map((vehicle) =>
+            vehicle.sn === event.device_sn
+              ? { ...vehicle, online: event.type === "device_online" }
+              : vehicle,
+          ),
+        );
+        return;
+      }
+
+      // Topology is a reconciliation hint. The canonical vehicle list is /api/v1/vehicles;
+      // do not inject DJI registry Device records into the cross-source Vehicle model here.
       if (event.type === "topology") {
-        for (const device of event.devices) {
-          upsertDevice(device);
-        }
+        void fetchVehicles().then((vehicles) => {
+          setDevices(vehicles);
+          setTelemetry(Object.fromEntries(vehicles.filter((v) => v.telemetry).map((v) => [v.sn, v.telemetry as Telemetry])));
+        });
       }
     },
     [upsertDevice],

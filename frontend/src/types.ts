@@ -41,15 +41,6 @@ export interface Vehicle {
   telemetry?: Telemetry | null;
 }
 
-export interface Device {
-  sn: string;
-  role: string;
-  model: string;
-  online: boolean;
-  gateway_sn?: string | null;
-  updated_at_ms?: number;
-}
-
 export interface PositionState {
   code: number | null;
   convergence: "NOT_STARTED" | "CONVERGING" | "CONVERGED" | "FAILED" | "UNKNOWN";
@@ -93,17 +84,25 @@ export interface TelemetryEvent {
 }
 
 
+export interface VehicleTelemetryEvent {
+  type: "vehicle_telemetry";
+  vehicle_id: string;
+  device_sn?: string;
+  source?: string;
+  vehicle: Vehicle;
+}
+
 export interface DeviceStatusEvent {
   type: "device_online" | "device_offline";
   timestamp: number;
-  device: Device;
+  device_sn: string;
 }
 
 export interface TopologyEvent {
   type: "topology";
   timestamp: number;
   gateway_sn: string;
-  devices: Device[];
+  devices?: unknown[];
 }
 
-export type LiveEvent = TelemetryEvent | DeviceStatusEvent | TopologyEvent;
+export type LiveEvent = TelemetryEvent | VehicleTelemetryEvent | DeviceStatusEvent | TopologyEvent;
