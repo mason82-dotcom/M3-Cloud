@@ -49,6 +49,8 @@ internal data class CameraLiveSourceSetResult(
  */
 internal object CameraLiveSourceController {
     private const val TIMEOUT_MS = 1_000L
+    private const val ATTEMPTS = 2
+    private const val RETRY_DELAY_MS = 200L
 
     private fun key(
         index: ComponentIndexType = ComponentIndexType.LEFT_OR_MAIN
@@ -58,36 +60,49 @@ internal object CameraLiveSourceController {
     fun readCurrent(
         index: ComponentIndexType = ComponentIndexType.LEFT_OR_MAIN
     ): CameraLiveSourceReadback {
-        val latch = CountDownLatch(1)
-        val value = AtomicReference<CameraVideoStreamSourceType?>(null)
-        val success = AtomicBoolean(false)
+        repeat(ATTEMPTS) { attempt ->
+            val latch = CountDownLatch(1)
+            val value = AtomicReference<CameraVideoStreamSourceType?>(null)
+            val success = AtomicBoolean(false)
 
-        KeyManager.getInstance().getValue(
-            key(index),
-            object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
-                override fun onSuccess(source: CameraVideoStreamSourceType?) {
-                    value.set(source)
-                    success.set(true)
-                    latch.countDown()
+            KeyManager.getInstance().getValue(
+                key(index),
+                object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
+                    override fun onSuccess(source: CameraVideoStreamSourceType?) {
+                        value.set(source)
+                        success.set(true)
+                        latch.countDown()
+                    }
+
+                    override fun onFailure(error: IDJIError) {
+                        latch.countDown()
+                    }
                 }
+            )
 
-                override fun onFailure(error: IDJIError) {
-                    latch.countDown()
+            val completed = try {
+                latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                false
+            }
+
+            if (completed && success.get()) {
+                return CameraLiveSourceReadback(
+                    source = value.get()?.name,
+                    readStatus = "OK"
+                )
+            }
+            if (attempt < ATTEMPTS - 1) {
+                try {
+                    Thread.sleep(RETRY_DELAY_MS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return CameraLiveSourceReadback(null, "UNAVAILABLE")
                 }
             }
-        )
-
-        val completed = try {
-            latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            false
         }
-
-        return CameraLiveSourceReadback(
-            source = value.get()?.name,
-            readStatus = if (completed && success.get()) "OK" else "UNAVAILABLE"
-        )
+        return CameraLiveSourceReadback(null, "UNAVAILABLE")
     }
 
     fun setAndReadback(
@@ -108,44 +123,78 @@ internal object CameraLiveSourceController {
                 )
             }
 
-        val latch = CountDownLatch(1)
-        val success = AtomicBoolean(false)
-        val errorText = AtomicReference<String?>(null)
+        var lastStatus = "FAILED"
+        var lastError: String? = null
 
-        KeyManager.getInstance().setValue(
-            key(index),
-            source,
-            object : CommonCallbacks.CompletionCallback {
-                override fun onSuccess() {
-                    success.set(true)
-                    latch.countDown()
+        repeat(ATTEMPTS) { attempt ->
+            val latch = CountDownLatch(1)
+            val success = AtomicBoolean(false)
+            val errorText = AtomicReference<String?>(null)
+
+            KeyManager.getInstance().setValue(
+                key(index),
+                source,
+                object : CommonCallbacks.CompletionCallback {
+                    override fun onSuccess() {
+                        success.set(true)
+                        latch.countDown()
+                    }
+
+                    override fun onFailure(error: IDJIError) {
+                        errorText.set(error.description())
+                        latch.countDown()
+                    }
                 }
+            )
 
-                override fun onFailure(error: IDJIError) {
-                    errorText.set(error.description())
-                    latch.countDown()
+            val completed = try {
+                latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                false
+            }
+
+            lastStatus = when {
+                !completed -> "TIMEOUT"
+                success.get() -> "OK"
+                else -> "FAILED"
+            }
+            lastError = errorText.get()
+
+            if (success.get()) {
+                val readback = readCurrent(index)
+                return CameraLiveSourceSetResult(
+                    requested = requested,
+                    setStatus = "OK",
+                    source = readback.source,
+                    readStatus = readback.readStatus,
+                    error = lastError
+                )
+            }
+
+            if (attempt < ATTEMPTS - 1) {
+                try {
+                    Thread.sleep(RETRY_DELAY_MS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return CameraLiveSourceSetResult(
+                        requested = requested,
+                        setStatus = lastStatus,
+                        source = null,
+                        readStatus = "UNAVAILABLE",
+                        error = lastError
+                    )
                 }
             }
-        )
-
-        val completed = try {
-            latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            false
         }
 
         val readback = readCurrent(index)
         return CameraLiveSourceSetResult(
             requested = requested,
-            setStatus = when {
-                !completed -> "TIMEOUT"
-                success.get() -> "OK"
-                else -> "FAILED"
-            },
+            setStatus = lastStatus,
             source = readback.source,
             readStatus = readback.readStatus,
-            error = errorText.get()
+            error = lastError
         )
     }
 }
