@@ -15,6 +15,7 @@ from app.api_projects import (
 from app.database import session_factory
 from app.models import (
     Flight,
+    MediaAsset,
     MediaDatasetRecord,
     ProcessingJob,
     Project,
@@ -28,6 +29,7 @@ async def test_project_survey_assignments_and_processing_inheritance(tmp_path) -
     async with session_factory() as session:
         await session.execute(delete(ProcessingJob))
         await session.execute(delete(MediaDatasetRecord))
+        await session.execute(delete(MediaAsset))
         await session.execute(delete(Flight))
         await session.execute(delete(Survey))
         await session.execute(delete(Project))
@@ -74,7 +76,33 @@ async def test_project_survey_assignments_and_processing_inheritance(tmp_path) -
             created_at=now,
             updated_at=now,
         )
-        session.add_all([flight, dataset])
+        assets = [
+            MediaAsset(
+                relative_path=f"M3E/site-alpha/DJI_{index:04d}_W.JPG",
+                filename=f"DJI_{index:04d}_W.JPG",
+                extension=".jpg",
+                size_bytes=100 + index,
+                mtime_ns=index,
+                sha256=(str(index) * 64)[:64],
+                capture_time_utc=now,
+                capture_time_source="TEST",
+                metadata_version=1,
+                metadata_status="READY",
+                metadata_error=None,
+                metadata_json={},
+                platform="M3E",
+                media_kind="WIDE",
+                capture_group=f"M3E/site-alpha/DJI_{index:04d}",
+                storage_mode="EXTERNAL",
+                external_root="media-import",
+                present=True,
+                duplicate_of=None,
+                discovered_at=now,
+                last_seen_at=now,
+            )
+            for index in (1, 2)
+        ]
+        session.add_all([flight, dataset, *assets])
         await session.commit()
         await session.refresh(flight)
         await session.refresh(dataset)
@@ -96,14 +124,23 @@ async def test_project_survey_assignments_and_processing_inheritance(tmp_path) -
         assert flight is not None and flight.survey_id == survey_id
         assert dataset is not None and dataset.survey_id == survey_id
 
-    # Processing inheritance is asserted directly through the same dataset lookup
-    # contract used by both WebODM and Thermogram job creation.
+    manager = ProcessingManager(
+        session_factory,
+        media_root=str(tmp_path),
+        webodm_enabled=True,
+        webodm_url="http://webodm.invalid",
+    )
+    job = await manager.create_webodm_job(
+        name="Survey ortho",
+        input_prefix="M3E/site-alpha",
+        platform="M3E",
+        profile="m3e-ortho",
+    )
+
+    assert job.flight_id is None
+    assert job.survey_id == survey_id
+
     async with session_factory() as session:
-        dataset = await session.scalar(
-            select(MediaDatasetRecord).where(
-                MediaDatasetRecord.prefix == "M3E/site-alpha",
-                MediaDatasetRecord.platform == "M3E",
-            )
-        )
-        assert dataset is not None
-        assert dataset.survey_id == survey_id
+        stored = await session.get(ProcessingJob, job.id)
+        assert stored is not None
+        assert stored.survey_id == survey_id
