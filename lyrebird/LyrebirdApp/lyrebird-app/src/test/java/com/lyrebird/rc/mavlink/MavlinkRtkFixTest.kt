@@ -24,6 +24,8 @@ class MavlinkRtkFixTest {
             fixType(
                 MavlinkSnapshot(
                     satelliteCount = 20,
+                    rtkEnabled = true,
+                    rtkConnected = true,
                     rtkHealthy = true,
                     rtkFix = RtkFix.FIXED
                 )
@@ -38,6 +40,8 @@ class MavlinkRtkFixTest {
             fixType(
                 MavlinkSnapshot(
                     satelliteCount = 20,
+                    rtkEnabled = true,
+                    rtkConnected = true,
                     rtkHealthy = true,
                     rtkFix = RtkFix.FLOAT
                 )
@@ -52,6 +56,8 @@ class MavlinkRtkFixTest {
             fixType(
                 MavlinkSnapshot(
                     satelliteCount = 20,
+                    rtkEnabled = true,
+                    rtkConnected = true,
                     rtkHealthy = true,
                     rtkFix = RtkFix.STALE
                 )
@@ -66,6 +72,8 @@ class MavlinkRtkFixTest {
             fixType(
                 MavlinkSnapshot(
                     satelliteCount = 20,
+                    rtkEnabled = true,
+                    rtkConnected = true,
                     rtkHealthy = false,
                     rtkFix = RtkFix.FIXED
                 )
