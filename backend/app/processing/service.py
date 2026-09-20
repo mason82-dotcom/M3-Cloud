@@ -252,6 +252,29 @@ def resolve_asset_path(root: Path, relative_path: str) -> Path:
     return candidate
 
 
+def _sha256_file(path: Path) -> tuple[int, str]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+            size += len(chunk)
+    return size, digest.hexdigest()
+
+
+def verify_frozen_input(
+    path: Path,
+    *,
+    expected_size: int,
+    expected_sha256: str,
+) -> None:
+    size, sha256 = _sha256_file(path)
+    if size != expected_size or sha256 != expected_sha256:
+        raise ValueError(
+            f"Processing input changed after job creation: {path.name}"
+        )
+
+
 class ProcessingManager:
     def __init__(
         self,
@@ -396,6 +419,11 @@ class ProcessingManager:
                         job_id=job.id,
                         media_asset_id=asset.id,
                         ordinal=index,
+                        relative_path=asset.relative_path,
+                        size_bytes=asset.size_bytes,
+                        sha256=asset.sha256,
+                        media_kind=asset.media_kind,
+                        capture_group=asset.capture_group,
                     )
                     for index, asset in enumerate(assets)
                 ]
@@ -488,17 +516,25 @@ class ProcessingManager:
             if job.kind != "THERMOGRAM":
                 raise ValueError("Processing job is not a Thermogram job")
 
-            assets = (
+            frozen = (
                 await session.scalars(
-                    select(MediaAsset)
-                    .join(
-                        ProcessingJobAsset,
-                        ProcessingJobAsset.media_asset_id == MediaAsset.id,
-                    )
+                    select(ProcessingJobAsset)
                     .where(ProcessingJobAsset.job_id == job_id)
                     .order_by(ProcessingJobAsset.ordinal)
                 )
             ).all()
+
+            assets = []
+            for item in frozen:
+                source = await session.get(MediaAsset, item.media_asset_id)
+                if source is None:
+                    raise ValueError("Frozen media source no longer exists")
+                source.relative_path = item.relative_path
+                source.size_bytes = item.size_bytes
+                source.sha256 = item.sha256
+                source.media_kind = item.media_kind
+                source.capture_group = item.capture_group
+                assets.append(source)
 
             handoff = build_thermogram_handoff(
                 job,
@@ -803,24 +839,26 @@ class ProcessingManager:
                 if job is None or job.status != "QUEUED":
                     return
 
-                rows = (
-                    await session.execute(
-                        select(MediaAsset)
-                        .join(
-                            ProcessingJobAsset,
-                            ProcessingJobAsset.media_asset_id == MediaAsset.id,
-                        )
+                frozen = (
+                    await session.scalars(
+                        select(ProcessingJobAsset)
                         .where(ProcessingJobAsset.job_id == job_id)
                         .order_by(ProcessingJobAsset.ordinal)
                     )
-                ).scalars().all()
+                ).all()
                 paths = [
-                    resolve_asset_path(self.media_root, asset.relative_path)
-                    for asset in rows
+                    resolve_asset_path(self.media_root, item.relative_path)
+                    for item in frozen
                 ]
-                for path in paths:
+                for path, item in zip(paths, frozen, strict=True):
                     if not path.is_file():
                         raise FileNotFoundError(path)
+                    await asyncio.to_thread(
+                        verify_frozen_input,
+                        path,
+                        expected_size=item.size_bytes,
+                        expected_sha256=item.sha256,
+                    )
 
                 now = datetime.now(timezone.utc)
                 job.status = "UPLOADING"

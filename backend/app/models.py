@@ -175,6 +175,11 @@ class ProcessingJobAsset(Base):
         primary_key=True,
     )
     ordinal: Mapped[int] = mapped_column(Integer)
+    relative_path: Mapped[str] = mapped_column(String(1024))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64))
+    media_kind: Mapped[str] = mapped_column(String(32))
+    capture_group: Mapped[str | None] = mapped_column(String(768), nullable=True)
 
 
 

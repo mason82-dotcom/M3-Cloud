@@ -206,9 +206,11 @@ completeness status. It references `/media-import/<prefix>`; it does not copy, r
 or rewrite the source files. This is the intended path for desktop tools such as Thermogram that
 need the original DJI folder contents.
 
-WebODM remains fully server-driven. When a WebODM processing job is created, M3-Cloud freezes the
-selected `MediaAsset` IDs in `processing_job_assets` before upload, so later watch-folder changes
-cannot silently modify a queued/running job.
+WebODM remains fully server-driven. When any processing job is created, M3-Cloud freezes the
+selected media ID together with its relative path, byte size, SHA-256, media kind, and capture
+group in `processing_job_assets`. Before WebODM upload the current source file is hashed again;
+a changed original aborts the job instead of silently processing different bytes. Thermogram
+handoff manifests are generated from the same frozen snapshot.
 
 
 ### M3M multispectral processing

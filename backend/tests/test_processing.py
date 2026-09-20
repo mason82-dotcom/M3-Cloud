@@ -13,6 +13,7 @@ from app.processing.service import (
     result_object_key,
     select_thermogram_assets,
     selected_result_assets,
+    verify_frozen_input,
 )
 from app.processing.webodm import WebODMClient
 
@@ -253,3 +254,24 @@ def test_external_result_snapshot_is_stable_and_hashed(tmp_path: Path) -> None:
     assert size == len(b"temperature,42.1\n")
     assert len(sha256) == 64
     assert destination.read_bytes() == source.read_bytes()
+
+
+def test_frozen_processing_input_detects_source_change(tmp_path: Path) -> None:
+    path = tmp_path / "DJI_0001.JPG"
+    path.write_bytes(b"original")
+    expected_size = len(b"original")
+    expected_sha = __import__("hashlib").sha256(b"original").hexdigest()
+
+    verify_frozen_input(
+        path,
+        expected_size=expected_size,
+        expected_sha256=expected_sha,
+    )
+
+    path.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="changed after job creation"):
+        verify_frozen_input(
+            path,
+            expected_size=expected_size,
+            expected_sha256=expected_sha,
+        )
