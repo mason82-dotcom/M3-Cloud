@@ -40,6 +40,9 @@ internal object MavlinkMsgId {
     /** On-device detection: state, then one message per target per cycle. */
     const val AUTOSENSING_STATUS = 42102
     const val AUTOSENSING_TARGET = 42103
+
+    /** Lyrebird-only RTK diagnostics; GPS_RAW_INT remains standards-compatible. */
+    const val LYREBIRD_RTK_STATUS = 42104
     const val HEARTBEAT = 0
     const val SYS_STATUS = 1
     const val SET_MODE = 11

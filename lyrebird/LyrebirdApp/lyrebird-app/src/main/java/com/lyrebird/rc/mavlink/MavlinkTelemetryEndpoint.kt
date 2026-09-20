@@ -463,6 +463,9 @@ internal class MavlinkTelemetryEndpoint(
             Stream(MavlinkMsgId.LYREBIRD_STATUS, LYREBIRD_STATUS_INTERVAL_MS) {
                 MavlinkMessages.lyrebirdStatus(it, timeBootMs())
             },
+            Stream(MavlinkMsgId.LYREBIRD_RTK_STATUS, LYREBIRD_STATUS_INTERVAL_MS) {
+                MavlinkMessages.lyrebirdRtkStatus(it, timeBootMs())
+            },
             // Identity and service ports. Static for a session, so slow: a ground station that
             // joins late still learns it within a few seconds, and nothing is spent repeating it.
             Stream(MavlinkMsgId.LYREBIRD_CONFIG, LYREBIRD_CONFIG_INTERVAL_MS) {

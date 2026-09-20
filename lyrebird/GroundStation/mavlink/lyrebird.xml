@@ -178,5 +178,15 @@
       <field type="uint8_t" name="target_count">Total targets in this cycle.</field>
       <field type="char[16]" name="type">Class the detector assigned, such as "PERSON".</field>
     </message>
+    <message id="42104" name="LYREBIRD_RTK_STATUS">
+      <description>RTK diagnostic state that cannot be represented by GPS_RAW_INT without losing stale/link-health semantics.</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp since system boot.</field>
+      <field type="uint32_t" name="age_ms" units="ms">Age of the RTK sample, UINT32_MAX when unknown.</field>
+      <field type="float" name="std_latitude_m" units="m">Latitude standard deviation, NaN when unknown.</field>
+      <field type="float" name="std_longitude_m" units="m">Longitude standard deviation, NaN when unknown.</field>
+      <field type="float" name="std_altitude_m" units="m">Altitude standard deviation, NaN when unknown.</field>
+      <field type="uint8_t" name="flags">Bit 0 enabled, bit 1 connected, bit 2 healthy.</field>
+      <field type="uint8_t" name="fix">0 UNKNOWN, 1 NONE, 2 SINGLE, 3 FLOAT, 4 FIXED, 5 STALE.</field>
+    </message>
   </messages>
 </mavlink>

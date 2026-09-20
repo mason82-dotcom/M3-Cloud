@@ -348,6 +348,11 @@ LYREBIRD_STATUS_ID = 42100
 LYREBIRD_STATUS_STRUCT = "<IiiffIIIHHHhhHHHBBB24s"
 LYREBIRD_STATUS_SIZE = 75
 
+LYREBIRD_RTK_STATUS_ID = 42104
+LYREBIRD_RTK_STATUS_STRUCT = "<IIfffBB"
+LYREBIRD_RTK_STATUS_SIZE = 22
+LYREBIRD_RTK_STATUS_CRC_EXTRA = 241
+
 LB_FLAG_MANUAL_OVERRIDE = 1
 LB_FLAG_READY_TO_TAKEOFF = 2
 LB_FLAG_HOME_SET = 4
@@ -355,6 +360,20 @@ LB_FLAG_LRF_TARGET_VALID = 8
 LB_FLAG_WAYPOINT_REACHED = 16
 LB_FLAG_YAW_REACHED = 32
 LB_FLAG_ALTITUDE_REACHED = 64
+
+
+def decode_lyrebird_rtk_status(payload: bytes) -> dict[str, Any]:
+    _boot, age, std_lat, std_lon, std_alt, flags, fix = struct.unpack(
+        LYREBIRD_RTK_STATUS_STRUCT, payload.ljust(LYREBIRD_RTK_STATUS_SIZE, b"\x00")
+    )
+    names = {0: "UNKNOWN", 1: "NONE", 2: "SINGLE", 3: "FLOAT", 4: "FIXED", 5: "STALE"}
+    return {
+        "rtkEnabled": bool(flags & 1), "rtkConnected": bool(flags & 2), "rtkHealthy": bool(flags & 4),
+        "rtkFix": names.get(fix, "UNKNOWN"), "rtkAgeMs": None if age == 0xFFFFFFFF else age,
+        "rtkStdLatitudeM": None if math.isnan(std_lat) else std_lat,
+        "rtkStdLongitudeM": None if math.isnan(std_lon) else std_lon,
+        "rtkStdAltitudeM": None if math.isnan(std_alt) else std_alt,
+    }
 
 
 def decode_lyrebird_status(payload: bytes) -> dict[str, Any]:
@@ -1155,6 +1174,13 @@ class MavlinkTelemetrySource:
             return self._collect_target(data)
         if message_id == AUTOSENSING_STATUS_ID:
             return self._publish_detection_cycle(data)
+        if message_id == LYREBIRD_RTK_STATUS_ID:
+            if not _checksum_ok(data, LYREBIRD_RTK_STATUS_CRC_EXTRA):
+                return False
+            with suppress(struct.error):
+                self._telemetry.update(decode_lyrebird_rtk_status(data[10 : 10 + data[1]]))
+                return True
+            return False
         if message_id == LYREBIRD_CONFIG_ID:
             if not _checksum_ok(data, LYREBIRD_CONFIG_CRC_EXTRA):
                 return False

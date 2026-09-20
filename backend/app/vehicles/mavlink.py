@@ -35,6 +35,11 @@ AUTOSENSING_TARGET_STRUCT = "<IIfffffBB16s"
 AUTOSENSING_TARGET_SIZE = 46
 AUTOSENSING_TARGET_CRC_EXTRA = 83
 
+LYREBIRD_RTK_STATUS_ID = 42104
+LYREBIRD_RTK_STATUS_STRUCT = "<IIfffBB"
+LYREBIRD_RTK_STATUS_SIZE = 22
+LYREBIRD_RTK_STATUS_CRC_EXTRA = 241
+
 LB_FLAG_MANUAL_OVERRIDE = 1
 LB_FLAG_READY_TO_TAKEOFF = 2
 LB_FLAG_HOME_SET = 4
@@ -70,6 +75,21 @@ def _mavlink2_frames(data: bytes):
         yield data[offset:offset + size]
         offset += size
 
+def decode_lyrebird_rtk_status(payload: bytes) -> dict[str, Any]:
+    _boot, age, std_lat, std_lon, std_alt, flags, fix = struct.unpack(
+        LYREBIRD_RTK_STATUS_STRUCT, payload.ljust(LYREBIRD_RTK_STATUS_SIZE, b"\x00")
+    )
+    names = {0: "UNKNOWN", 1: "NONE", 2: "SINGLE", 3: "FLOAT", 4: "FIXED", 5: "STALE"}
+    name = names.get(fix, "UNKNOWN")
+    return {"rtk": {
+        "enabled": bool(flags & 1), "connected": bool(flags & 2), "healthy": bool(flags & 4),
+        "fix": name, "age_ms": None if age == 0xFFFFFFFF else age,
+        "std_latitude_m": None if math.isnan(std_lat) else std_lat,
+        "std_longitude_m": None if math.isnan(std_lon) else std_lon,
+        "std_altitude_m": None if math.isnan(std_alt) else std_alt,
+    }, "positioning": {"fix": name if name == "STALE" else None, "rtk_stale": name == "STALE"}}
+
+
 def decode_autosensing_target(payload: bytes) -> dict[str, Any]:
     values = struct.unpack(AUTOSENSING_TARGET_STRUCT, payload.ljust(AUTOSENSING_TARGET_SIZE, b"\x00"))
     (_boot, frame_id, left, top, right, bottom, confidence, index, count, kind) = values
@@ -101,6 +121,9 @@ def decode_lyrebird_frame(frame: bytes) -> dict[str, Any]:
             "http_port": http_port, "telemetry_port": telemetry_port,
             "video_mode": _trim(video), "has_thermal": bool(flags & LB_CONFIG_FLAG_HAS_THERMAL),
         }}}
+    if message_id == LYREBIRD_RTK_STATUS_ID:
+        if not _checksum_ok(frame, LYREBIRD_RTK_STATUS_CRC_EXTRA): return {}
+        return decode_lyrebird_rtk_status(payload)
     if message_id == AUTOSENSING_STATUS_ID:
         if not _checksum_ok(frame, AUTOSENSING_STATUS_CRC_EXTRA): return {}
         return {"_autosensing_status": decode_autosensing_status(payload)}

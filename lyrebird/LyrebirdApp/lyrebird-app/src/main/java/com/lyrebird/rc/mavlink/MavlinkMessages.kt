@@ -692,6 +692,31 @@ internal object MavlinkMessages {
             .build()
     }
 
+    /** Private RTK diagnostics. GPS_RAW_INT remains the portable effective-fix surface. */
+    fun lyrebirdRtkStatus(snapshot: MavlinkSnapshot, timeBootMs: Long): ByteArray {
+        val flags = (if (snapshot.rtkEnabled) 1 else 0) or
+            (if (snapshot.rtkConnected) 2 else 0) or
+            (if (snapshot.rtkHealthy) 4 else 0)
+        val fix = when (snapshot.rtkFix) {
+            RtkFix.NONE -> 1
+            RtkFix.SINGLE -> 2
+            RtkFix.FLOAT -> 3
+            RtkFix.FIXED -> 4
+            RtkFix.STALE -> 5
+            else -> 0
+        }
+        fun std(value: Double?): Float = value?.toFloat() ?: Float.NaN
+        return PayloadWriter()
+            .u32(timeBootMs)
+            .u32(if (snapshot.rtkAgeMs == Long.MAX_VALUE) 0xFFFFFFFFL else snapshot.rtkAgeMs.coerceIn(0, 0xFFFFFFFFL))
+            .f32(std(snapshot.rtkStdLatitudeM))
+            .f32(std(snapshot.rtkStdLongitudeM))
+            .f32(std(snapshot.rtkStdAltitudeM))
+            .u8(flags)
+            .u8(fix)
+            .build()
+    }
+
     /**
      * http_port(u16), telemetry_port(u16), flags(u8), drone_name(char[20]),
      * ip_address(char[16]), video_mode(char[12])

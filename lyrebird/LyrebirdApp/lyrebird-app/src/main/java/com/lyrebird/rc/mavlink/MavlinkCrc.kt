@@ -67,6 +67,7 @@ internal object MavlinkCrc {
         MavlinkMsgId.LYREBIRD_CONFIG to 201,
         MavlinkMsgId.AUTOSENSING_STATUS to 254,
         MavlinkMsgId.AUTOSENSING_TARGET to 83,
+        MavlinkMsgId.LYREBIRD_RTK_STATUS to 241,
         MavlinkMsgId.PARAM_REQUEST_LIST to 159,
         MavlinkMsgId.MISSION_REQUEST_LIST to 132
     )
