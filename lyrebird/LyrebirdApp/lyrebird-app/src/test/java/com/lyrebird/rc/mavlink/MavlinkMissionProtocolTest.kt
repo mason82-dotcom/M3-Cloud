@@ -93,6 +93,12 @@ class MavlinkMissionProtocolTest {
     }
 
     @Test
+    fun missionFingerprintMatchesM3CloudGoldenVector() {
+        val value = missionPlanFingerprint(listOf(waypoint(0)))
+        assertEquals("unsigned CRC32 0xD495F750", 0xD495F750L, value.toLong() and 0xFFFFFFFFL)
+    }
+
+    @Test
     fun planIdIsDeterministicForMissionContent() {
         assertEquals(0, store.currentPlanId())
         uploadPlan(1)
