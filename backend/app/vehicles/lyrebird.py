@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 from app.config import settings
 from app.vehicles.base import VehicleSnapshot
+from app.vehicles.payloads import AircraftPlatform, attach_payload_capabilities
 
 def _configured_hosts() -> list[str]:
     return [item.strip() for item in settings.lyrebird_hosts.split(",") if item.strip()]
@@ -78,7 +79,7 @@ def merge_transport_telemetry(mavlink: dict[str, Any] | None, tcp: dict[str, Any
 
 def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any] | None = None) -> VehicleSnapshot:
     name = str(config.get("droneName") or host)
-    return VehicleSnapshot(id=f"lyrebird:{host}", sn=f"lyrebird@{host}", name=name, model="LYREBIRD_AIRCRAFT", source="lyrebird", online=True, updated_at_ms=int(time.time() * 1000), telemetry=telemetry)
+    return VehicleSnapshot(id=f"lyrebird:{host}", sn=f"lyrebird@{host}", name=name, model="LYREBIRD_AIRCRAFT", source="lyrebird", online=True, updated_at_ms=int(time.time() * 1000), telemetry=attach_payload_capabilities(telemetry, AircraftPlatform.UNKNOWN))
 
 class LyrebirdVehicleProvider:
     source = "lyrebird"
