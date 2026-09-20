@@ -3,8 +3,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response, status
 
 from app.api_devices import router as devices_router
+from app.api_flights import router as flights_router
 from app.config import settings
+from app.database import session_factory
 from app.dji.service import DJIService
+from app.flights.service import FlightRecorder
 from app.health import readiness
 from app.live import LiveTelemetryHub, router as live_router
 from app.redis_client import redis_client
@@ -12,12 +15,19 @@ from app.redis_client import redis_client
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    dji_service = DJIService.create(redis_client)
+    flight_recorder = FlightRecorder(session_factory)
+    await flight_recorder.recover_interrupted()
+
+    dji_service = DJIService.create(
+        redis_client,
+        telemetry_observer=flight_recorder,
+    )
     live_hub = LiveTelemetryHub(
         redis_client,
         channel=settings.live_redis_channel,
     )
     app.state.dji_service = dji_service
+    app.state.flight_recorder = flight_recorder
     app.state.live_hub = live_hub
 
     await live_hub.start()
@@ -39,6 +49,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(devices_router)
+app.include_router(flights_router)
 app.include_router(live_router)
 
 

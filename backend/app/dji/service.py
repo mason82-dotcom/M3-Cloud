@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from redis.asyncio import Redis
 
+from app.dji.telemetry import TelemetryObserver
+
 from app.config import settings
 from app.dji.mqtt import DJIMqttTransport
 from app.dji.registry import DeviceRegistry
@@ -19,9 +21,13 @@ class DJIService:
     transport: DJIMqttTransport
 
     @classmethod
-    def create(cls, redis: Redis) -> "DJIService":
+    def create(
+        cls,
+        redis: Redis,
+        telemetry_observer: TelemetryObserver | None = None,
+    ) -> "DJIService":
         registry = DeviceRegistry(redis)
-        telemetry = TelemetryStore(redis)
+        telemetry = TelemetryStore(redis, observer=telemetry_observer)
 
         transport: DJIMqttTransport
 

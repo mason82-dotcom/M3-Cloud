@@ -3,13 +3,18 @@ from __future__ import annotations
 import json
 import time
 from copy import deepcopy
-from typing import Any, Mapping
+from typing import Any, Mapping, Protocol
 
 from redis.asyncio import Redis
 
 from app.config import settings
 from app.dji.protocol import PropertyMessage
 from app.dji.topics import TopicKind
+
+
+class TelemetryObserver(Protocol):
+    async def ingest(self, telemetry: dict[str, Any]) -> None:
+        ...
 
 
 POSITION_CONVERGENCE = {
@@ -184,8 +189,13 @@ def normalize_telemetry(
 class TelemetryStore:
     """Merge DJI OSD/state property streams and cache normalized current aircraft state."""
 
-    def __init__(self, redis: Redis):
+    def __init__(
+        self,
+        redis: Redis,
+        observer: TelemetryObserver | None = None,
+    ):
         self.redis = redis
+        self.observer = observer
 
     @staticmethod
     def key(sn: str) -> str:
@@ -269,6 +279,9 @@ class TelemetryStore:
                 }
             ),
         )
+        if kind is TopicKind.OSD and self.observer is not None:
+            await self.observer.ingest(normalized)
+
         return normalized
 
     async def get(self, sn: str) -> dict[str, Any] | None:

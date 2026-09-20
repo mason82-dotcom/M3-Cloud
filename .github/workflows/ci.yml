@@ -98,6 +98,20 @@ jobs:
   backend-core:
     name: M3-Cloud backend core
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: m3cloud
+          POSTGRES_USER: m3cloud
+          POSTGRES_PASSWORD: m3cloud
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U m3cloud -d m3cloud"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     steps:
       - name: Check out repository
@@ -116,7 +130,14 @@ jobs:
       - name: Compile backend
         run: PYTHONPATH=backend python -m compileall -q backend/app
 
+      - name: Apply database migrations
+        env:
+          M3CLOUD_POSTGRES_DSN: postgresql+asyncpg://m3cloud:m3cloud@localhost:5432/m3cloud
+        run: PYTHONPATH=backend alembic -c backend/alembic.ini upgrade head
+
       - name: Backend tests
+        env:
+          M3CLOUD_POSTGRES_DSN: postgresql+asyncpg://m3cloud:m3cloud@localhost:5432/m3cloud
         run: PYTHONPATH=backend python -m pytest -q backend/tests
 
 

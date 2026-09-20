@@ -76,3 +76,20 @@ to a simple raster fallback defined by `VITE_MAP_FALLBACK_TILE_URL`.
 
 The public OpenStreetMap tile URL in `.env.example` is suitable for light development use only.
 For production deployments configure a self-hosted or commercial tile endpoint.
+
+
+## Flight history
+
+M3-Cloud persists detected flights in PostgreSQL/PostGIS. OSD samples are written only while a
+flight is active. Start detection uses DJI M3 `mode_code` together with altitude/speed
+confirmation; landing requires three low-motion standby OSD samples.
+
+```text
+GET /api/v1/flights
+GET /api/v1/flights?aircraft_sn=<SN>
+GET /api/v1/flights/<UUID>
+```
+
+Flight detail includes takeoff/landing positions and a GeoJSON path when at least two valid
+positions were recorded. RTK reporting remains a convergence statistic derived from DJI
+`position_state`; it is not labelled FIX/FLOAT.
