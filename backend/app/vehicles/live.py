@@ -42,6 +42,7 @@ class LyrebirdLiveBridge:
         self._camera_caps: dict[str, dict[str, Any]] = {}
         self._tcp_seen: dict[str, float] = {}
         self._http_seen: dict[str, float] = {}
+        self._identity_attempted_at: dict[str, float] = {}
 
     async def start(self) -> None:
         if not settings.lyrebird_enabled:
@@ -60,28 +61,62 @@ class LyrebirdLiveBridge:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _identity(self, host: str) -> tuple[dict[str, Any], dict[str, Any]]:
-        if host in self._config:
-            return self._config[host], self._camera_caps.get(host, {})
+        now = time.monotonic()
+        cached_config = self._config.get(host)
+        cached_caps = self._camera_caps.get(host)
+        # A complete identity can be reused. If camera identity was missing during
+        # startup, retry periodically instead of freezing UNKNOWN for the process lifetime.
+        if cached_config is not None and cached_caps:
+            return cached_config, cached_caps
+        last_attempt = self._identity_attempted_at.get(host)
+        if cached_config is not None and last_attempt is not None and now - last_attempt < 5.0:
+            return cached_config, cached_caps or {}
+
+        self._identity_attempted_at[host] = now
         async with httpx.AsyncClient() as client:
+            config = cached_config or {}
+            camera = cached_caps or {}
+            identity_settings: dict[str, Any] = {}
             try:
-                cfg, caps, identity = await asyncio.gather(
-                    client.get(f"http://{host}:{settings.lyrebird_http_port}/config", timeout=settings.lyrebird_timeout_seconds),
-                    client.get(f"http://{host}:{settings.lyrebird_http_port}/get/camera/capabilities", timeout=settings.lyrebird_timeout_seconds),
-                    client.get(f"http://{host}:{settings.lyrebird_http_port}/config/settings", timeout=settings.lyrebird_timeout_seconds),
-                )
-                config = cfg.json() if cfg.is_success else {}
-                camera = caps.json() if caps.is_success else {}
-                identity_settings = identity.json() if identity.is_success else {}
-                if isinstance(config, dict):
-                    config = merge_identity_config(
-                        config,
-                        identity_settings if isinstance(identity_settings, dict) else None,
+                # Keep RC HTTP requests sequential; the embedded server may serialize
+                # requests and concurrent probes can otherwise lose camera identity.
+                if not config:
+                    cfg = await client.get(
+                        f"http://{host}:{settings.lyrebird_http_port}/config",
+                        timeout=settings.lyrebird_timeout_seconds,
                     )
-                    self._config[host] = config
-                if isinstance(config, dict) and config: self._http_seen[host] = time.monotonic()
-                if isinstance(camera, dict): self._camera_caps[host] = camera
+                    if cfg.is_success:
+                        value = cfg.json()
+                        if isinstance(value, dict):
+                            config = value
+
+                caps = await client.get(
+                    f"http://{host}:{settings.lyrebird_http_port}/get/camera/capabilities",
+                    timeout=settings.lyrebird_timeout_seconds,
+                )
+                if caps.is_success:
+                    value = caps.json()
+                    if isinstance(value, dict) and value:
+                        camera = value
+
+                identity = await client.get(
+                    f"http://{host}:{settings.lyrebird_http_port}/config/settings",
+                    timeout=settings.lyrebird_timeout_seconds,
+                )
+                if identity.is_success:
+                    value = identity.json()
+                    if isinstance(value, dict):
+                        identity_settings = value
             except (httpx.HTTPError, ValueError):
                 pass
+
+            if isinstance(config, dict) and config:
+                config = merge_identity_config(config, identity_settings)
+                self._config[host] = config
+                self._http_seen[host] = time.monotonic()
+            if isinstance(camera, dict) and camera:
+                self._camera_caps[host] = camera
+
         return self._config.get(host, {"droneName": host}), self._camera_caps.get(host, {})
 
     def health(self) -> dict[str, Any]:
