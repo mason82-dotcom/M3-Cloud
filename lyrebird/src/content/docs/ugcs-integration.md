@@ -136,42 +136,59 @@ heading (`param4`) per waypoint — perpendicular or parallel to the corridor ax
 heading for the whole grid. That is already handled per-waypoint (see the heading table above); the
 distance trigger itself is heading-independent and needs no special-casing for corridors.
 
-## RTK: GPS_RAW_INT position source
+## RTK: resolved aircraft position and fix type
 
-`GPS_RAW_INT`/`GLOBAL_POSITION_INT` report the flight controller's own fused position
-(`FlightDeckActivity.getLocation3D()`), **not** DJI's raw RTK antenna position
-(`RTKLocation.mobileStationLocation`) — deliberately: with RTK active, the FC-fused position is what
-actually drives the aircraft's navigation, so it is the position a ground station's map should show
-too.
+`GPS_RAW_INT` and `GLOBAL_POSITION_INT` use Lyrebird's **resolved aircraft position**. The raw
+flight-controller location is always sampled first. When RTK is enabled, connected, healthy,
+fresh, reports `FLOAT` or `FIXED_POINT`, and DJI's `RTKLocationInfo.real3DLocation` contains
+valid coordinates, Lyrebird substitutes **only horizontal latitude/longitude** with that DJI
+RTK-fused position. Otherwise it uses the flight-controller coordinates unchanged.
+
+Vertical MAVLink altitude intentionally stays on the flight-controller/take-off reference path:
+`takeoff AMSL + relative-to-takeoff altitude` when available, with the flight-controller altitude
+as fallback. `real3DLocation.altitude` is logged for analysis but is not mixed into MAVLink altitude
+until its reference can be proven compatible.
 
 ```
-GLOBAL_POSITION_INT → FC fused position
-GPS_RAW_INT          → FC fused position + real RTK fix_type
+                              fresh healthy RTK FLOAT/FIXED?
+Flight-controller position ───────────────┬───────────────┐
+                                         │ no            │ yes
+                                         ▼               ▼
+                                  FC latitude/lon   real3D latitude/lon
+                                         └───────┬───────┘
+                                                 ▼
+                                      resolved MAVLink position
+
+GPS_RAW_INT          → resolved position + real RTK fix_type
+GLOBAL_POSITION_INT  → resolved position
 ```
 
-Only the **fix type** on `GPS_RAW_INT` comes from RTK, via
-[`RtkTelemetryMonitor`](/missions/) cross-checking DJI's `RTKPositioningSolution` against RTK link
-health and update freshness (a stale fix, no matter how good it last was, is reported as unknown
-rather than trusted):
+Only the **fix type** on `GPS_RAW_INT` comes from RTK state, via
+`RtkTelemetryMonitor` cross-checking DJI's `RTKPositioningSolution` against RTK enablement,
+link health and update freshness. A stale fix is never left advertised as RTK FIX:
 
-| DJI `RTKPositioningSolution` (fresh, healthy, connected) | MAVLink `fix_type` |
+| DJI `RTKPositioningSolution` (fresh, enabled, healthy, connected) | MAVLink `fix_type` |
 |---|---|
 | `NONE` | `GPS_FIX_TYPE_NO_FIX` |
 | `SINGLE_POINT` | `GPS_FIX_TYPE_3D` |
 | `FLOAT` | `GPS_FIX_TYPE_RTK_FLOAT` |
 | `FIXED_POINT` | `GPS_FIX_TYPE_RTK_FIXED` |
-| stale / disconnected / unknown | falls back to the satellite-count heuristic |
+| stale / disconnected / unknown | falls back to ordinary GNSS quality |
 
-Field-verified on a Mavic 3E + RTK module + RC Pro Enterprise against UgCS's PX4 VSM: RTK off shows
-as 3D Fix, RTK FLOAT as RTK Float, RTK FIXED as RTK Fix, and losing the RTK update drops back to
-plain GNSS — matching the table above exactly.
+The per-mission survey CSV is written beside the current Lyrebird flight JSONL log. For every
+camera-generated-media event it preserves these sources separately:
 
-DJI's raw RTK positions (`RTKLocation.mobileStationLocation`, the antenna's own unfused fix, and
-`RTKLocationInfo.real3DLocation`, DJI's own RTK-fused position) are **not** discarded — they are
-logged alongside the FC-fused position in the photogrammetry mapping CSV
-(`Lyrebird/Mapping/YYYY-MM-DD/mapping_YYYY-MM-DD.csv`) for every camera trigger, so a comparison run
-on the real aircraft can tell all three positions apart, including any ellipsoid-vs-MSL altitude
-offset between them, before any change to what feeds `GPS_RAW_INT`.
+- `latitude/longitude` + `position_source`: the resolved position actually exported to MAVLink.
+- `fc_latitude/fc_longitude/fc_altitude_m`: the raw flight-controller read.
+- `rtk_latitude/rtk_longitude/rtk_altitude_m`: DJI
+  `RTKLocation.mobileStationLocation` (raw RTK/mobile-station position).
+- `rtk_fused_latitude/rtk_fused_longitude/rtk_fused_altitude_m`: DJI
+  `RTKLocationInfo.real3DLocation`.
+- `rtk_enabled/rtk_connected/rtk_healthy`, fix, age and standard deviations: quality context for
+  that same capture.
+
+A single immutable RTK snapshot is used for both position resolution and the survey record, so an
+RTK callback cannot make the coordinates and fix metadata refer to different update epochs.
 
 ## NTRIP / Custom Network RTK credentials
 
