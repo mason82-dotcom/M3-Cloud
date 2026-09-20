@@ -43,7 +43,7 @@ def test_dji_positioning_does_not_translate_quality_into_mavlink_fix_type():
     assert common["positioning"]["rtk"]["convergence"]=="CONVERGED"
     assert common["positioning"]["rtk"]["quality"]==10
     assert common["positioning"]["rtk"]["raw_fix"] is None
-    assert common["positioning"]["native"]=={"dji_quality":10,"dji_convergence":"CONVERGING","dji_is_fixed_code":None}
+    assert common["positioning"]["native"]=={"dji_quality":10,"dji_convergence":"CONVERGED","dji_is_fixed_code":None}
 
 def test_lyrebird_stale_rtk_overrides_retained_fixed_gps_state():
     telemetry={
