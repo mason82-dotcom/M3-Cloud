@@ -19,7 +19,7 @@ from app.processing.webodm import WebODMClient
 logger = logging.getLogger(__name__)
 
 REMOTE_STATUS = {
-    10: "QUEUED",
+    10: "QUEUED_REMOTE",
     20: "RUNNING",
     30: "FAILED",
     40: "COMPLETED",
@@ -174,9 +174,27 @@ class ProcessingManager:
                     finished_at=now,
                 )
             )
+            # Older builds used QUEUED for both local queue state and WebODM status 10.
+            # A job with remote IDs has already been uploaded and must only be polled.
+            await session.execute(
+                update(ProcessingJob)
+                .where(
+                    ProcessingJob.status == "QUEUED",
+                    ProcessingJob.remote_project_id.is_not(None),
+                    ProcessingJob.remote_task_id.is_not(None),
+                )
+                .values(
+                    status="QUEUED_REMOTE",
+                    updated_at=now,
+                )
+            )
             queued = (
                 await session.scalars(
-                    select(ProcessingJob.id).where(ProcessingJob.status == "QUEUED")
+                    select(ProcessingJob.id).where(
+                        ProcessingJob.status == "QUEUED",
+                        ProcessingJob.remote_project_id.is_(None),
+                        ProcessingJob.remote_task_id.is_(None),
+                    )
                 )
             ).all()
             await session.commit()
