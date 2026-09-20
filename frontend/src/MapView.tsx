@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
-import maplibregl, { type GeoJSONSource, type Map } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { GeoJSONSource, Map } from "maplibre-gl";
 import type { FeatureCollection, Point } from "geojson";
 
 import type { Device, Telemetry } from "./types";
