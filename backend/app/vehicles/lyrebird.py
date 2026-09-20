@@ -63,14 +63,28 @@ def normalize_telemetry(raw: dict[str, Any], now_ms: int | None = None) -> dict[
         },
     }
 
+def merge_transport_telemetry(mavlink: dict[str, Any] | None, tcp: dict[str, Any] | None) -> dict[str, Any] | None:
+    """MAVLink owns standard aircraft facts; TCP fills only fields MAVLink did not provide."""
+    if mavlink is None:
+        return tcp
+    merged = dict(tcp or {})
+    for key, value in mavlink.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    merged["source"] = "lyrebird_mavlink2+tcp_gap" if tcp else "lyrebird_mavlink2"
+    return merged
+
 def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any] | None = None) -> VehicleSnapshot:
     name = str(config.get("droneName") or host)
     return VehicleSnapshot(id=f"lyrebird:{host}", sn=f"lyrebird@{host}", name=name, model="LYREBIRD_AIRCRAFT", source="lyrebird", online=True, updated_at_ms=int(time.time() * 1000), telemetry=telemetry)
 
 class LyrebirdVehicleProvider:
     source = "lyrebird"
-    def __init__(self, client: httpx.AsyncClient | None = None):
+    def __init__(self, client: httpx.AsyncClient | None = None, mavlink_collector: Any | None = None):
         self._client = client
+        self._mavlink_collector = mavlink_collector
 
     async def _read_telemetry(self, host: str) -> dict[str, Any] | None:
         writer = None
@@ -96,7 +110,10 @@ class LyrebirdVehicleProvider:
             config = response.json()
             if not isinstance(config, dict):
                 return None
-            return normalize_config(host, config, await self._read_telemetry(host))
+            tcp = await self._read_telemetry(host)
+            mavlink = self._mavlink_collector.snapshot(host) if self._mavlink_collector is not None else None
+            telemetry = merge_transport_telemetry(mavlink, tcp)
+            return normalize_config(host, config, telemetry)
         except (httpx.HTTPError, ValueError):
             return None
 

@@ -97,6 +97,18 @@ class Settings(BaseSettings):
         default=8081,
         validation_alias="M3CLOUD_LYREBIRD_TELEMETRY_PORT",
     )
+    lyrebird_mavlink_port: int = Field(
+        default=14550,
+        validation_alias="M3CLOUD_LYREBIRD_MAVLINK_PORT",
+    )
+    lyrebird_mavlink_peer_port: int = Field(
+        default=14550,
+        validation_alias="M3CLOUD_LYREBIRD_MAVLINK_PEER_PORT",
+    )
+    lyrebird_mavlink_ttl_seconds: float = Field(
+        default=5.0,
+        validation_alias="M3CLOUD_LYREBIRD_MAVLINK_TTL_SECONDS",
+    )
 
 
 @lru_cache

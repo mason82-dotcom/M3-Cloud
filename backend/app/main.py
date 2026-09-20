@@ -12,6 +12,8 @@ from app.health import readiness
 from app.live import LiveTelemetryHub, router as live_router
 from app.api_operations import router as operations_router
 from app.redis_client import redis_client
+from app.api_vehicles import router as vehicles_router
+from app.vehicles.mavlink import lyrebird_mavlink_collector
 
 
 @asynccontextmanager
@@ -32,6 +34,7 @@ async def lifespan(app: FastAPI):
     app.state.live_hub = live_hub
 
     await live_hub.start()
+    await lyrebird_mavlink_collector.start()
 
     if settings.dji_mqtt_enabled:
         await dji_service.transport.start()
@@ -41,6 +44,7 @@ async def lifespan(app: FastAPI):
     finally:
         if settings.dji_mqtt_enabled:
             await dji_service.transport.stop()
+        await lyrebird_mavlink_collector.stop()
         await live_hub.stop()
 
 
@@ -53,6 +57,7 @@ app.include_router(devices_router)
 app.include_router(flights_router)
 app.include_router(live_router)
 app.include_router(operations_router)
+app.include_router(vehicles_router)
 
 
 @app.get("/")
