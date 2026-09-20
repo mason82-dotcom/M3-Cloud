@@ -84,6 +84,7 @@ class LyrebirdLiveBridge:
                     cfg = await client.get(
                         f"http://{host}:{settings.lyrebird_http_port}/config",
                         timeout=settings.lyrebird_timeout_seconds,
+                        headers={"Connection": "close"},
                     )
                     if cfg.is_success:
                         value = cfg.json()
