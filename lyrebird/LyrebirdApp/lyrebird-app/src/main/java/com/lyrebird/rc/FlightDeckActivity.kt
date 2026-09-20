@@ -245,7 +245,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
     companion object {
         private const val TAG = "LyrebirdDefaultLayout"
-        private const val SURVEY_MEDIA_SETTLE_MS = 2_500L
+        private const val SURVEY_MEDIA_QUIET_MS = 1_500L
+        private const val SURVEY_MEDIA_MAX_SETTLE_MS = 10_000L
+        private const val SURVEY_MEDIA_SETTLE_POLL_MS = 100L
 
         /** text_drone_status's own size, from uxsdk_activity_default_layout.xml. */
         private const val DRONE_STATUS_NORMAL_TEXT_SIZE_SP = 11f
@@ -474,12 +476,16 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     @Volatile
     private var surveyMediaTrackingActive = false
 
+    @Volatile
+    private var lastSurveyMediaEventElapsedMs = 0L
+
     private val surveyCaptureRecords =
         Collections.synchronizedList(mutableListOf<SurveyCaptureRecord>())
     private val surveyFinalizing = AtomicBoolean(false)
 
     private val surveyGeneratedMediaListener: (Payload.GeneratedMediaEvent) -> Unit = { event ->
         if (surveyMediaTrackingActive && LyrebirdFlightLogger.isSessionActive) {
+            lastSurveyMediaEventElapsedMs = SystemClock.elapsedRealtime()
             logSurveyMediaEvent(event)
         }
     }
@@ -5964,7 +5970,26 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
         captureExecutor.execute {
             try {
-                Thread.sleep(SURVEY_MEDIA_SETTLE_MS)
+                // Wait until the camera has been quiet long enough rather than sleeping a fixed
+                // amount after mission end. A late GeneratedMediaFile callback extends the quiet
+                // window, while the hard deadline prevents a faulty/noisy listener from blocking
+                // reconciliation forever.
+                val settleDeadline =
+                    SystemClock.elapsedRealtime() + SURVEY_MEDIA_MAX_SETTLE_MS
+                while (surveyMediaTrackingActive) {
+                    val now = SystemClock.elapsedRealtime()
+                    val quietFor = (now - lastSurveyMediaEventElapsedMs).coerceAtLeast(0L)
+                    if (quietFor >= SURVEY_MEDIA_QUIET_MS || now >= settleDeadline) break
+                    val remainingQuiet = SURVEY_MEDIA_QUIET_MS - quietFor
+                    val remainingHard = settleDeadline - now
+                    Thread.sleep(
+                        minOf(
+                            SURVEY_MEDIA_SETTLE_POLL_MS,
+                            remainingQuiet,
+                            remainingHard
+                        ).coerceAtLeast(1L)
+                    )
+                }
                 surveyMediaTrackingActive = false
 
                 val captures = synchronized(surveyCaptureRecords) {
@@ -7058,6 +7083,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             running = true
             if (surveyCaptures.isNotEmpty()) {
                 surveyCaptureRecords.clear()
+                lastSurveyMediaEventElapsedMs = SystemClock.elapsedRealtime()
                 surveyMediaTrackingActive = true
             } else {
                 surveyMediaTrackingActive = false

@@ -47,11 +47,16 @@ internal data class SurveyReportFiles(
  */
 internal object SurveyReportWriter {
 
-    fun classify(record: SurveyCaptureRecord): SurveyRtkQuality = when {
-        record.rtkFix == "STALE" -> SurveyRtkQuality.STALE
-        record.rtkHealthy && record.rtkFix == "FIXED" -> SurveyRtkQuality.FIXED
-        record.rtkHealthy && record.rtkFix == "FLOAT" -> SurveyRtkQuality.FLOAT
-        else -> SurveyRtkQuality.MISSING
+    fun classify(record: SurveyCaptureRecord): SurveyRtkQuality {
+        val fix = record.rtkFix.uppercase()
+        return when {
+            fix == "STALE" -> SurveyRtkQuality.STALE
+            record.rtkHealthy && fix in setOf("FIXED", "FIXED_POINT", "RTK_FIXED") ->
+                SurveyRtkQuality.FIXED
+            record.rtkHealthy && fix in setOf("FLOAT", "RTK_FLOAT") ->
+                SurveyRtkQuality.FLOAT
+            else -> SurveyRtkQuality.MISSING
+        }
     }
 
     fun reconcile(
@@ -116,7 +121,7 @@ internal object SurveyReportWriter {
     ): Payload.ResolvedMedia? {
         if (candidates.size <= 1) return candidates.firstOrNull()
         val normalized = lens.uppercase()
-        return when {
+        val lensMatch = when {
             "INFRARED" in normalized || "THERMAL" in normalized ->
                 candidates.firstOrNull { "_T." in it.fileName.uppercase() }
             "ZOOM" in normalized ->
@@ -127,7 +132,13 @@ internal object SurveyReportWriter {
                     "_W." in name || "_V." in name || "_D." in name
                 }
             else -> null
-        } ?: candidates.firstOrNull()
+        }
+        return lensMatch
+            ?: candidates.firstOrNull {
+                it.fileType.equals("JPEG", ignoreCase = true) ||
+                    it.fileType.equals("JPG", ignoreCase = true)
+            }
+            ?: candidates.firstOrNull()
     }
 
     private fun toCsv(rows: List<SurveyResolvedCapture>): String {
