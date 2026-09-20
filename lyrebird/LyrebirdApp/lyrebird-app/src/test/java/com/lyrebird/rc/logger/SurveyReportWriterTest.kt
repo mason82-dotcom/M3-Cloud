@@ -22,6 +22,10 @@ class SurveyReportWriterTest {
         longitudeDeg = 8.6,
         altitudeAslM = 143.0,
         altitudeAglM = 70.0,
+        positionSource = "RTK_FUSED",
+        flightControllerLatitudeDeg = 49.09999,
+        flightControllerLongitudeDeg = 8.59999,
+        flightControllerAltitudeM = 143.0,
         satelliteCount = 28,
         headingDeg = 90.0,
         aircraftRollDeg = 0.0,
@@ -34,13 +38,17 @@ class SurveyReportWriterTest {
         gimbalJointPitchDeg = -90.0,
         gimbalJointYawDeg = 0.0,
         rtkEnabled = true,
+        rtkConnected = true,
         rtkHealthy = healthy,
         rtkFix = fix,
         rtkRawFix = fix,
         rtkAgeMs = ageMs,
-        rtkLatitudeDeg = 49.1,
-        rtkLongitudeDeg = 8.6,
-        rtkAltitudeM = 143.0,
+        rtkLatitudeDeg = 49.10001,
+        rtkLongitudeDeg = 8.60001,
+        rtkAltitudeM = 143.01,
+        rtkFusedLatitudeDeg = 49.1,
+        rtkFusedLongitudeDeg = 8.6,
+        rtkFusedAltitudeM = 143.02,
         rtkStdLatitudeM = 0.01,
         rtkStdLongitudeM = 0.01,
         rtkStdAltitudeM = 0.02,
@@ -110,6 +118,8 @@ class SurveyReportWriterTest {
         assertTrue(files.summaryJson.isFile)
         assertTrue(files.csv.readText().contains("DJI_0020.JPG"))
         assertTrue(files.csv.readText().contains("FIXED"))
+        assertTrue(files.csv.readText().contains("position_source"))
+        assertTrue(files.csv.readText().contains("rtk_fused_latitude"))
         assertTrue(files.summaryJson.readText().contains("\"rtkFixed\": 1"))
         assertFalse(files.summaryJson.readText().contains("\"unresolvedFiles\": 1"))
     }
