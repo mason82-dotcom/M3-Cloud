@@ -196,6 +196,7 @@ class LyrebirdVehicleProvider:
             response = await client.get(
                 f"http://{host}:{settings.lyrebird_http_port}/config/settings",
                 timeout=settings.lyrebird_timeout_seconds,
+                headers={"Connection": "close"},
             )
             response.raise_for_status()
             value = response.json()
@@ -208,6 +209,7 @@ class LyrebirdVehicleProvider:
             response = await client.get(
                 f"http://{host}:{settings.lyrebird_http_port}/get/camera/capabilities",
                 timeout=settings.lyrebird_timeout_seconds,
+                headers={"Connection": "close"},
             )
             response.raise_for_status()
             value = response.json()
@@ -217,7 +219,11 @@ class LyrebirdVehicleProvider:
 
     async def _probe(self, client: httpx.AsyncClient, host: str) -> VehicleSnapshot | None:
         try:
-            response = await client.get(f"http://{host}:{settings.lyrebird_http_port}/config", timeout=settings.lyrebird_timeout_seconds)
+            response = await client.get(
+                f"http://{host}:{settings.lyrebird_http_port}/config",
+                timeout=settings.lyrebird_timeout_seconds,
+                headers={"Connection": "close"},
+            )
             response.raise_for_status()
             config = response.json()
             if not isinstance(config, dict):
