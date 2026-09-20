@@ -99,7 +99,7 @@ def test_provider_serializes_rc_http_identity_reads(monkeypatch):
     class SingleFlightClient:
         def __init__(self):
             self.active = 0
-        async def get(self, url, timeout):
+        async def get(self, url, timeout, **kwargs):
             self.active += 1
             try:
                 if self.active > 1:
@@ -145,7 +145,7 @@ def test_provider_reads_identity_before_tcp(monkeypatch):
             return self._payload
 
     class OrderedClient:
-        async def get(self, url, timeout):
+        async def get(self, url, timeout, **kwargs):
             if url.endswith("/config"):
                 events.append("config")
                 return Response({"droneName": "field", "aircraftSerialNumber": "1581F-M3M"})
