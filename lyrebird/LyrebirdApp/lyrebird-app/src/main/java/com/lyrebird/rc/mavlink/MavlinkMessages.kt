@@ -1,6 +1,7 @@
 package com.lyrebird.rc.mavlink
 
 import com.lyrebird.rc.telemetry.RtkFix
+import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlin.math.sqrt
@@ -146,9 +147,9 @@ internal object MavlinkMessages {
             .u16(MavlinkSnapshot.UINT16_UNKNOWN)
             .u16(MavlinkSnapshot.UINT16_UNKNOWN)
             .u16((groundSpeed * MPS_TO_CMPS).roundToInt().coerceIn(0, MavlinkSnapshot.UINT16_UNKNOWN))
-            .u16(headingCdeg(snapshot.headingDeg))
+            .u16(courseOverGroundCdeg(snapshot))
             .u8(gpsFixType(snapshot))
-            .u8(snapshot.satelliteCount.coerceIn(0, U8_MAX))
+            .u8(satellitesVisible(snapshot.satelliteCount))
             .build()
     }
 
@@ -912,17 +913,46 @@ internal object MavlinkMessages {
      * correction/location stream has stopped. In that case we fall back to the ordinary GNSS fix.
      */
     fun gpsFixType(snapshot: MavlinkSnapshot): Int = when {
-        snapshot.rtkHealthy && snapshot.rtkFix == RtkFix.FIXED -> GPS_FIX_TYPE_RTK_FIXED
-        snapshot.rtkHealthy && snapshot.rtkFix == RtkFix.FLOAT -> GPS_FIX_TYPE_RTK_FLOAT
-        snapshot.rtkHealthy && snapshot.rtkFix == RtkFix.SINGLE -> GPS_FIX_TYPE_3D
-        else -> gpsFixType(snapshot.satelliteCount)
+        snapshot.rtkEnabled && snapshot.rtkConnected && snapshot.rtkHealthy &&
+            snapshot.rtkFix == RtkFix.FIXED -> GPS_FIX_TYPE_RTK_FIXED
+        snapshot.rtkEnabled && snapshot.rtkConnected && snapshot.rtkHealthy &&
+            snapshot.rtkFix == RtkFix.FLOAT -> GPS_FIX_TYPE_RTK_FLOAT
+        snapshot.rtkEnabled && snapshot.rtkConnected && snapshot.rtkHealthy &&
+            snapshot.rtkFix == RtkFix.SINGLE -> GPS_FIX_TYPE_3D
+        else -> gnssFixType(snapshot.gnssSignalLevel, snapshot.satelliteCount)
     }
 
-    /** MAVLink GPS fix type fallback from satellite count when no usable RTK solution exists. */
-    fun gpsFixType(satelliteCount: Int): Int = when {
+    /**
+     * DJI GPSSignalLevel is the authoritative normal-GNSS quality input. LEVEL_3+ is documented
+     * as good enough for stable hover; LEVEL_2 is not claimed to be a MAVLink 2D fix, so Lyrebird
+     * does not invent one. Satellite-count thresholds are retained only for older/unknown SDK
+     * states where GPSSignalLevel was not available.
+     */
+    internal fun gnssFixType(signalLevel: String, satelliteCount: Int): Int = when (signalLevel) {
+        "LEVEL_3", "LEVEL_4", "LEVEL_5", "LEVEL_10" -> GPS_FIX_TYPE_3D
+        "LEVEL_NONE", "LEVEL_0", "LEVEL_1", "LEVEL_2" -> GPS_FIX_TYPE_NO_FIX
+        else -> gpsFixTypeFromSatelliteCount(satelliteCount)
+    }
+
+    private fun gpsFixTypeFromSatelliteCount(satelliteCount: Int): Int = when {
         satelliteCount >= GPS_FIX_3D_SATELLITES -> GPS_FIX_TYPE_3D
         satelliteCount >= GPS_FIX_2D_SATELLITES -> GPS_FIX_TYPE_2D
         else -> GPS_FIX_TYPE_NO_FIX
+    }
+
+    private fun satellitesVisible(satelliteCount: Int): Int =
+        if (satelliteCount < 0) U8_MAX else satelliteCount.coerceIn(0, U8_MAX - 1)
+
+    /**
+     * GPS_RAW_INT.cog is course over ground, not the aircraft's compass heading. At near-zero
+     * horizontal speed no course exists, so MAVLink's UINT16_MAX unknown sentinel is sent.
+     */
+    private fun courseOverGroundCdeg(snapshot: MavlinkSnapshot): Int {
+        val groundSpeed = groundSpeedMps(snapshot)
+        if (groundSpeed < COG_MIN_SPEED_MPS) return MavlinkSnapshot.UINT16_UNKNOWN
+        var degrees = Math.toDegrees(atan2(snapshot.velocityEastMps, snapshot.velocityNorthMps))
+        if (degrees < 0.0) degrees += FULL_CIRCLE_DEG
+        return (degrees * DEG_TO_CDEG).roundToInt().coerceIn(0, MAX_CDEG)
     }
 
     /**
@@ -968,6 +998,7 @@ internal object MavlinkMessages {
     private const val GPS_FIX_2D_SATELLITES = 4
     private const val GPS_FIX_3D_SATELLITES = 6
     private const val GPS_STABILIZED_SATELLITES = 5
+    private const val COG_MIN_SPEED_MPS = 0.1
     private const val PERCENT_MAX = 100
     private const val U8_MAX = 255
     private const val VOLTAGE_CELLS = 10

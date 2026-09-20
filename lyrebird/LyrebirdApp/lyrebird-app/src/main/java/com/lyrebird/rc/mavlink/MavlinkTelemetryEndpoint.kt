@@ -375,17 +375,12 @@ internal class MavlinkTelemetryEndpoint(
                 MavlinkMessages.extendedSysState(it)
             },
             Stream(MavlinkMsgId.BATTERY_STATUS, SLOW_INTERVAL_MS) { MavlinkMessages.batteryStatus(it) },
-            // Sent as soon as the coordinates are a real place, not once the homeSet latch
-            // closes. The latch means "home was recorded on this flight" and stays false for a
-            // long time after DJI already knows where home is; gating on it left a ground station
-            // with no home marker and no distance-to-home at all, while the HTTP surface showed
-            // both. What must still be excluded is the SDK's uninitialised location, which is
-            // what homeCoordinatesValid tests — an out-of-range latitude once overflowed the
-            // degE7 encoding and put home at -126 degrees.
+            // DJI exposes an authoritative KeyIsHomeLocationSet state. Require that plus valid
+            // coordinates; do not infer "home set" from proximity or from a non-zero coordinate.
             Stream(
                 MavlinkMsgId.HOME_POSITION,
                 HOME_INTERVAL_MS,
-                sendIf = { it.homeCoordinatesValid }
+                sendIf = { it.homePositionValid }
             ) {
                 MavlinkMessages.homePosition(it)
             },

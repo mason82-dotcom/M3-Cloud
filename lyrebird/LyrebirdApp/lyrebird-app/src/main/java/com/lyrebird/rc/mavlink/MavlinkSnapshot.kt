@@ -37,7 +37,9 @@ internal data class MavlinkSnapshot(
     val latitudeDeg: Double = 0.0,
     val longitudeDeg: Double = 0.0,
     val altitudeAslM: Double = 0.0,
+    /** KeyAltitude: relative to take-off/home reference; despite the legacy name, not terrain AGL. */
     val altitudeAglM: Double = 0.0,
+    val positionSource: String = "FLIGHT_CONTROLLER",
 
     // Velocity in the NED frame, metres per second. Down is positive.
     val velocityNorthMps: Double = 0.0,
@@ -51,10 +53,14 @@ internal data class MavlinkSnapshot(
     val headingDeg: Double = 0.0,
 
     val satelliteCount: Int = INVALID_SATELLITES,
+    /** DJI GPSSignalLevel enum name; kept as text so this package stays SDK-free. */
+    val gnssSignalLevel: String = "UNKNOWN",
 
     // RTK state is kept SDK-free. FIX/FLOAT are promoted into GPS_RAW_INT; STALE or unhealthy RTK
     // deliberately falls back to the ordinary GNSS fix inferred from satellite count.
     val rtkFix: RtkFix = RtkFix.UNKNOWN,
+    val rtkEnabled: Boolean = false,
+    val rtkConnected: Boolean = false,
     val rtkHealthy: Boolean = false,
     val rtkAgeMs: Long = Long.MAX_VALUE,
     val rtkStdLatitudeM: Double? = null,
@@ -205,6 +211,9 @@ internal data class MavlinkSnapshot(
         get() = (homeLatitudeDeg != 0.0 || homeLongitudeDeg != 0.0) &&
             homeLatitudeDeg in -90.0..90.0 &&
             homeLongitudeDeg in -180.0..180.0
+
+    val homePositionValid: Boolean
+        get() = homeSet && homeCoordinatesValid
 
     companion object {
         const val INVALID_BATTERY = -1

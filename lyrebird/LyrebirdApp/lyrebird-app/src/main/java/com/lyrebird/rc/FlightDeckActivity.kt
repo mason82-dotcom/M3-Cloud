@@ -136,6 +136,7 @@ import com.lyrebird.rc.webrtc.TelemetryProvider
 import com.lyrebird.rc.telemetry.TelemetryCoordinator
 import com.lyrebird.rc.telemetry.MockTelemetrySnapshot
 import com.lyrebird.rc.telemetry.RtkTelemetryMonitor
+import com.lyrebird.rc.telemetry.PositionResolver
 import com.lyrebird.rc.util.NetworkUtils
 import com.lyrebird.rc.util.ToastUtils
 import com.lyrebird.rc.server.LyrebirdDiscoveryManager
@@ -164,6 +165,7 @@ import dji.sdk.keyvalue.value.camera.LaserMeasureState
 import dji.sdk.keyvalue.value.camera.ThermalTemperatureMeasureMode
 import dji.sdk.keyvalue.value.common.CameraLensType
 import dji.sdk.keyvalue.value.flightcontroller.FlightMode
+import dji.sdk.keyvalue.value.flightcontroller.GPSSignalLevel
 import dji.sdk.keyvalue.value.flightcontroller.LowBatteryRTHInfo
 import dji.sdk.keyvalue.value.gimbal.GimbalAngleRotation
 import dji.sdk.keyvalue.value.gimbal.GimbalAngleRotationMode
@@ -690,6 +692,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
     private val location3DKey: DJIKey<LocationCoordinate3D> = FlightControllerKey.KeyAircraftLocation3D.create()
     private val satelliteCountKey: DJIKey<Int> = FlightControllerKey.KeyGPSSatelliteCount.create()
+    private val gpsSignalLevelKey: DJIKey<GPSSignalLevel> = FlightControllerKey.KeyGPSSignalLevel.create()
+    private val takeoffAltitudeKey: DJIKey<Double> = FlightControllerKey.KeyTakeoffLocationAltitude.create()
+    private val isHomeLocationSetKey: DJIKey<Boolean> = FlightControllerKey.KeyIsHomeLocationSet.create()
     private var gimbalAttitudeKey: DJIKey<Attitude> = GimbalKey.KeyGimbalAttitude.create()
     private var gimbalJointAttitudeKey: DJIKey<Attitude> = GimbalKey.KeyGimbalJointAttitude.create()
     private var gimbalModeKey: DJIKey<GimbalMode> = GimbalKey.KeyGimbalMode.create()
@@ -5395,9 +5400,19 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
     // ==================== Telemetry Data ====================
 
-    private fun getLocation3D(): LocationCoordinate3D = location3DKey.get(LocationCoordinate3D(0.0, 0.0, .0))
+    private fun getLocation3D(): LocationCoordinate3D =
+        location3DKey.get(LocationCoordinate3D(0.0, 0.0, .0))
+
+    /** DJI KeyAltitude: relative to the take-off reference, not terrain AGL. */
     private fun getAltitude(): Double = altitudeKey.get(0.0)
+
+    private fun getTakeoffAltitudeAmsl(): Double? =
+        takeoffAltitudeKey.get(Double.NaN).takeIf { it.isFinite() }
+
     private fun getSatelliteCount(): Int = satelliteCountKey.get(-1)
+
+    private fun getGpsSignalLevel(): String =
+        gpsSignalLevelKey.get(GPSSignalLevel.LEVEL_NONE).name
     /** The point the gimbal is tracking, or null when nothing is. */
     @Volatile private var roiTarget: LocationCoordinate3D? = null
     private var roiTrackingRunnable: Runnable? = null
@@ -5563,28 +5578,8 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private fun getTimeNeededToGoHome(): Int = goHomeAssessmentProcessor.value.timeNeededToGoHome
     private fun getTimeNeededToLand(): Int = timeNeededToLandProcessor.value
 
-    private fun isHomeSet(): Boolean {
-        val shouldLatchHomePoint = !isHomePointSetLatch && !isFlyingKey.get(false) && run {
-            val home = getHomeLocation()
-            val hasHomeCoordinates = home.latitude != 0.0 && home.longitude != 0.0
-            if (!hasHomeCoordinates) {
-                false
-            } else {
-                val current = getLocation3D()
-                val distance = DroneController.calculateDistance(
-                    current.latitude, current.longitude,
-                    home.latitude, home.longitude
-                )
-                distance < 0.5
-            }
-        }
-
-        if (shouldLatchHomePoint) {
-            isHomePointSetLatch = true
-        }
-
-        return isHomePointSetLatch
-    }
+    /** DJI's authoritative home-point state; no local distance-based latch is required. */
+    private fun isHomeSet(): Boolean = isHomeLocationSetKey.get(false)
 
     private fun getTelemetryJson(): String = telemetryCoordinator.getTelemetryJson()
 
@@ -5814,19 +5809,29 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         val homeLocation = getHomeLocation()
         val speed = getSpeed()
         val attitude = getAttitude()
-        val altitudeAgl = getAltitude()
+        val altitudeRelativeTakeoff = getAltitude()
+        val takeoffAltitudeAmsl = getTakeoffAltitudeAmsl()
         val gimbalAttitude = getGimbalAttitude()
         val gimbalJoint = getGimbalJointAttitude()
         val goHomeInfo = goHomeAssessmentProcessor.value
         val lrfTarget = lrfTargetLocation
         val rtk = rtkTelemetryMonitor.snapshot()
+        val position = PositionResolver.resolve(
+            flightControllerLatitudeDeg = location.latitude,
+            flightControllerLongitudeDeg = location.longitude,
+            flightControllerAltitudeM = location.altitude,
+            altitudeRelativeTakeoffM = altitudeRelativeTakeoff,
+            takeoffAltitudeAmslM = takeoffAltitudeAmsl,
+            rtk = rtk
+        )
 
         return MavlinkSnapshot(
             droneName = droneName,
-            latitudeDeg = location.latitude,
-            longitudeDeg = location.longitude,
-            altitudeAslM = location.altitude,
-            altitudeAglM = altitudeAgl,
+            latitudeDeg = position.latitudeDeg,
+            longitudeDeg = position.longitudeDeg,
+            altitudeAslM = position.altitudeAmslM,
+            altitudeAglM = position.altitudeRelativeTakeoffM,
+            positionSource = position.source.name,
             velocityNorthMps = speed.x,
             velocityEastMps = speed.y,
             velocityDownMps = speed.z,
@@ -5835,7 +5840,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             yawDeg = attitude.yaw,
             headingDeg = getHeading(),
             satelliteCount = getSatelliteCount(),
+            gnssSignalLevel = getGpsSignalLevel(),
             rtkFix = rtk.fix,
+            rtkEnabled = rtk.enabled,
+            rtkConnected = rtk.connected,
             rtkHealthy = rtk.healthy,
             rtkAgeMs = rtk.ageMs,
             rtkStdLatitudeM = rtk.stdLatitudeM,
@@ -5845,9 +5853,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             remainingFlightTimeS = goHomeAssessmentProcessor.value.remainingFlightTime,
             homeLatitudeDeg = homeLocation.latitude,
             homeLongitudeDeg = homeLocation.longitude,
-            // DJI's home point carries no altitude, so the take-off altitude AMSL is recovered
-            // from the difference between the two altitudes the SDK does report.
-            homeAltitudeAslM = location.altitude - altitudeAgl,
+            // DJI exposes the take-off sea-level altitude directly; do not reconstruct it from
+            // KeyAircraftLocation3D.altitude whose vertical reference is not explicit here.
+            homeAltitudeAslM = takeoffAltitudeAmsl
+                ?: (position.altitudeAmslM - position.altitudeRelativeTakeoffM),
             homeSet = isHomeSet(),
             flightMode = getFlightMode().name,
             motorsRunning = isFlyingKey.get(false),
