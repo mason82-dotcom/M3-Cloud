@@ -75,6 +75,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import com.lyrebird.rc.controller.CameraCaptureConfigurator
+import com.lyrebird.rc.controller.CameraFocalLensPolicy
+import com.lyrebird.rc.controller.CameraFocalLensRole
 import com.lyrebird.rc.controller.ControlAuthority
 import com.lyrebird.rc.controller.DroneController
 import com.lyrebird.rc.edge.EdgeDetectionController
@@ -158,6 +160,7 @@ import dji.sdk.keyvalue.value.common.LocationCoordinate2D
 import dji.sdk.keyvalue.value.common.LocationCoordinate3D
 import dji.sdk.keyvalue.value.common.Velocity3D
 import dji.sdk.keyvalue.value.camera.CameraMode
+import dji.sdk.keyvalue.value.camera.CameraType
 import dji.sdk.keyvalue.value.camera.CameraStorageInfos
 import dji.sdk.keyvalue.value.camera.CameraStorageLocation
 import dji.sdk.keyvalue.value.camera.SDCardLoadState
@@ -705,9 +708,8 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private val homeLocationKey: DJIKey<LocationCoordinate2D> = FlightControllerKey.KeyHomeLocation.create()
     private val flightSpeedKey: DJIKey<Velocity3D> = FlightControllerKey.KeyAircraftVelocity.create()
     private val attitudeKey: DJIKey<Attitude> = FlightControllerKey.KeyAircraftAttitude.create()
-    private val cameraZoomFocalLengthKey: DJIKey<Int> = CameraKey.KeyCameraZoomFocalLength.create()
-    private val cameraOpticalFocalLengthKey: DJIKey<Int> = CameraKey.KeyCameraOpticalZoomFocalLength.create()
-    private val cameraHybridFocalLengthKey: DJIKey<Int> = CameraKey.KeyCameraHybridZoomFocalLength.create()
+    private val cameraTypeKey: DJIKey<CameraType> =
+        KeyTools.createKey(CameraKey.KeyCameraType, ComponentIndexType.LEFT_OR_MAIN)
     private val batteryKey: DJIKey<Int> = BatteryKey.KeyChargeRemainingInPercent.create()
     private val batteryConnectionKey: DJIKey<Boolean> = BatteryKey.KeyConnection.create()
     private val batteryVoltageKey: DJIKey<Int> = BatteryKey.KeyVoltage.create()
@@ -5589,9 +5591,49 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private fun getHomeLocation(): LocationCoordinate2D = homeLocationKey.get(LocationCoordinate2D())
     private fun getSpeed(): Velocity3D = flightSpeedKey.get(Velocity3D(0.0, 0.0, 0.0))
     private fun getAttitude(): Attitude = attitudeKey.get(Attitude(0.0, 0.0, 0.0))
-    private fun getCameraZoomFocalLength(): Int = cameraZoomFocalLengthKey.get(-1)
-    private fun getCameraOpticalFocalLength(): Int = cameraOpticalFocalLengthKey.get(-1)
-    private fun getCameraHybridFocalLength(): Int = cameraHybridFocalLengthKey.get(-1)
+    private fun currentCameraFocalLensRole(): CameraFocalLensRole =
+        CameraFocalLensPolicy.fromCameraTypeName(
+            cameraTypeKey.get(CameraType.NOT_SUPPORTED)?.name
+        )
+
+    private fun currentCameraFocalLensType(): CameraLensType =
+        when (currentCameraFocalLensRole()) {
+            CameraFocalLensRole.RGB -> CameraLensType.CAMERA_LENS_RGB
+            CameraFocalLensRole.ZOOM -> CameraLensType.CAMERA_LENS_ZOOM
+            CameraFocalLensRole.DEFAULT -> CameraLensType.CAMERA_LENS_DEFAULT
+        }
+
+    /**
+     * DJI requires focal/zoom keys to be created for the actual lens. M3M is the special case:
+     * its RGB lens must be addressed as CAMERA_LENS_RGB even though the SDK key is named
+     * KeyCameraZoomFocalLength. M3E/M3T use CAMERA_LENS_ZOOM.
+     */
+    private fun getCameraZoomFocalLength(): Int =
+        KeyTools.createCameraKey(
+            CameraKey.KeyCameraZoomFocalLength,
+            ComponentIndexType.LEFT_OR_MAIN,
+            currentCameraFocalLensType()
+        ).get(-1)
+
+    private fun getCameraOpticalFocalLength(): Int {
+        // M3M has no optical zoom lens; do not reinterpret RGB focal length as optical zoom.
+        if (currentCameraFocalLensRole() == CameraFocalLensRole.RGB) return -1
+        return KeyTools.createCameraKey(
+            CameraKey.KeyCameraOpticalZoomFocalLength,
+            ComponentIndexType.LEFT_OR_MAIN,
+            currentCameraFocalLensType()
+        ).get(-1)
+    }
+
+    private fun getCameraHybridFocalLength(): Int {
+        // M3M has no hybrid zoom lens; keep this unavailable rather than fabricating 24.0 mm.
+        if (currentCameraFocalLensRole() == CameraFocalLensRole.RGB) return -1
+        return KeyTools.createCameraKey(
+            CameraKey.KeyCameraHybridZoomFocalLength,
+            ComponentIndexType.LEFT_OR_MAIN,
+            currentCameraFocalLensType()
+        ).get(-1)
+    }
     private fun getBatteryLevel(): Int = batteryKey.get(-1)
     private fun getBatteryCellVoltages(): List<Int> =
         batteryCellVoltagesKey.get(emptyList()).filter { it > 0 }
