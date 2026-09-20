@@ -209,3 +209,19 @@ need the original DJI folder contents.
 WebODM remains fully server-driven. When a WebODM processing job is created, M3-Cloud freezes the
 selected `MediaAsset` IDs in `processing_job_assets` before upload, so later watch-folder changes
 cannot silently modify a queued/running job.
+
+
+### M3M multispectral processing
+
+M3-Cloud exposes a dedicated `m3m-multispectral` WebODM profile. A job is offered only when the
+dataset contains at least two complete M3M captures, each with RGB plus Green, Red, Red Edge, and
+NIR originals. Incomplete capture groups are excluded from the immutable job snapshot.
+
+The profile uploads all five channels together and sets:
+
+```text
+radiometric-calibration = camera
+```
+
+This follows ODM's supported Mavic 3 Multispectral workflow. The `camera+sun` mode is not enabled
+by default because ODM currently documents it as experimental.

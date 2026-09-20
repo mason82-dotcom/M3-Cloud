@@ -10,6 +10,12 @@ class WebODMProfile:
     title: str
     purpose: str
     options: tuple[tuple[str, Any], ...]
+    platforms: tuple[str, ...] = ()
+    media_kinds: tuple[str, ...] = ("RGB", "WIDE")
+    workflow: str = "WEBODM"
+    min_assets: int = 2
+    require_complete_groups: bool = False
+    min_complete_groups: int = 0
 
     def as_options(self) -> list[dict[str, Any]]:
         return [{"name": name, "value": value} for name, value in self.options]
@@ -33,6 +39,7 @@ M3E_ORTHO = WebODMProfile(
         ("auto-boundary", True),
         ("skip-3dmodel", True),
     ),
+    platforms=("M3E", "M3T", "UNKNOWN"),
 )
 
 M3E_3D_BUILDING = WebODMProfile(
@@ -53,6 +60,7 @@ M3E_3D_BUILDING = WebODMProfile(
         ("pc-copc", True),
         ("orthophoto-resolution", 2.5),
     ),
+    platforms=("M3E", "M3T", "UNKNOWN"),
 )
 
 M3E_FAST_CHECK = WebODMProfile(
@@ -68,11 +76,40 @@ M3E_FAST_CHECK = WebODMProfile(
         ("skip-report", True),
         ("optimize-disk-space", True),
     ),
+    platforms=("M3E", "M3T", "UNKNOWN"),
+)
+
+M3M_MULTISPECTRAL = WebODMProfile(
+    key="m3m-multispectral",
+    title="M3M Multispectral / Reflectance",
+    purpose=(
+        "Process complete Mavic 3 Multispectral captures together and generate "
+        "a calibrated multiband orthophoto."
+    ),
+    options=(
+        ("radiometric-calibration", "camera"),
+        ("feature-quality", "high"),
+        ("pc-quality", "medium"),
+        ("auto-boundary", True),
+        ("build-overviews", True),
+        ("skip-3dmodel", True),
+    ),
+    platforms=("M3M",),
+    media_kinds=("RGB", "MS_GREEN", "MS_RED", "MS_RED_EDGE", "MS_NIR"),
+    workflow="MULTISPECTRAL",
+    min_assets=10,
+    require_complete_groups=True,
+    min_complete_groups=2,
 )
 
 PROFILES = {
     profile.key: profile
-    for profile in (M3E_ORTHO, M3E_3D_BUILDING, M3E_FAST_CHECK)
+    for profile in (
+        M3E_ORTHO,
+        M3E_3D_BUILDING,
+        M3E_FAST_CHECK,
+        M3M_MULTISPECTRAL,
+    )
 }
 DEFAULT_PROFILE = M3E_ORTHO.key
 
@@ -91,6 +128,9 @@ def profile_catalog() -> list[dict[str, Any]]:
             "title": profile.title,
             "purpose": profile.purpose,
             "options": profile.as_options(),
+            "platforms": list(profile.platforms),
+            "media_kinds": list(profile.media_kinds),
+            "workflow": profile.workflow,
         }
         for profile in PROFILES.values()
     ]

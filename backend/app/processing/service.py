@@ -21,7 +21,7 @@ from app.models import (
 from app.processing.mbtiles import publish_mbtiles
 from app.processing.rastertiles import RASTER_TILE_ARCHIVES, publish_raster_tiles
 from app.processing.tiles3d import THREE_D_TILE_ARCHIVES, publish_3d_tiles
-from app.processing.profiles import get_profile
+from app.processing.profiles import WebODMProfile, get_profile
 from app.storage import create_storage_client
 from app.processing.webodm import WebODMClient
 
@@ -36,7 +36,50 @@ REMOTE_STATUS = {
     50: "CANCELED",
 }
 
-WEBODM_MEDIA_KINDS = frozenset({"RGB", "WIDE"})
+def select_profile_assets(
+    assets: list[MediaAsset],
+    profile: WebODMProfile,
+) -> list[MediaAsset]:
+    allowed = set(profile.media_kinds)
+    candidates = [asset for asset in assets if asset.media_kind in allowed]
+
+    if not profile.require_complete_groups:
+        return sorted(candidates, key=lambda item: item.relative_path)
+
+    by_group: dict[str, list[MediaAsset]] = {}
+    for asset in candidates:
+        if not asset.capture_group:
+            continue
+        by_group.setdefault(asset.capture_group, []).append(asset)
+
+    selected: list[MediaAsset] = []
+    complete_groups = 0
+    order = {kind: index for index, kind in enumerate(profile.media_kinds)}
+    required = set(profile.media_kinds)
+
+    for group in sorted(by_group):
+        members = by_group[group]
+        kinds = {asset.media_kind for asset in members}
+        if not required.issubset(kinds):
+            continue
+
+        complete_groups += 1
+        by_kind = {asset.media_kind: asset for asset in members}
+        selected.extend(
+            sorted(
+                (by_kind[kind] for kind in profile.media_kinds),
+                key=lambda item: order[item.media_kind],
+            )
+        )
+
+    if complete_groups < profile.min_complete_groups:
+        raise ValueError(
+            f"{profile.title} requires at least "
+            f"{profile.min_complete_groups} complete capture groups"
+        )
+
+    return selected
+
 
 RESULT_ASSETS = frozenset(
     {
@@ -152,12 +195,20 @@ class ProcessingManager:
         profile_value = get_profile(profile)
         platform_value = platform.upper() if platform else None
 
+        if (
+            platform_value
+            and profile_value.platforms
+            and platform_value not in profile_value.platforms
+        ):
+            raise ValueError(
+                f"Profile {profile_value.key} is not valid for {platform_value}"
+            )
+
         statement = (
             select(MediaAsset)
             .where(
                 MediaAsset.present.is_(True),
                 MediaAsset.duplicate_of.is_(None),
-                MediaAsset.media_kind.in_(WEBODM_MEDIA_KINDS),
                 (
                     (MediaAsset.relative_path == normalized_prefix)
                     | MediaAsset.relative_path.startswith(normalized_prefix + "/")
@@ -169,9 +220,13 @@ class ProcessingManager:
             statement = statement.where(MediaAsset.platform == platform_value)
 
         async with self.sessions() as session:
-            assets = (await session.scalars(statement)).all()
-            if len(assets) < 2:
-                raise ValueError("WebODM requires at least two eligible RGB/Wide images")
+            candidates = (await session.scalars(statement)).all()
+            assets = select_profile_assets(candidates, profile_value)
+            if len(assets) < profile_value.min_assets:
+                raise ValueError(
+                    f"{profile_value.title} requires at least "
+                    f"{profile_value.min_assets} eligible images"
+                )
 
             now = datetime.now(timezone.utc)
             job = ProcessingJob(
@@ -180,7 +235,7 @@ class ProcessingManager:
                 name=name.strip() or normalized_prefix.split("/")[-1],
                 input_prefix=normalized_prefix,
                 platform=platform_value,
-                media_kinds=sorted(WEBODM_MEDIA_KINDS),
+                media_kinds=list(profile_value.media_kinds),
                 options=profile_value.as_options(),
                 image_count=len(assets),
                 uploaded_count=0,

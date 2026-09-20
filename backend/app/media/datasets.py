@@ -111,14 +111,14 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
             workflows.append(
                 _workflow(
                     key="MULTISPECTRAL",
-                    ready=complete > 0,
+                    ready=complete >= 2,
                     eligible_assets=complete * len(M3M_COMPLETE),
                     complete_groups=complete,
                     incomplete_groups=partial,
                     reason=(
                         f"{complete} complete RGB + 4-band capture groups"
-                        if complete > 0
-                        else "No complete RGB + Green/Red/RedEdge/NIR capture group"
+                        if complete >= 2
+                        else "At least two complete RGB + Green/Red/RedEdge/NIR capture groups are required"
                     ),
                 )
             )

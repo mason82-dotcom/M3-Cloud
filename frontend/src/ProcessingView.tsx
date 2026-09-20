@@ -158,24 +158,40 @@ export function ProcessingView() {
 
   const availableDatasets = useMemo(
     () =>
-      datasets
-        .filter((dataset) =>
-          dataset.workflows.some(
-            (workflow) => workflow.key === "WEBODM" && workflow.ready,
-          ),
-        )
-        .map((dataset) => ({
-          prefix: dataset.prefix,
-          platform: dataset.platform,
-          count:
-            dataset.workflows.find((workflow) => workflow.key === "WEBODM")
-              ?.eligible_assets ?? 0,
-          bytes: dataset.size_bytes,
-        })),
-    [datasets],
+      datasets.filter((dataset) =>
+        profiles.some((candidate) => {
+          const platformOk =
+            candidate.platforms.length === 0 ||
+            candidate.platforms.includes(dataset.platform);
+          const workflow = dataset.workflows.find(
+            (item) => item.key === candidate.workflow,
+          );
+          return platformOk && workflow?.ready === true;
+        }),
+      ),
+    [datasets, profiles],
   );
   const selectedDataset = availableDatasets.find((item) => item.prefix === prefix);
-  const selectedProfile = profiles.find((item) => item.key === profile);
+  const compatibleProfiles = useMemo(
+    () =>
+      profiles.filter((candidate) => {
+        if (!selectedDataset) return false;
+        const platformOk =
+          candidate.platforms.length === 0 ||
+          candidate.platforms.includes(selectedDataset.platform);
+        const workflow = selectedDataset.workflows.find(
+          (item) => item.key === candidate.workflow,
+        );
+        return platformOk && workflow?.ready === true;
+      }),
+    [profiles, selectedDataset],
+  );
+  const selectedProfile = compatibleProfiles.find((item) => item.key === profile);
+  const selectedWorkflow = selectedProfile
+    ? selectedDataset?.workflows.find(
+        (item) => item.key === selectedProfile.workflow,
+      )
+    : undefined;
 
   useEffect(() => {
     if (!prefix && availableDatasets.length > 0) {
@@ -189,6 +205,16 @@ export function ProcessingView() {
       setName(prefix.split("/").pop() ?? prefix);
     }
   }, [availableDatasets, name, prefix]);
+
+  useEffect(() => {
+    if (compatibleProfiles.length === 0) {
+      setProfile("");
+      return;
+    }
+    if (!compatibleProfiles.some((item) => item.key === profile)) {
+      setProfile(compatibleProfiles[0].key);
+    }
+  }, [compatibleProfiles, profile]);
 
   const submit = useCallback(async () => {
     if (!prefix || !profile || !selectedDataset) return;
@@ -231,7 +257,7 @@ export function ProcessingView() {
                 <option value="">No eligible RGB/Wide dataset</option>
               ) : availableDatasets.map((item) => (
                 <option key={`${item.platform}:${item.prefix}`} value={item.prefix}>
-                  {item.prefix} · {item.platform} · {item.count} images
+                  {item.prefix} · {item.platform} · {item.asset_count} originals
                 </option>
               ))}
             </select>
@@ -249,7 +275,7 @@ export function ProcessingView() {
           <label>
             Profile
             <select value={profile} onChange={(event) => setProfile(event.target.value)}>
-              {profiles.map((item) => (
+              {compatibleProfiles.map((item) => (
                 <option key={item.key} value={item.key}>{item.title}</option>
               ))}
             </select>
@@ -267,9 +293,9 @@ export function ProcessingView() {
         {selectedDataset ? (
           <div className="processingDataset">
             <span>Platform<b>{selectedDataset.platform}</b></span>
-            <span>Images<b>{selectedDataset.count}</b></span>
-            <span>Input size<b>{bytes(selectedDataset.bytes)}</b></span>
-            <span>Media<b>RGB / Wide only</b></span>
+            <span>Images<b>{selectedWorkflow?.eligible_assets ?? 0}</b></span>
+            <span>Input size<b>{bytes(selectedDataset.size_bytes)}</b></span>
+            <span>Media<b>{selectedProfile?.media_kinds.join(" / ") ?? "—"}</b></span>
           </div>
         ) : null}
 

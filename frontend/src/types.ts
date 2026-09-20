@@ -305,6 +305,9 @@ export interface ProcessingProfile {
   title: string;
   purpose: string;
   options: Array<{ name: string; value: unknown }>;
+  platforms: string[];
+  media_kinds: string[];
+  workflow: string;
 }
 
 export interface ProcessingJob {

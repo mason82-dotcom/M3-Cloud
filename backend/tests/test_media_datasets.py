@@ -80,7 +80,7 @@ def test_m3m_dataset_requires_all_four_bands_plus_rgb() -> None:
     multi = workflow(dataset, "MULTISPECTRAL")
 
     assert workflow(dataset, "WEBODM")["ready"] is True
-    assert multi["ready"] is True
+    assert multi["ready"] is False
     assert multi["complete_groups"] == 1
     assert multi["incomplete_groups"] == 1
 
@@ -122,3 +122,26 @@ def test_m3t_manifest_keeps_original_paths_and_pair_completeness() -> None:
     assert groups[1]["complete"] is False
     assert groups[0]["required_kinds"] == ["THERMAL", "WIDE"]
     assert groups[0]["files"][0]["relative_path"].startswith("M3T/site/")
+
+
+
+def test_m3m_multispectral_becomes_ready_with_two_complete_groups() -> None:
+    items = []
+    for index in (1, 2):
+        group = f"M3M/field/DJI_{index:04d}"
+        items.extend(
+            [
+                asset(f"{group}_D.JPG", platform="M3M", kind="RGB", group=group),
+                asset(f"{group}_MS_G.TIF", platform="M3M", kind="MS_GREEN", group=group),
+                asset(f"{group}_MS_R.TIF", platform="M3M", kind="MS_RED", group=group),
+                asset(f"{group}_MS_RE.TIF", platform="M3M", kind="MS_RED_EDGE", group=group),
+                asset(f"{group}_MS_NIR.TIF", platform="M3M", kind="MS_NIR", group=group),
+            ]
+        )
+
+    dataset = build_media_datasets(items)[0]
+    multi = workflow(dataset, "MULTISPECTRAL")
+
+    assert multi["ready"] is True
+    assert multi["complete_groups"] == 2
+    assert multi["eligible_assets"] == 10
