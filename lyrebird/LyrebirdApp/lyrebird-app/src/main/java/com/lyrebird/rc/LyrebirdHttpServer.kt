@@ -670,6 +670,7 @@ internal class SimpleHttpServer(
             writer.println("Content-Type: application/json")
             writer.println("Content-Length: ${body.toByteArray().size}")
             writer.println("Access-Control-Allow-Origin: *")
+            writer.println("Connection: close")
             writer.println()
             writer.print(body)
             writer.flush()
@@ -768,6 +769,7 @@ internal class SimpleHttpServer(
                             append("Content-Length: ${bytes.size}\r\n")
                             append("Content-Disposition: attachment; filename=\"${file.name}\"\r\n")
                             append("Access-Control-Allow-Origin: *\r\n")
+                            append("Connection: close\r\n")
                             append("\r\n")
                         }
                         output.write(header.toByteArray())
@@ -797,6 +799,7 @@ internal class SimpleHttpServer(
                 writer.println("Access-Control-Allow-Origin: *")
                 writer.println("Access-Control-Allow-Methods: GET, POST, OPTIONS")
                 writer.println("Access-Control-Allow-Headers: Content-Type")
+                writer.println("Connection: close")
                 writer.println()
                 writer.print(response)
                 writer.flush()
