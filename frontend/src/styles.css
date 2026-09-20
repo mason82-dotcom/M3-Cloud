@@ -1046,3 +1046,85 @@ button { font: inherit; }
 .processing3DModal .maplibregl-canvas {
   outline: none;
 }
+
+
+.mediaDatasets {
+  min-height: auto;
+}
+
+.mediaDatasetGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: 8px;
+  padding: 10px;
+}
+
+.mediaDataset {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0e151e;
+  padding: 10px;
+}
+
+.mediaDatasetHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mediaDatasetHead strong,
+.mediaDatasetHead small {
+  display: block;
+}
+
+.mediaDatasetHead strong {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.mediaDatasetHead small,
+.mediaDatasetHead > span,
+.datasetKinds {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.workflowBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 9px 0 7px;
+}
+
+.workflowBadge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 6px;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.workflowBadge.ready {
+  border-color: rgb(85 213 138 / 45%);
+  color: var(--good);
+  background: rgb(85 213 138 / 8%);
+}
+
+.workflowBadge.incomplete {
+  border-color: rgb(231 179 76 / 45%);
+  color: var(--warn);
+  background: rgb(231 179 76 / 8%);
+}
+
+@media (max-width: 1100px) {
+  .mediaDatasetGrid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .mediaDatasetGrid {
+    grid-template-columns: 1fr;
+  }
+}

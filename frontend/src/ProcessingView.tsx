@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   createWebODMJob,
-  fetchMedia,
+  fetchMediaDatasets,
   fetchProcessingMap,
   fetchProcessingMaps,
   fetchProcessingResults,
@@ -12,7 +12,7 @@ import {
   processingResultDownloadUrl,
 } from "./api";
 import type {
-  MediaAsset,
+  MediaDataset,
   ProcessingJob,
   ProcessingProfile,
   ProcessingResult,
@@ -29,69 +29,6 @@ const ACTIVE_STATUSES = new Set([
   "IMPORTING_RESULTS",
 ]);
 
-function parentPath(relativePath: string): string {
-  const index = relativePath.lastIndexOf("/");
-  return index > 0 ? relativePath.slice(0, index) : "";
-}
-
-function percent(value: number): string {
-  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
-}
-
-function statusClass(status: string): string {
-  if (status === "COMPLETED") return "good";
-  if (
-    status === "FAILED" ||
-    status === "CANCELED" ||
-    status === "INTERRUPTED" ||
-    status === "RESULT_IMPORT_FAILED"
-  ) {
-    return "bad";
-  }
-  return "warn";
-}
-
-function eligible(asset: MediaAsset): boolean {
-  return (
-    asset.present &&
-    !asset.duplicate_of &&
-    ["RGB", "WIDE"].includes(asset.media_kind)
-  );
-}
-
-function datasets(assets: MediaAsset[]): Array<{
-  prefix: string;
-  platform: string;
-  count: number;
-  bytes: number;
-}> {
-  const grouped = new Map<string, {
-    prefix: string;
-    platform: string;
-    count: number;
-    bytes: number;
-  }>();
-
-  for (const asset of assets.filter(eligible)) {
-    const prefix = parentPath(asset.relative_path);
-    if (!prefix) continue;
-    const key = `${asset.platform}:${prefix}`;
-    const current = grouped.get(key) ?? {
-      prefix,
-      platform: asset.platform,
-      count: 0,
-      bytes: 0,
-    };
-    current.count += 1;
-    current.bytes += asset.size_bytes;
-    grouped.set(key, current);
-  }
-
-  return Array.from(grouped.values())
-    .filter((item) => item.count >= 2)
-    .sort((left, right) => left.prefix.localeCompare(right.prefix));
-}
-
 function bytes(value: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = value;
@@ -104,7 +41,7 @@ function bytes(value: number): string {
 }
 
 export function ProcessingView() {
-  const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [datasets, setDatasets] = useState<MediaDataset[]>([]);
   const [profiles, setProfiles] = useState<ProcessingProfile[]>([]);
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
   const [prefix, setPrefix] = useState("");
@@ -167,12 +104,12 @@ export function ProcessingView() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextAssets, nextProfiles, nextJobs] = await Promise.all([
-        fetchMedia(),
+      const [nextDatasets, nextProfiles, nextJobs] = await Promise.all([
+        fetchMediaDatasets(),
         fetchProcessingProfiles(),
         fetchProcessingJobs(),
       ]);
-      setAssets(nextAssets);
+      setDatasets(nextDatasets);
       setProfiles(nextProfiles);
       setJobs(nextJobs);
       setProfile((current) =>
@@ -202,7 +139,24 @@ export function ProcessingView() {
     return () => window.clearInterval(timer);
   }, [jobs]);
 
-  const availableDatasets = useMemo(() => datasets(assets), [assets]);
+  const availableDatasets = useMemo(
+    () =>
+      datasets
+        .filter((dataset) =>
+          dataset.workflows.some(
+            (workflow) => workflow.key === "WEBODM" && workflow.ready,
+          ),
+        )
+        .map((dataset) => ({
+          prefix: dataset.prefix,
+          platform: dataset.platform,
+          count:
+            dataset.workflows.find((workflow) => workflow.key === "WEBODM")
+              ?.eligible_assets ?? 0,
+          bytes: dataset.size_bytes,
+        })),
+    [datasets],
+  );
   const selectedDataset = availableDatasets.find((item) => item.prefix === prefix);
   const selectedProfile = profiles.find((item) => item.key === profile);
 

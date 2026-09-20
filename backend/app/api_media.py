@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 
 from app.database import session_factory
+from app.media.datasets import build_media_datasets
 from app.models import MediaAsset
 
 
@@ -59,6 +60,22 @@ async def list_media(
     async with session_factory() as session:
         result = await session.scalars(statement)
         return [_asset(asset) for asset in result.all()]
+
+
+@router.get("/datasets")
+async def media_datasets(
+    platform: str | None = None,
+) -> list[dict[str, object]]:
+    statement = select(MediaAsset).where(
+        MediaAsset.present.is_(True),
+        MediaAsset.duplicate_of.is_(None),
+    )
+    if platform:
+        statement = statement.where(MediaAsset.platform == platform.upper())
+
+    async with session_factory() as session:
+        assets = (await session.scalars(statement)).all()
+        return build_media_datasets(assets)
 
 
 @router.get("/groups")

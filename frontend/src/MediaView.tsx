@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   fetchMedia,
+  fetchMediaDatasets,
   fetchMediaGroups,
   fetchMediaImportStatus,
   scanMediaImport,
 } from "./api";
 import type {
   MediaAsset,
+  MediaDataset,
   MediaGroup,
   MediaImportStatus,
 } from "./types";
@@ -31,6 +33,7 @@ function platformClass(platform: string): string {
 
 export function MediaView() {
   const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [datasets, setDatasets] = useState<MediaDataset[]>([]);
   const [groups, setGroups] = useState<MediaGroup[]>([]);
   const [status, setStatus] = useState<MediaImportStatus | null>(null);
   const [platform, setPlatform] = useState("");
@@ -41,12 +44,14 @@ export function MediaView() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextAssets, nextGroups, nextStatus] = await Promise.all([
+      const [nextAssets, nextDatasets, nextGroups, nextStatus] = await Promise.all([
         fetchMedia(platform || undefined, mediaKind || undefined),
+        fetchMediaDatasets(platform || undefined),
         fetchMediaGroups(platform || undefined),
         fetchMediaImportStatus(),
       ]);
       setAssets(nextAssets);
+      setDatasets(nextDatasets);
       setGroups(nextGroups);
       setStatus(nextStatus);
       setError(null);
@@ -135,6 +140,47 @@ export function MediaView() {
           </button>
         ))}
       </div>
+
+      <section className="panel mediaDatasets">
+        <div className="panelHead">
+          <div>
+            <h2>Workflow datasets</h2>
+            <small>Server-side readiness from the external originals</small>
+          </div>
+          <span>{datasets.length} datasets</span>
+        </div>
+        <div className="mediaDatasetGrid">
+          {datasets.length === 0 ? (
+            <div className="empty">Noch kein workflowfähiges Dataset erkannt.</div>
+          ) : datasets.map((dataset) => (
+            <article className="mediaDataset" key={`${dataset.platform}:${dataset.prefix}`}>
+              <div className="mediaDatasetHead">
+                <div>
+                  <strong>{dataset.prefix}</strong>
+                  <small>{dataset.platform} · {dataset.asset_count} originals · {bytes(dataset.size_bytes)}</small>
+                </div>
+                <span>{dataset.capture_group_count} groups</span>
+              </div>
+              <div className="workflowBadges">
+                {dataset.workflows.map((workflow) => (
+                  <span
+                    className={workflow.ready ? "workflowBadge ready" : "workflowBadge incomplete"}
+                    key={workflow.key}
+                    title={workflow.reason}
+                  >
+                    {workflow.key} {workflow.ready ? "READY" : "INCOMPLETE"}
+                  </span>
+                ))}
+              </div>
+              <small className="datasetKinds">
+                {Object.entries(dataset.media_kinds)
+                  .map(([kind, count]) => `${kind} ${count}`)
+                  .join(" · ")}
+              </small>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section className="panel mediaCatalog">
         <div className="panelHead">

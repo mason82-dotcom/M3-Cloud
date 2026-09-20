@@ -230,6 +230,25 @@ export interface MediaGroup {
   size_bytes: number;
 }
 
+export interface MediaWorkflowReadiness {
+  key: "WEBODM" | "THERMOGRAM" | "MULTISPECTRAL" | string;
+  ready: boolean;
+  eligible_assets: number;
+  complete_groups: number;
+  incomplete_groups: number;
+  reason: string;
+}
+
+export interface MediaDataset {
+  prefix: string;
+  platform: string;
+  asset_count: number;
+  size_bytes: number;
+  media_kinds: Record<string, number>;
+  capture_group_count: number;
+  workflows: MediaWorkflowReadiness[];
+}
+
 export interface MediaImportStatus {
   enabled: boolean;
   status: string;
