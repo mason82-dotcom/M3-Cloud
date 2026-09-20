@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -11,8 +12,14 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import MediaAsset, ProcessingJob, ProcessingJobAsset
+from app.models import (
+    MediaAsset,
+    ProcessingJob,
+    ProcessingJobAsset,
+    ProcessingResult,
+)
 from app.processing.profiles import get_profile
+from app.storage import create_storage_client
 from app.processing.webodm import WebODMClient
 
 
@@ -22,11 +29,44 @@ REMOTE_STATUS = {
     10: "QUEUED_REMOTE",
     20: "RUNNING",
     30: "FAILED",
-    40: "COMPLETED",
+    40: "IMPORTING_RESULTS",
     50: "CANCELED",
 }
 
 WEBODM_MEDIA_KINDS = frozenset({"RGB", "WIDE"})
+
+RESULT_ASSETS = frozenset(
+    {
+        "orthophoto.tif",
+        "orthophoto.png",
+        "orthophoto.mbtiles",
+        "dsm.tif",
+        "dtm.tif",
+        "georeferenced_model.las",
+        "georeferenced_model.laz",
+        "georeferenced_model.ply",
+        "georeferenced_model.csv",
+        "textured_model.zip",
+        "textured_model.glb",
+        "3d_tiles_model.zip",
+        "3d_tiles_pointcloud.zip",
+    }
+)
+RESULT_BUCKET = "m3-results"
+
+
+def selected_result_assets(available: list[str]) -> list[str]:
+    return sorted(
+        {
+            item
+            for item in available
+            if item in RESULT_ASSETS and "/" not in item and "\\" not in item
+        }
+    )
+
+
+def result_object_key(job_id: uuid.UUID, asset_name: str) -> str:
+    return f"webodm/{job_id}/{asset_name}"
 
 
 def normalize_prefix(raw: str) -> str:
@@ -273,6 +313,8 @@ class ProcessingManager:
 
                 task = await asyncio.to_thread(client.commit_task, project_id, task_id)
                 await self._apply_remote_task(job_id, task, fallback_status="SUBMITTED")
+                if task.get("status") == 40:
+                    await self._import_results(job_id, task)
             finally:
                 await asyncio.to_thread(client.close)
 
@@ -300,7 +342,9 @@ class ProcessingManager:
                 await session.scalars(
                     select(ProcessingJob).where(
                         ProcessingJob.kind == "WEBODM",
-                        ProcessingJob.status.in_(("SUBMITTED", "QUEUED_REMOTE", "RUNNING")),
+                        ProcessingJob.status.in_(
+                            ("SUBMITTED", "QUEUED_REMOTE", "RUNNING", "IMPORTING_RESULTS")
+                        ),
                         ProcessingJob.remote_project_id.is_not(None),
                         ProcessingJob.remote_task_id.is_not(None),
                     )
@@ -322,6 +366,8 @@ class ProcessingManager:
                     int(job.remote_task_id),
                 )
                 await self._apply_remote_task(job.id, task, fallback_status=job.status)
+                if task.get("status") == 40:
+                    await self._import_results(job.id, task)
             except Exception as exc:
                 logger.warning("Could not poll WebODM job %s: %s", job.id, exc)
             finally:
@@ -377,8 +423,8 @@ class ProcessingManager:
         else:
             progress = 0.2
 
-        if status == "COMPLETED":
-            progress = 1.0
+        if status == "IMPORTING_RESULTS":
+            progress = 0.98
 
         now = datetime.now(timezone.utc)
         async with self.sessions() as session:
@@ -393,9 +439,104 @@ class ProcessingManager:
             last_error = task.get("last_error")
             if isinstance(last_error, str) and last_error:
                 job.error = last_error
-            if status in {"COMPLETED", "FAILED", "CANCELED"}:
+            if status in {"FAILED", "CANCELED"}:
                 job.finished_at = now
             job.updated_at = now
+            await session.commit()
+
+    async def _import_results(
+        self,
+        job_id: uuid.UUID,
+        task: dict[str, Any],
+    ) -> None:
+        available = task.get("available_assets")
+        wanted = selected_result_assets(
+            [str(item) for item in available] if isinstance(available, list) else []
+        )
+
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is None or job.remote_project_id is None or job.remote_task_id is None:
+                return
+            existing = set(
+                (
+                    await session.scalars(
+                        select(ProcessingResult.asset_name).where(
+                            ProcessingResult.job_id == job_id
+                        )
+                    )
+                ).all()
+            )
+            project_id = int(job.remote_project_id)
+            task_id = int(job.remote_task_id)
+
+        pending = [asset for asset in wanted if asset not in existing]
+        if pending:
+            client = WebODMClient(
+                self.webodm_url,
+                token=self.webodm_token,
+                username=self.webodm_username,
+                password=self.webodm_password,
+                timeout_seconds=self.webodm_timeout_seconds,
+            )
+            storage = create_storage_client()
+            try:
+                with tempfile.TemporaryDirectory(prefix="m3-webodm-") as temporary:
+                    temp_root = Path(temporary)
+                    for asset in pending:
+                        destination = temp_root / asset
+                        size, content_type, sha256 = await asyncio.to_thread(
+                            client.download_asset,
+                            project_id,
+                            task_id,
+                            asset,
+                            destination,
+                        )
+                        object_key = result_object_key(job_id, asset)
+                        await asyncio.to_thread(
+                            storage.upload_file,
+                            str(destination),
+                            RESULT_BUCKET,
+                            object_key,
+                            ExtraArgs={"ContentType": content_type},
+                        )
+                        async with self.sessions() as session:
+                            session.add(
+                                ProcessingResult(
+                                    job_id=job_id,
+                                    asset_name=asset,
+                                    bucket=RESULT_BUCKET,
+                                    object_key=object_key,
+                                    size_bytes=size,
+                                    sha256=sha256,
+                                    content_type=content_type,
+                                    created_at=datetime.now(timezone.utc),
+                                )
+                            )
+                            await session.commit()
+            except Exception as exc:
+                now = datetime.now(timezone.utc)
+                async with self.sessions() as session:
+                    job = await session.get(ProcessingJob, job_id)
+                    if job is not None:
+                        job.status = "RESULT_IMPORT_FAILED"
+                        job.error = f"{type(exc).__name__}: {exc}"
+                        job.updated_at = now
+                        job.finished_at = now
+                        await session.commit()
+                return
+            finally:
+                await asyncio.to_thread(client.close)
+
+        now = datetime.now(timezone.utc)
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is None:
+                return
+            job.status = "COMPLETED"
+            job.progress = 1.0
+            job.updated_at = now
+            job.finished_at = now
             await session.commit()
 
     async def _fail_job(self, job_id: uuid.UUID, exc: Exception) -> None:

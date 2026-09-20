@@ -282,6 +282,18 @@ export interface ProcessingJob {
   finished_at?: string | null;
 }
 
+export interface ProcessingResult {
+  id: string;
+  job_id: string;
+  asset_name: string;
+  bucket: string;
+  object_key: string;
+  size_bytes: number;
+  sha256: string;
+  content_type: string;
+  created_at: string;
+}
+
 export interface ComponentHealth {
   ok?: boolean;
   status?: string;

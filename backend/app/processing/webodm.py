@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 from pathlib import Path
@@ -98,3 +99,33 @@ class WebODMClient:
         response.raise_for_status()
         data = response.json()
         return dict(data) if isinstance(data, dict) else {}
+
+
+    def download_asset(
+        self,
+        project_id: int,
+        task_id: int,
+        asset: str,
+        destination: Path,
+    ) -> tuple[int, str, str]:
+        """Stream one WebODM result to disk and return size, content-type and SHA-256."""
+
+        digest = hashlib.sha256()
+        size = 0
+        with self.client.stream(
+            "GET",
+            self._url(f"projects/{project_id}/tasks/{task_id}/download/{asset}"),
+        ) as response:
+            response.raise_for_status()
+            content_type = response.headers.get(
+                "Content-Type",
+                mimetypes.guess_type(asset)[0] or "application/octet-stream",
+            )
+            with destination.open("wb") as handle:
+                for chunk in response.iter_bytes(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    handle.write(chunk)
+                    digest.update(chunk)
+                    size += len(chunk)
+        return size, content_type, digest.hexdigest()

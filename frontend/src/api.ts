@@ -7,6 +7,7 @@ import type {
   MediaImportStatus,
   ProcessingJob,
   ProcessingProfile,
+  ProcessingResult,
   SystemHealth,
   Vehicle,
 } from "./types";
@@ -135,6 +136,25 @@ export async function createWebODMJob(input: {
     throw new Error(body?.detail ?? `WebODM job request failed: ${response.status}`);
   }
   return response.json() as Promise<ProcessingJob>;
+}
+
+export async function fetchProcessingResults(
+  jobId: string,
+): Promise<ProcessingResult[]> {
+  const response = await fetch(
+    `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/results`,
+  );
+  if (!response.ok) {
+    throw new Error(`Processing results request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingResult[]>;
+}
+
+export function processingResultDownloadUrl(
+  jobId: string,
+  resultId: string,
+): string {
+  return `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/results/${encodeURIComponent(resultId)}/download`;
 }
 
 export async function fetchSystemHealth(): Promise<SystemHealth> {

@@ -4,12 +4,14 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.database import session_factory
-from app.models import ProcessingJob
+from app.models import ProcessingJob, ProcessingResult
 from app.processing.profiles import DEFAULT_PROFILE, profile_catalog
+from app.storage import create_storage_client
 
 
 router = APIRouter(prefix="/api/v1/processing", tags=["processing"])
@@ -73,6 +75,78 @@ async def processing_job(job_id: uuid.UUID) -> dict[str, Any]:
                 detail="Processing job not found",
             )
         return _job(job)
+
+
+def _result(result: ProcessingResult) -> dict[str, Any]:
+    return {
+        "id": str(result.id),
+        "job_id": str(result.job_id),
+        "asset_name": result.asset_name,
+        "bucket": result.bucket,
+        "object_key": result.object_key,
+        "size_bytes": result.size_bytes,
+        "sha256": result.sha256,
+        "content_type": result.content_type,
+        "created_at": result.created_at.isoformat(),
+    }
+
+
+@router.get("/jobs/{job_id}/results")
+async def processing_results(job_id: uuid.UUID) -> list[dict[str, Any]]:
+    async with session_factory() as session:
+        results = (
+            await session.scalars(
+                select(ProcessingResult)
+                .where(ProcessingResult.job_id == job_id)
+                .order_by(ProcessingResult.asset_name)
+            )
+        ).all()
+        return [_result(result) for result in results]
+
+
+@router.get("/jobs/{job_id}/results/{result_id}/download")
+async def download_processing_result(
+    job_id: uuid.UUID,
+    result_id: uuid.UUID,
+) -> StreamingResponse:
+    async with session_factory() as session:
+        result = await session.get(ProcessingResult, result_id)
+        if result is None or result.job_id != job_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Processing result not found",
+            )
+        bucket = result.bucket
+        object_key = result.object_key
+        asset_name = result.asset_name
+        content_type = result.content_type
+        size_bytes = result.size_bytes
+
+    client = create_storage_client()
+    try:
+        response = client.get_object(Bucket=bucket, Key=object_key)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Result object unavailable: {type(exc).__name__}",
+        ) from exc
+
+    body = response["Body"]
+
+    def chunks():
+        try:
+            yield from body.iter_chunks(chunk_size=1024 * 1024)
+        finally:
+            body.close()
+
+    return StreamingResponse(
+        chunks(),
+        media_type=content_type,
+        headers={
+            "Content-Length": str(size_bytes),
+            "Content-Disposition": f'attachment; filename="{asset_name}"',
+        },
+    )
 
 
 @router.post("/webodm", status_code=status.HTTP_202_ACCEPTED)

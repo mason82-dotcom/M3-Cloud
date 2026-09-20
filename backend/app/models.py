@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -144,3 +144,29 @@ class ProcessingJobAsset(Base):
         primary_key=True,
     )
     ordinal: Mapped[int] = mapped_column(Integer)
+
+
+
+class ProcessingResult(Base):
+    __tablename__ = "processing_results"
+    __table_args__ = (
+        UniqueConstraint("job_id", "asset_name", name="uq_processing_result_job_asset"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("processing_jobs.id", ondelete="CASCADE"),
+        index=True,
+    )
+    asset_name: Mapped[str] = mapped_column(String(255), index=True)
+    bucket: Mapped[str] = mapped_column(String(128))
+    object_key: Mapped[str] = mapped_column(String(1024), unique=True)
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    content_type: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

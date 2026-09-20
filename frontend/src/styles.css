@@ -935,3 +935,28 @@ button { font: inherit; }
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+.processingStoredResults {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.processingStoredResults button,
+.processingStoredResults a {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 4px 7px;
+  font-size: 8px;
+  text-decoration: none;
+}
+
+.processingStoredResults button {
+  cursor: pointer;
+  color: var(--accent);
+}

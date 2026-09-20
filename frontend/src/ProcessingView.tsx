@@ -3,13 +3,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createWebODMJob,
   fetchMedia,
+  fetchProcessingResults,
   fetchProcessingJobs,
   fetchProcessingProfiles,
+  processingResultDownloadUrl,
 } from "./api";
 import type {
   MediaAsset,
   ProcessingJob,
   ProcessingProfile,
+  ProcessingResult,
 } from "./types";
 
 const ACTIVE_STATUSES = new Set([
@@ -38,6 +41,15 @@ function statusClass(status: string): string {
 }
 
 function eligible(asset: MediaAsset): boolean {
+  const loadResults = useCallback(async (jobId: string) => {
+    try {
+      const values = await fetchProcessingResults(jobId);
+      setResults((current) => ({ ...current, [jobId]: values }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, []);
+
   return (
     asset.present &&
     !asset.duplicate_of &&
@@ -97,6 +109,7 @@ export function ProcessingView() {
   const [profile, setProfile] = useState("m3e-ortho");
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [results, setResults] = useState<Record<string, ProcessingResult[]>>({});
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -284,6 +297,22 @@ export function ProcessingView() {
               {job.available_assets.length > 0 ? (
                 <div className="processingAssets">
                   {job.available_assets.map((asset) => <span key={asset}>{asset}</span>)}
+                </div>
+              ) : null}
+
+              {["COMPLETED", "RESULT_IMPORT_FAILED"].includes(job.status) ? (
+                <div className="processingStoredResults">
+                  <button onClick={() => void loadResults(job.id)} type="button">
+                    M3 results
+                  </button>
+                  {(results[job.id] ?? []).map((result) => (
+                    <a
+                      href={processingResultDownloadUrl(job.id, result.id)}
+                      key={result.id}
+                    >
+                      {result.asset_name}
+                    </a>
+                  ))}
                 </div>
               ) : null}
 
