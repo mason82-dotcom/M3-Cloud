@@ -203,6 +203,44 @@ export interface MissionRevision {
   created_at: string;
 }
 
+export interface MissionDeployment {
+  id: string;
+  mission_id: string;
+  revision_version: number;
+  plan_sha256: string;
+  aircraft_sn: string;
+  preferred_executor?: "DJI_NATIVE" | "ONBOARD" | null;
+  package_sha256: string;
+  package: {
+    schema_version: number;
+    kind: string;
+    deployment_id: string;
+    created_at: string;
+    mission: Record<string, unknown>;
+    revision: {
+      version: number;
+      plan_sha256: string;
+      item_count: number;
+      plan: MissionRevision["plan"];
+    };
+    target: {
+      aircraft_sn: string;
+      preferred_executor?: "DJI_NATIVE" | "ONBOARD" | null;
+    };
+    compatibility: Mission["compatibility"];
+    preflight: MissionPreflight;
+    handoff: {
+      protocol: string;
+      wire_ready: boolean;
+      upload_enabled: boolean;
+      execution_enabled: boolean;
+      frame_policy: string;
+      note: string;
+    };
+  };
+  created_at: string;
+}
+
 export interface MissionPreflightCheck {
   code: string;
   level: "PASS" | "WARN" | "BLOCK" | "INFO" | string;

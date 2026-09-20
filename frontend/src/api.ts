@@ -10,6 +10,7 @@ import type {
   MediaImportStatus,
   MediaPositionCollection,
   Mission,
+  MissionDeployment,
   MissionPlanItem,
   MissionPreflight,
   MissionRevision,
@@ -196,6 +197,45 @@ export async function fetchMissionRevisions(
     throw new Error(`Mission revisions request failed: ${response.status}`);
   }
   return response.json() as Promise<MissionRevision[]>;
+}
+
+export async function fetchMissionDeployments(
+  missionId: string,
+): Promise<MissionDeployment[]> {
+  const response = await fetch(
+    `/api/v1/missions/${encodeURIComponent(missionId)}/deployments`,
+  );
+  if (!response.ok) {
+    throw new Error(`Mission deployments request failed: ${response.status}`);
+  }
+  return response.json() as Promise<MissionDeployment[]>;
+}
+
+export async function createMissionDeployment(
+  missionId: string,
+): Promise<MissionDeployment> {
+  const response = await fetch(
+    `/api/v1/missions/${encodeURIComponent(missionId)}/deployments`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as {
+      detail?: string | { message?: string };
+    } | null;
+    const detail =
+      typeof body?.detail === "string"
+        ? body.detail
+        : body?.detail?.message;
+    throw new Error(detail ?? `Mission handoff failed: ${response.status}`);
+  }
+  return response.json() as Promise<MissionDeployment>;
+}
+
+export function missionDeploymentDownloadUrl(
+  missionId: string,
+  deploymentId: string,
+): string {
+  return `/api/v1/missions/${encodeURIComponent(missionId)}/deployments/${encodeURIComponent(deploymentId)}/download`;
 }
 
 export function missionRevisionDownloadUrl(

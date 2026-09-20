@@ -99,6 +99,28 @@ class MissionRevision(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class MissionDeployment(Base):
+    __tablename__ = "mission_deployments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    mission_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("missions.id", ondelete="CASCADE"),
+        index=True,
+    )
+    revision_version: Mapped[int] = mapped_column(Integer, index=True)
+    plan_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    aircraft_sn: Mapped[str] = mapped_column(String(128), index=True)
+    preferred_executor: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    package_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    package_json: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class Flight(Base):
     __tablename__ = "flights"
 

@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.api_operations import _registry
 from app.database import session_factory
+from app.missions.deployment import build_deployment_package, deployment_sha256
 from app.missions.plans import (
     compatibility,
     mission_state_name,
@@ -20,7 +21,7 @@ from app.missions.plans import (
     plan_sha256,
 )
 from app.missions.preflight import evaluate_preflight
-from app.models import Mission, MissionRevision, Survey
+from app.models import Mission, MissionDeployment, MissionRevision, Survey
 
 
 router = APIRouter(prefix="/api/v1/missions", tags=["missions"])
@@ -400,3 +401,166 @@ async def mission_preflight(
             None,
         )
     return evaluate_preflight(mission, vehicle)
+
+
+
+def _deployment_payload(deployment: MissionDeployment) -> dict[str, Any]:
+    return {
+        "id": str(deployment.id),
+        "mission_id": str(deployment.mission_id),
+        "revision_version": deployment.revision_version,
+        "plan_sha256": deployment.plan_sha256,
+        "aircraft_sn": deployment.aircraft_sn,
+        "preferred_executor": deployment.preferred_executor,
+        "package_sha256": deployment.package_sha256,
+        "package": deployment.package_json,
+        "created_at": deployment.created_at.isoformat(),
+    }
+
+
+@router.get("/{mission_id}/deployments")
+async def mission_deployments(
+    mission_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    async with session_factory() as session:
+        if await session.get(Mission, mission_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission not found",
+            )
+        deployments = (
+            await session.scalars(
+                select(MissionDeployment)
+                .where(MissionDeployment.mission_id == mission_id)
+                .order_by(MissionDeployment.created_at, MissionDeployment.id)
+            )
+        ).all()
+        return [_deployment_payload(item) for item in deployments]
+
+
+@router.post(
+    "/{mission_id}/deployments",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_mission_deployment(
+    mission_id: uuid.UUID,
+    request: Request,
+) -> dict[str, Any]:
+    async with session_factory() as session:
+        mission = await session.get(Mission, mission_id)
+        if mission is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission not found",
+            )
+        revision = await session.get(
+            MissionRevision,
+            (mission_id, mission.plan_version),
+        )
+        if revision is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Current mission revision is missing",
+            )
+
+        if mission.status != "READY":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only READY missions can be sealed for handoff",
+            )
+        if not mission.aircraft_sn:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Mission has no assigned aircraft",
+            )
+
+        vehicles = await _registry(request).list_vehicles()
+        vehicle = next(
+            (item for item in vehicles if item.sn == mission.aircraft_sn),
+            None,
+        )
+        preflight = evaluate_preflight(mission, vehicle)
+        if not preflight["checks_passed"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Mission preflight has blocking checks",
+                    "preflight": preflight,
+                },
+            )
+
+        compat = compatibility(revision.plan_json or {})
+        if not compat["lyrebird_mavlink_upload_compatible"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Mission contains commands outside the Lyrebird upload surface",
+                    "compatibility": compat,
+                },
+            )
+
+        deployment_id = uuid.uuid4()
+        created_at = datetime.now(timezone.utc)
+        package = build_deployment_package(
+            mission,
+            revision,
+            deployment_id=deployment_id,
+            created_at=created_at,
+            preflight=preflight,
+        )
+        package_hash = deployment_sha256(package)
+
+        deployment = MissionDeployment(
+            id=deployment_id,
+            mission_id=mission.id,
+            revision_version=revision.version,
+            plan_sha256=revision.plan_sha256,
+            aircraft_sn=mission.aircraft_sn,
+            preferred_executor=mission.preferred_executor,
+            package_sha256=package_hash,
+            package_json=package,
+            created_at=created_at,
+        )
+        session.add(deployment)
+        await session.commit()
+        await session.refresh(deployment)
+        return _deployment_payload(deployment)
+
+
+@router.get("/{mission_id}/deployments/{deployment_id}")
+async def mission_deployment(
+    mission_id: uuid.UUID,
+    deployment_id: uuid.UUID,
+) -> dict[str, Any]:
+    async with session_factory() as session:
+        deployment = await session.get(MissionDeployment, deployment_id)
+        if deployment is None or deployment.mission_id != mission_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission deployment not found",
+            )
+        return _deployment_payload(deployment)
+
+
+@router.get("/{mission_id}/deployments/{deployment_id}/download")
+async def download_mission_deployment(
+    mission_id: uuid.UUID,
+    deployment_id: uuid.UUID,
+) -> Response:
+    deployment = await mission_deployment(mission_id, deployment_id)
+    payload = json.dumps(
+        deployment,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="m3-mission-handoff-{mission_id}-{deployment_id}.json"'
+            ),
+            "Content-Length": str(len(payload)),
+        },
+    )

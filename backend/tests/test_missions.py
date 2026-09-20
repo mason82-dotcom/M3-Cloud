@@ -5,6 +5,8 @@ from fastapi import HTTPException
 from sqlalchemy import delete
 
 from app.api_missions import (
+    create_mission_deployment,
+    mission_deployments,
     MissionCreate,
     MissionItemInput,
     MissionUpdate,
@@ -15,8 +17,10 @@ from app.api_missions import (
 )
 from app.api_projects import ProjectCreate, SurveyCreate, create_project, create_survey
 from app.database import session_factory
+from app.missions.deployment import deployment_sha256
 from app.missions.plans import compatibility, normalize_plan, plan_sha256
-from app.models import Mission, Project, Survey
+from app.vehicles.base import VehicleSnapshot
+from app.models import Mission, MissionDeployment, Project, Survey
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -143,3 +147,97 @@ async def test_empty_mission_cannot_be_marked_ready() -> None:
     with pytest.raises(HTTPException) as exc:
         await update_mission(mission_id, MissionUpdate(status="READY"))
     assert exc.value.status_code == 422
+
+
+
+class _DeploymentRegistry:
+    def __init__(self, vehicle):
+        self.vehicle = vehicle
+
+    async def list_vehicles(self):
+        return [self.vehicle]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_ready_mission_seals_immutable_non_executing_handoff(monkeypatch) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(MissionDeployment))
+        await session.execute(delete(Mission))
+        await session.commit()
+
+    created = await create_mission(
+        MissionCreate(
+            name="Deployable",
+            aircraft_sn="M3E-HANDOFF",
+            preferred_executor="DJI_NATIVE",
+            items=[
+                MissionItemInput(
+                    command=16,
+                    latitude_deg=49.0,
+                    longitude_deg=8.0,
+                    altitude_m=50.0,
+                )
+            ],
+        )
+    )
+    mission_id = __import__("uuid").UUID(created["id"])
+
+    vehicle = VehicleSnapshot(
+        id="vehicle:M3E-HANDOFF",
+        sn="M3E-HANDOFF",
+        name="M3E",
+        model="M3E",
+        source="lyrebird",
+        online=True,
+        sources=("lyrebird",),
+        telemetry={
+            "aircraft_state": {
+                "failsafe": False,
+                "positioning": {
+                    "fix": "FIXED",
+                    "rtk": {"fix": "FIXED"},
+                },
+            },
+            "safety": {
+                "ready_to_takeoff": True,
+                "manual_override": False,
+            },
+            "battery": {"capacity_percent": 80},
+        },
+    )
+    monkeypatch.setattr(
+        "app.api_missions._registry",
+        lambda request: _DeploymentRegistry(vehicle),
+    )
+
+    sealed = await create_mission_deployment(mission_id, object())
+    assert sealed["revision_version"] == 1
+    assert sealed["plan_sha256"] == created["plan_sha256"]
+    assert sealed["aircraft_sn"] == "M3E-HANDOFF"
+    assert sealed["package"]["preflight"]["checks_passed"] is True
+    assert sealed["package"]["handoff"]["upload_enabled"] is False
+    assert sealed["package"]["handoff"]["execution_enabled"] is False
+    assert sealed["package"]["handoff"]["wire_ready"] is False
+    assert sealed["package_sha256"] == deployment_sha256(sealed["package"])
+
+    listed = await mission_deployments(mission_id)
+    assert len(listed) == 1
+    assert listed[0]["id"] == sealed["id"]
+
+    # Later mission edits create a new revision but do not mutate the sealed package.
+    await update_mission(
+        mission_id,
+        MissionUpdate(
+            items=[
+                MissionItemInput(
+                    command=16,
+                    latitude_deg=49.0,
+                    longitude_deg=8.0,
+                    altitude_m=80.0,
+                )
+            ]
+        ),
+    )
+    listed_after = await mission_deployments(mission_id)
+    assert listed_after[0]["revision_version"] == 1
+    assert listed_after[0]["package"]["revision"]["plan"]["items"][0]["altitude_m"] == 50.0

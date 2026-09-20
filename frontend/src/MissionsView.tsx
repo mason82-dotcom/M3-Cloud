@@ -5,6 +5,8 @@ import type { FeatureCollection, LineString, Point } from "geojson";
 
 import {
   createMission,
+  createMissionDeployment,
+  fetchMissionDeployments,
   fetchMissionPreflight,
   fetchMissionRevisions,
   fetchMissions,
@@ -12,10 +14,12 @@ import {
   fetchProjectSurveys,
   fetchVehicles,
   updateMission,
+  missionDeploymentDownloadUrl,
   missionRevisionDownloadUrl,
 } from "./api";
 import type {
   Mission,
+  MissionDeployment,
   MissionPlanItem,
   MissionPreflight,
   MissionRevision,
@@ -249,6 +253,7 @@ export function MissionsView() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [revisions, setRevisions] = useState<MissionRevision[]>([]);
+  const [deployments, setDeployments] = useState<MissionDeployment[]>([]);
   const [preflight, setPreflight] = useState<MissionPreflight | null>(null);
   const [draftItems, setDraftItems] = useState<MissionPlanItem[]>([]);
   const [newName, setNewName] = useState("");
@@ -297,23 +302,27 @@ export function MissionsView() {
     setDraftItems(selected ? selected.plan.items.map((item) => ({ ...item })) : []);
     if (!selectedId) {
       setRevisions([]);
+      setDeployments([]);
       setPreflight(null);
       return;
     }
     let cancelled = false;
     void Promise.all([
       fetchMissionRevisions(selectedId),
+      fetchMissionDeployments(selectedId),
       fetchMissionPreflight(selectedId),
     ])
-      .then(([items, report]) => {
+      .then(([items, sealed, report]) => {
         if (!cancelled) {
           setRevisions(items);
+          setDeployments(sealed);
           setPreflight(report);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setRevisions([]);
+          setDeployments([]);
           setPreflight(null);
         }
       });
@@ -336,6 +345,20 @@ export function MissionsView() {
   const selectedVehicle = vehicles.find(
     (vehicle) => vehicle.sn === selected?.aircraft_sn,
   );
+
+  const sealHandoff = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const created = await createMissionDeployment(selected.id);
+      setDeployments((current) => [...current, created]);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const create = async () => {
     const name = newName.trim();
@@ -598,6 +621,37 @@ export function MissionsView() {
                       </a>
                     ))}
                   </div>
+                </div>
+
+                <div className="missionRevisionBox">
+                  <div className="missionHandoffHead">
+                    <strong>Sealed handoff packages</strong>
+                    <button
+                      disabled={
+                        busy ||
+                        selected.status !== "READY" ||
+                        preflight?.checks_passed !== true ||
+                        !selected.compatibility.lyrebird_mavlink_upload_compatible
+                      }
+                      onClick={() => void sealHandoff()}
+                      type="button"
+                    >
+                      Seal current revision
+                    </button>
+                  </div>
+                  <div>
+                    {deployments.map((deployment) => (
+                      <a
+                        href={missionDeploymentDownloadUrl(selected.id, deployment.id)}
+                        key={deployment.id}
+                      >
+                        v{deployment.revision_version} · {deployment.package_sha256.slice(0, 8)}
+                      </a>
+                    ))}
+                  </div>
+                  <small>
+                    Audit/handoff only: package creation never uploads or starts the aircraft.
+                  </small>
                 </div>
 
                 <div className="missionPreflightBox">
