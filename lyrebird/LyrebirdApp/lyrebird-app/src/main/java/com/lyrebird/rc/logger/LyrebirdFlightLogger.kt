@@ -50,6 +50,9 @@ object LyrebirdFlightLogger {
     @Volatile private var logFile: File? = null
     @Volatile private var sessionActive = false
 
+    @Volatile private var latestSurveyCsv: File? = null
+    @Volatile private var latestSurveySummary: File? = null
+
     /** Epoch seconds at which the current (or last) session started, 0 when unknown. */
     @Volatile private var sessionStartEpochSec: Long = 0
 
@@ -155,6 +158,59 @@ object LyrebirdFlightLogger {
         }.onFailure { failure ->
             Log.w(TAG, "logSurveyCapture error: ${failure.message}")
         }
+    }
+
+    /**
+     * Register the two per-mission survey artifacts produced by [SurveyReportWriter].
+     *
+     * The pointer is process-local, but [latestSurveyArtifact] also attempts a current-day
+     * recovery scan so the endpoint remains useful after an app restart.
+     */
+    fun registerSurveyReport(files: SurveyReportFiles) {
+        latestSurveyCsv = files.csv
+        latestSurveySummary = files.summaryJson
+    }
+
+    fun latestSurveyInfoJson(): String {
+        recoverLatestSurveyIfNeeded()
+        val csv = latestSurveyCsv?.takeIf { it.isFile }
+        val summary = latestSurveySummary?.takeIf { it.isFile }
+        if (csv == null || summary == null) {
+            return JSONObject().put("available", false).toString()
+        }
+        return JSONObject()
+            .put("available", true)
+            .put("capturesName", csv.name)
+            .put("capturesBytes", csv.length())
+            .put("capturesUrl", "/get/survey/latest/captures.csv")
+            .put("summaryName", summary.name)
+            .put("summaryBytes", summary.length())
+            .put("summaryUrl", "/get/survey/latest/summary.json")
+            .toString()
+    }
+
+    fun latestSurveyArtifact(kind: String): File? {
+        recoverLatestSurveyIfNeeded()
+        return when (kind) {
+            "captures" -> latestSurveyCsv
+            "summary" -> latestSurveySummary
+            else -> null
+        }?.takeIf { it.isFile }
+    }
+
+    @Synchronized
+    private fun recoverLatestSurveyIfNeeded() {
+        if (latestSurveyCsv?.isFile == true && latestSurveySummary?.isFile == true) return
+        val dir = FlightLogStorage.resolveLogDir() ?: return
+        val csv = dir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith("_captures.csv") }
+            ?.maxByOrNull { it.lastModified() }
+            ?: return
+        val base = csv.name.removeSuffix("_captures.csv")
+        val summary = File(dir, "${base}_survey-summary.json")
+        if (!summary.isFile) return
+        latestSurveyCsv = csv
+        latestSurveySummary = summary
     }
 
     fun logSurveySummary(

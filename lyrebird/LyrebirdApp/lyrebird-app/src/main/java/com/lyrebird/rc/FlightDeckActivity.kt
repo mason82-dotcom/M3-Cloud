@@ -5981,6 +5981,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                     mediaByIndex = mediaByIndex,
                     finishReason = reason
                 )
+                LyrebirdFlightLogger.registerSurveyReport(files)
                 val rows = SurveyReportWriter.reconcile(captures, mediaByIndex)
                 val summary = SurveyReportWriter.summarize(rows)
 

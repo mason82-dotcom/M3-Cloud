@@ -748,6 +748,43 @@ internal class SimpleHttpServer(
                     return
                 }
 
+                if (request.method == "GET" && request.uri.startsWith("/get/survey/latest/")) {
+                    val artifact = when (request.uri) {
+                        "/get/survey/latest/captures.csv" ->
+                            LyrebirdFlightLogger.latestSurveyArtifact("captures") to "text/csv"
+                        "/get/survey/latest/summary.json" ->
+                            LyrebirdFlightLogger.latestSurveyArtifact("summary") to "application/json"
+                        else -> null to "text/plain"
+                    }
+                    val file = artifact.first
+                    if (file != null) {
+                        val output = clientSocket.getOutputStream()
+                        val bytes = file.readBytes()
+                        val header = buildString {
+                            append("HTTP/1.1 200 OK\r\n")
+                            append("Content-Type: ${artifact.second}\r\n")
+                            append("Content-Length: ${bytes.size}\r\n")
+                            append("Content-Disposition: attachment; filename=\"${file.name}\"\r\n")
+                            append("Access-Control-Allow-Origin: *\r\n")
+                            append("\r\n")
+                        }
+                        output.write(header.toByteArray())
+                        output.write(bytes)
+                        output.flush()
+                    } else {
+                        val body = "{\"error\":\"survey artifact unavailable\"}"
+                        writer.println("HTTP/1.1 404 Not Found")
+                        writer.println("Content-Type: application/json")
+                        writer.println("Content-Length: ${body.toByteArray().size}")
+                        writer.println("Access-Control-Allow-Origin: *")
+                        writer.println()
+                        writer.print(body)
+                        writer.flush()
+                    }
+                    clientSocket.close()
+                    return
+                }
+
                 val response = handleHttpRequest(
                     request.method, request.uri, request.postData, request.source
                 )
@@ -799,6 +836,7 @@ internal class SimpleHttpServer(
                         """"hasThermal":${host.hasThermalCamera()}}"""
                 }
                 "/config/settings" -> host.readSettingsJson()
+                "/get/survey/latest" -> LyrebirdFlightLogger.latestSurveyInfoJson()
                 else -> "Use POST for commands. Telemetry available on port $TELEMETRY_PORT. " +
                     "Config available at GET /config; settings at GET /config/settings"
             }
