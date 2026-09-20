@@ -51,6 +51,7 @@ async def lifespan(app: FastAPI):
     processing_manager = ProcessingManager(
         session_factory,
         media_root=settings.media_import_root,
+        media_handoff_root=settings.media_import_handoff_root,
         webodm_enabled=settings.webodm_enabled,
         webodm_url=settings.webodm_url,
         webodm_token=settings.webodm_token,

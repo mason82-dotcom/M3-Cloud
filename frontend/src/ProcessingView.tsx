@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  createThermogramJob,
   createWebODMJob,
   fetchMediaDatasets,
   fetchProcessingMap,
@@ -9,13 +10,17 @@ import {
   fetchProcessingScenes,
   fetchProcessingJobs,
   fetchProcessingProfiles,
+  fetchThermogramHandoff,
   processingResultDownloadUrl,
+  thermogramHandoffDownloadUrl,
+  updateExternalProcessingJob,
 } from "./api";
 import type {
   MediaDataset,
   ProcessingJob,
   ProcessingProfile,
   ProcessingResult,
+  ThermogramHandoff,
 } from "./types";
 import { Processing3DView } from "./Processing3DView";
 import { ProcessingResultMap } from "./ProcessingResultMap";
@@ -34,12 +39,13 @@ function percent(value: number): string {
 }
 
 function statusClass(status: string): string {
-  if (status === "COMPLETED") return "good";
+  if (status === "COMPLETED" || status === "COMPLETED_EXTERNAL") return "good";
   if (
     status === "FAILED" ||
     status === "CANCELED" ||
     status === "INTERRUPTED" ||
-    status === "RESULT_IMPORT_FAILED"
+    status === "RESULT_IMPORT_FAILED" ||
+    status === "FAILED_EXTERNAL"
   ) {
     return "bad";
   }
@@ -65,6 +71,10 @@ export function ProcessingView() {
   const [profile, setProfile] = useState("m3e-ortho");
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [thermogramPrefix, setThermogramPrefix] = useState("");
+  const [thermogramName, setThermogramName] = useState("");
+  const [thermogramSubmitting, setThermogramSubmitting] = useState(false);
+  const [handoffs, setHandoffs] = useState<Record<string, ThermogramHandoff>>({});
   const [results, setResults] = useState<Record<string, ProcessingResult[]>>({});
   const [mapInfo, setMapInfo] = useState<Awaited<ReturnType<typeof fetchProcessingMap>>>(null);
   const [maps, setMaps] = useState<Awaited<ReturnType<typeof fetchProcessingMaps>>>([]);
@@ -172,6 +182,23 @@ export function ProcessingView() {
     [datasets, profiles],
   );
   const selectedDataset = availableDatasets.find((item) => item.prefix === prefix);
+  const thermogramDatasets = useMemo(
+    () =>
+      datasets.filter((dataset) =>
+        dataset.platform === "M3T" &&
+        dataset.workflows.some(
+          (workflow) => workflow.key === "THERMOGRAM" && workflow.ready,
+        ),
+      ),
+    [datasets],
+  );
+  const selectedThermogramDataset = thermogramDatasets.find(
+    (item) => item.prefix === thermogramPrefix,
+  );
+  const selectedThermogramWorkflow = selectedThermogramDataset?.workflows.find(
+    (item) => item.key === "THERMOGRAM",
+  );
+
   const compatibleProfiles = useMemo(
     () =>
       profiles.filter((candidate) => {
@@ -200,6 +227,24 @@ export function ProcessingView() {
   }, [availableDatasets, prefix]);
 
   useEffect(() => {
+    if (!thermogramPrefix && thermogramDatasets.length > 0) {
+      setThermogramPrefix(thermogramDatasets[0].prefix);
+    }
+  }, [thermogramDatasets, thermogramPrefix]);
+
+  useEffect(() => {
+    if (!thermogramPrefix) return;
+    if (
+      !thermogramName ||
+      thermogramDatasets.some((item) => item.prefix.endsWith(thermogramName))
+    ) {
+      setThermogramName(
+        `${thermogramPrefix.split("/").pop() ?? thermogramPrefix} Thermogram`,
+      );
+    }
+  }, [thermogramDatasets, thermogramName, thermogramPrefix]);
+
+  useEffect(() => {
     if (!prefix) return;
     if (!name || availableDatasets.some((item) => item.prefix.endsWith(name))) {
       setName(prefix.split("/").pop() ?? prefix);
@@ -215,6 +260,48 @@ export function ProcessingView() {
       setProfile(compatibleProfiles[0].key);
     }
   }, [compatibleProfiles, profile]);
+
+  const submitThermogram = useCallback(async () => {
+    if (!selectedThermogramDataset || !thermogramPrefix) return;
+    setThermogramSubmitting(true);
+    try {
+      const job = await createThermogramJob({
+        name:
+          thermogramName.trim() ||
+          `${thermogramPrefix.split("/").pop() ?? "M3T"} Thermogram`,
+        input_prefix: thermogramPrefix,
+      });
+      const handoff = await fetchThermogramHandoff(job.id);
+      setHandoffs((current) => ({ ...current, [job.id]: handoff }));
+      setJobs((current) => [
+        job,
+        ...current.filter((item) => item.id !== job.id),
+      ]);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setThermogramSubmitting(false);
+    }
+  }, [selectedThermogramDataset, thermogramName, thermogramPrefix]);
+
+  const updateExternal = useCallback(
+    async (
+      job: ProcessingJob,
+      nextStatus: "RUNNING_EXTERNAL" | "COMPLETED_EXTERNAL",
+    ) => {
+      try {
+        const updated = await updateExternalProcessingJob(job.id, nextStatus);
+        setJobs((current) =>
+          current.map((item) => (item.id === updated.id ? updated : item)),
+        );
+        setError(null);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    },
+    [],
+  );
 
   const submit = useCallback(async () => {
     if (!prefix || !selectedProfile || !selectedDataset) return;
@@ -309,6 +396,69 @@ export function ProcessingView() {
         {error ? <div className="mediaWarning">{error}</div> : null}
       </section>
 
+      <section className="panel thermogramCreate">
+        <div className="panelHead">
+          <div>
+            <h2>M3T Thermogram</h2>
+            <small>External M3T Wide + Thermal processing · originals stay read-only</small>
+          </div>
+          <span>{thermogramDatasets.length} M3T datasets</span>
+        </div>
+
+        <div className="processingForm thermogramForm">
+          <label>
+            M3T dataset
+            <select
+              value={thermogramPrefix}
+              onChange={(event) => setThermogramPrefix(event.target.value)}
+            >
+              {thermogramDatasets.length === 0 ? (
+                <option value="">No complete M3T Wide/Thermal dataset</option>
+              ) : thermogramDatasets.map((item) => (
+                <option key={item.prefix} value={item.prefix}>
+                  {item.prefix} · {item.asset_count} originals
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Job name
+            <input
+              maxLength={255}
+              onChange={(event) => setThermogramName(event.target.value)}
+              value={thermogramName}
+            />
+          </label>
+
+          <button
+            disabled={thermogramSubmitting || !selectedThermogramDataset}
+            onClick={() => void submitThermogram()}
+            type="button"
+          >
+            {thermogramSubmitting ? "Creating…" : "Create M3T handoff"}
+          </button>
+        </div>
+
+        {selectedThermogramDataset ? (
+          <div className="processingDataset">
+            <span>Platform<b>M3T</b></span>
+            <span>Complete pairs<b>{selectedThermogramWorkflow?.complete_groups ?? 0}</b></span>
+            <span>Frozen files<b>{selectedThermogramWorkflow?.eligible_assets ?? 0}</b></span>
+            <span>Media<b>WIDE / THERMAL</b></span>
+          </div>
+        ) : null}
+
+        <div className="processingProfile thermogramProfile">
+          <strong>Thermogram desktop handoff</strong>
+          <span>
+            M3-Cloud freezes the complete M3T Wide/Thermal pairs and their SHA-256
+            hashes. Open the referenced original DJI folder in Thermogram; no source
+            image is renamed, resized or copied by M3-Cloud.
+          </span>
+        </div>
+      </section>
+
       <section className="panel processingJobs">
         <div className="panelHead">
           <div>
@@ -343,6 +493,64 @@ export function ProcessingView() {
                 <span>Remote<b>{job.remote_status ?? "—"}</b></span>
                 <span>Assets<b>{job.available_assets.length}</b></span>
               </div>
+
+              {job.kind === "THERMOGRAM" ? (
+                <div className="thermogramActions">
+                  <a href={thermogramHandoffDownloadUrl(job.id)}>
+                    Download M3T handoff
+                  </a>
+                  <button
+                    onClick={() => {
+                      void fetchThermogramHandoff(job.id)
+                        .then((handoff) =>
+                          setHandoffs((current) => ({
+                            ...current,
+                            [job.id]: handoff,
+                          })),
+                        )
+                        .catch((reason: unknown) =>
+                          setError(
+                            reason instanceof Error
+                              ? reason.message
+                              : String(reason),
+                          ),
+                        );
+                    }}
+                    type="button"
+                  >
+                    Show path
+                  </button>
+                  {job.status === "WAITING_EXTERNAL" ||
+                  job.status === "FAILED_EXTERNAL" ? (
+                    <button
+                      onClick={() => void updateExternal(job, "RUNNING_EXTERNAL")}
+                      type="button"
+                    >
+                      Mark running
+                    </button>
+                  ) : null}
+                  {job.status === "RUNNING_EXTERNAL" ? (
+                    <button
+                      onClick={() => void updateExternal(job, "COMPLETED_EXTERNAL")}
+                      type="button"
+                    >
+                      Mark completed
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {handoffs[job.id] ? (
+                <div className="thermogramPath">
+                  <span>Thermogram folder</span>
+                  <code>{handoffs[job.id].external_path}</code>
+                  <small>
+                    {handoffs[job.id].capture_group_count} complete pairs · {
+                      handoffs[job.id].asset_count
+                    } frozen originals
+                  </small>
+                </div>
+              ) : null}
 
               {job.available_assets.length > 0 ? (
                 <div className="processingAssets">

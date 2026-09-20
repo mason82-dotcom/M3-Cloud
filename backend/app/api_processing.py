@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Path, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -22,6 +23,16 @@ class WebODMJobRequest(BaseModel):
     input_prefix: str = Field(min_length=1, max_length=1024)
     platform: str | None = None
     profile: str = DEFAULT_PROFILE
+
+
+class ThermogramJobRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    input_prefix: str = Field(min_length=1, max_length=1024)
+
+
+class ExternalJobStatusRequest(BaseModel):
+    status: Literal["RUNNING_EXTERNAL", "COMPLETED_EXTERNAL", "FAILED_EXTERNAL"]
+    error: str | None = Field(default=None, max_length=2000)
 
 
 def _job(job: ProcessingJob) -> dict[str, Any]:
@@ -175,6 +186,94 @@ async def create_webodm_job(
             detail=str(exc),
         ) from exc
 
+    return _job(job)
+
+
+@router.post("/thermogram", status_code=status.HTTP_201_CREATED)
+async def create_thermogram_job(
+    body: ThermogramJobRequest,
+    request: Request,
+) -> dict[str, Any]:
+    manager = request.app.state.processing_manager
+    try:
+        job = await manager.create_thermogram_job(
+            name=body.name,
+            input_prefix=body.input_prefix,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return _job(job)
+
+
+@router.get("/jobs/{job_id}/handoff")
+async def processing_handoff(
+    job_id: uuid.UUID,
+    request: Request,
+) -> dict[str, object]:
+    manager = request.app.state.processing_manager
+    try:
+        return await manager.thermogram_handoff(job_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/jobs/{job_id}/handoff/download")
+async def download_processing_handoff(
+    job_id: uuid.UUID,
+    request: Request,
+) -> Response:
+    manifest = await processing_handoff(job_id, request)
+    payload = json.dumps(
+        manifest,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="m3t-thermogram-handoff.json"',
+            "Content-Length": str(len(payload)),
+        },
+    )
+
+
+@router.post("/jobs/{job_id}/external-status")
+async def update_external_processing_status(
+    job_id: uuid.UUID,
+    body: ExternalJobStatusRequest,
+    request: Request,
+) -> dict[str, Any]:
+    manager = request.app.state.processing_manager
+    try:
+        job = await manager.update_external_job(
+            job_id,
+            new_status=body.status,
+            error=body.error,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     return _job(job)
 
 

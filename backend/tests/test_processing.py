@@ -8,7 +8,9 @@ from app.processing.service import (
     REMOTE_STATUS,
     normalize_prefix,
     resolve_asset_path,
+    build_thermogram_handoff,
     result_object_key,
+    select_thermogram_assets,
     selected_result_assets,
 )
 from app.processing.webodm import WebODMClient
@@ -137,3 +139,90 @@ def test_webodm_result_selection_skips_monolithic_archive() -> None:
     assert result_object_key(job_id, "orthophoto.tif") == (
         "webodm/11111111-1111-1111-1111-111111111111/orthophoto.tif"
     )
+
+
+
+def _m3t_asset(kind: str, group: str, filename: str):
+    from datetime import datetime, timezone
+    from app.models import MediaAsset
+
+    now = datetime.now(timezone.utc)
+    return MediaAsset(
+        id=uuid.uuid4(),
+        relative_path=f"M3T/site/{filename}",
+        filename=filename,
+        extension=".jpg",
+        size_bytes=100,
+        mtime_ns=1,
+        sha256=uuid.uuid4().hex * 2,
+        platform="M3T",
+        media_kind=kind,
+        capture_group=group,
+        storage_mode="EXTERNAL",
+        external_root="media-import",
+        present=True,
+        duplicate_of=None,
+        discovered_at=now,
+        last_seen_at=now,
+    )
+
+
+def test_thermogram_selection_freezes_only_complete_m3t_pairs() -> None:
+    complete = "M3T/site/DJI_0001"
+    incomplete = "M3T/site/DJI_0002"
+    assets = [
+        _m3t_asset("WIDE", complete, "DJI_0001_W.JPG"),
+        _m3t_asset("THERMAL", complete, "DJI_0001_T.JPG"),
+        _m3t_asset("WIDE", incomplete, "DJI_0002_W.JPG"),
+    ]
+
+    selected = select_thermogram_assets(assets)
+
+    assert [asset.media_kind for asset in selected] == ["WIDE", "THERMAL"]
+    assert {asset.capture_group for asset in selected} == {complete}
+
+
+def test_thermogram_handoff_is_m3t_and_preserves_original_paths() -> None:
+    from datetime import datetime, timezone
+    from app.models import ProcessingJob
+
+    group = "M3T/site/DJI_0001"
+    assets = [
+        _m3t_asset("WIDE", group, "DJI_0001_W.JPG"),
+        _m3t_asset("THERMAL", group, "DJI_0001_T.JPG"),
+    ]
+    now = datetime.now(timezone.utc)
+    job = ProcessingJob(
+        id=uuid.UUID("22222222-2222-2222-2222-222222222222"),
+        kind="THERMOGRAM",
+        status="WAITING_EXTERNAL",
+        name="M3T site",
+        input_prefix="M3T/site",
+        platform="M3T",
+        flight_id=None,
+        media_kinds=["WIDE", "THERMAL"],
+        options=[],
+        image_count=2,
+        uploaded_count=0,
+        progress=0.0,
+        available_assets=[],
+        created_at=now,
+        updated_at=now,
+    )
+
+    handoff = build_thermogram_handoff(
+        job,
+        assets,
+        handoff_root=r"\\m3-cloud\media-import",
+    )
+
+    assert handoff["workflow"] == "THERMOGRAM"
+    assert handoff["platform"] == "M3T"
+    assert handoff["capture_group_count"] == 1
+    assert handoff["asset_count"] == 2
+    assert handoff["external_path"] == r"\\m3-cloud\media-import\M3T\site"
+    files = handoff["capture_groups"][0]["files"]
+    assert [item["filename"] for item in files] == [
+        "DJI_0001_W.JPG",
+        "DJI_0001_T.JPG",
+    ]

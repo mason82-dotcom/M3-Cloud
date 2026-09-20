@@ -354,6 +354,34 @@ export interface ProcessingJob {
   finished_at?: string | null;
 }
 
+export interface ThermogramHandoffFile {
+  id: string;
+  relative_path: string;
+  filename: string;
+  media_kind: "WIDE" | "THERMAL" | string;
+  size_bytes: number;
+  sha256: string;
+}
+
+export interface ThermogramHandoffGroup {
+  capture_group: string;
+  files: ThermogramHandoffFile[];
+}
+
+export interface ThermogramHandoff {
+  schema_version: number;
+  workflow: "THERMOGRAM";
+  platform: "M3T";
+  job_id: string;
+  flight_id?: string | null;
+  input_prefix: string;
+  external_path: string;
+  required_media_kinds: string[];
+  capture_group_count: number;
+  asset_count: number;
+  capture_groups: ThermogramHandoffGroup[];
+}
+
 export interface ProcessingResult {
   id: string;
   job_id: string;

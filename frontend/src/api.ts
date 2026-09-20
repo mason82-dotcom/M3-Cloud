@@ -12,6 +12,7 @@ import type {
   ProcessingProfile,
   ProcessingSceneInfo,
   ProcessingResult,
+  ThermogramHandoff,
   SystemHealth,
   Vehicle,
 } from "./types";
@@ -189,6 +190,59 @@ export async function createWebODMJob(input: {
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { detail?: string } | null;
     throw new Error(body?.detail ?? `WebODM job request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingJob>;
+}
+
+export async function createThermogramJob(input: {
+  name: string;
+  input_prefix: string;
+}): Promise<ProcessingJob> {
+  const response = await fetch("/api/v1/processing/thermogram", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Thermogram job request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingJob>;
+}
+
+export async function fetchThermogramHandoff(
+  jobId: string,
+): Promise<ThermogramHandoff> {
+  const response = await fetch(
+    `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/handoff`,
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Thermogram handoff failed: ${response.status}`);
+  }
+  return response.json() as Promise<ThermogramHandoff>;
+}
+
+export function thermogramHandoffDownloadUrl(jobId: string): string {
+  return `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/handoff/download`;
+}
+
+export async function updateExternalProcessingJob(
+  jobId: string,
+  status: "RUNNING_EXTERNAL" | "COMPLETED_EXTERNAL" | "FAILED_EXTERNAL",
+  error?: string,
+): Promise<ProcessingJob> {
+  const response = await fetch(
+    `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/external-status`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, error }),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `External job update failed: ${response.status}`);
   }
   return response.json() as Promise<ProcessingJob>;
 }

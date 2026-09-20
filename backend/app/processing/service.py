@@ -37,6 +37,113 @@ REMOTE_STATUS = {
     50: "CANCELED",
 }
 
+THERMOGRAM_KINDS = ("WIDE", "THERMAL")
+
+
+def select_thermogram_assets(assets: list[MediaAsset]) -> list[MediaAsset]:
+    """Freeze complete M3T Wide/Thermal capture pairs for an external Thermogram job."""
+
+    by_group: dict[str, list[MediaAsset]] = {}
+    for asset in assets:
+        if (
+            asset.platform != "M3T"
+            or asset.media_kind not in THERMOGRAM_KINDS
+            or not asset.capture_group
+        ):
+            continue
+        by_group.setdefault(asset.capture_group, []).append(asset)
+
+    selected: list[MediaAsset] = []
+    order = {kind: index for index, kind in enumerate(THERMOGRAM_KINDS)}
+    required = set(THERMOGRAM_KINDS)
+
+    for group in sorted(by_group):
+        members = by_group[group]
+        by_kind = {asset.media_kind: asset for asset in members}
+        if not required.issubset(by_kind):
+            continue
+        selected.extend(
+            sorted(
+                (by_kind[kind] for kind in THERMOGRAM_KINDS),
+                key=lambda item: order[item.media_kind],
+            )
+        )
+
+    if not selected:
+        raise ValueError(
+            "Thermogram requires at least one complete M3T Wide/Thermal capture pair"
+        )
+    return selected
+
+
+def _handoff_path(root: str, prefix: str) -> str:
+    base = root.strip()
+    if not base:
+        return prefix
+    if "\\" in base and "/" not in base:
+        return base.rstrip("\\/") + "\\" + prefix.replace("/", "\\")
+    return base.rstrip("/\\") + "/" + prefix
+
+
+def build_thermogram_handoff(
+    job: ProcessingJob,
+    assets: list[MediaAsset],
+    *,
+    handoff_root: str,
+) -> dict[str, object]:
+    if job.kind != "THERMOGRAM" or job.platform != "M3T":
+        raise ValueError("Processing job is not an M3T Thermogram handoff")
+
+    grouped: dict[str, list[MediaAsset]] = {}
+    for asset in assets:
+        if asset.capture_group:
+            grouped.setdefault(asset.capture_group, []).append(asset)
+
+    groups: list[dict[str, object]] = []
+    for group in sorted(grouped):
+        members = grouped[group]
+        kinds = {asset.media_kind for asset in members}
+        if not set(THERMOGRAM_KINDS).issubset(kinds):
+            continue
+        groups.append(
+            {
+                "capture_group": group,
+                "files": [
+                    {
+                        "id": str(asset.id),
+                        "relative_path": asset.relative_path,
+                        "filename": asset.filename,
+                        "media_kind": asset.media_kind,
+                        "size_bytes": asset.size_bytes,
+                        "sha256": asset.sha256,
+                    }
+                    for asset in sorted(
+                        members,
+                        key=lambda item: THERMOGRAM_KINDS.index(item.media_kind),
+                    )
+                    if asset.media_kind in THERMOGRAM_KINDS
+                ],
+            }
+        )
+
+    if not groups:
+        raise ValueError("Thermogram job contains no complete M3T capture pairs")
+
+    return {
+        "schema_version": 1,
+        "workflow": "THERMOGRAM",
+        "platform": "M3T",
+        "job_id": str(job.id),
+        "flight_id": str(job.flight_id) if job.flight_id else None,
+        "input_prefix": job.input_prefix,
+        "external_path": _handoff_path(handoff_root, job.input_prefix),
+        "required_media_kinds": list(THERMOGRAM_KINDS),
+        "capture_group_count": len(groups),
+        "asset_count": sum(len(group["files"]) for group in groups),
+        "capture_groups": groups,
+    }
+
+
 def select_profile_assets(
     assets: list[MediaAsset],
     profile: WebODMProfile,
@@ -142,6 +249,7 @@ class ProcessingManager:
         sessions: async_sessionmaker[AsyncSession],
         *,
         media_root: str,
+        media_handoff_root: str = "",
         webodm_enabled: bool,
         webodm_url: str,
         webodm_token: str = "",
@@ -152,6 +260,7 @@ class ProcessingManager:
     ):
         self.sessions = sessions
         self.media_root = Path(media_root)
+        self.media_handoff_root = media_handoff_root or media_root
         self.webodm_enabled = webodm_enabled
         self.webodm_url = webodm_url.rstrip("/")
         self.webodm_token = webodm_token
@@ -280,6 +389,159 @@ class ProcessingManager:
 
         await self._queue.put(job.id)
         return job
+
+    async def create_thermogram_job(
+        self,
+        *,
+        name: str,
+        input_prefix: str,
+    ) -> ProcessingJob:
+        normalized_prefix = normalize_prefix(input_prefix)
+
+        async with self.sessions() as session:
+            candidates = (
+                await session.scalars(
+                    select(MediaAsset)
+                    .where(
+                        MediaAsset.present.is_(True),
+                        MediaAsset.duplicate_of.is_(None),
+                        MediaAsset.platform == "M3T",
+                        (
+                            (MediaAsset.relative_path == normalized_prefix)
+                            | MediaAsset.relative_path.startswith(normalized_prefix + "/")
+                        ),
+                    )
+                    .order_by(MediaAsset.relative_path)
+                )
+            ).all()
+
+            assets = select_thermogram_assets(candidates)
+
+            dataset_records = (
+                await session.scalars(
+                    select(MediaDatasetRecord).where(
+                        MediaDatasetRecord.platform == "M3T",
+                        MediaDatasetRecord.prefix == normalized_prefix,
+                    )
+                )
+            ).all()
+            dataset_record = dataset_records[0] if len(dataset_records) == 1 else None
+
+            now = datetime.now(timezone.utc)
+            job = ProcessingJob(
+                kind="THERMOGRAM",
+                status="WAITING_EXTERNAL",
+                name=name.strip() or normalized_prefix.split("/")[-1],
+                input_prefix=normalized_prefix,
+                platform="M3T",
+                flight_id=dataset_record.flight_id if dataset_record else None,
+                media_kinds=list(THERMOGRAM_KINDS),
+                options=[
+                    {"name": "workflow", "value": "THERMOGRAM_M3T"},
+                    {
+                        "name": "handoff_root",
+                        "value": self.media_handoff_root,
+                    },
+                ],
+                image_count=len(assets),
+                uploaded_count=0,
+                progress=0.0,
+                available_assets=[],
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(job)
+            await session.flush()
+            session.add_all(
+                [
+                    ProcessingJobAsset(
+                        job_id=job.id,
+                        media_asset_id=asset.id,
+                        ordinal=index,
+                    )
+                    for index, asset in enumerate(assets)
+                ]
+            )
+            await session.commit()
+            return job
+
+    async def thermogram_handoff(self, job_id: uuid.UUID) -> dict[str, object]:
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is None:
+                raise LookupError("Processing job not found")
+            if job.kind != "THERMOGRAM":
+                raise ValueError("Processing job is not a Thermogram job")
+
+            assets = (
+                await session.scalars(
+                    select(MediaAsset)
+                    .join(
+                        ProcessingJobAsset,
+                        ProcessingJobAsset.media_asset_id == MediaAsset.id,
+                    )
+                    .where(ProcessingJobAsset.job_id == job_id)
+                    .order_by(ProcessingJobAsset.ordinal)
+                )
+            ).all()
+
+            return build_thermogram_handoff(
+                job,
+                assets,
+                handoff_root=self.media_handoff_root,
+            )
+
+    async def update_external_job(
+        self,
+        job_id: uuid.UUID,
+        *,
+        new_status: str,
+        error: str | None = None,
+    ) -> ProcessingJob:
+        allowed = {
+            "WAITING_EXTERNAL": {"RUNNING_EXTERNAL", "COMPLETED_EXTERNAL", "FAILED_EXTERNAL"},
+            "RUNNING_EXTERNAL": {"COMPLETED_EXTERNAL", "FAILED_EXTERNAL"},
+            "FAILED_EXTERNAL": {"RUNNING_EXTERNAL"},
+            "COMPLETED_EXTERNAL": set(),
+        }
+        if new_status not in {
+            "RUNNING_EXTERNAL",
+            "COMPLETED_EXTERNAL",
+            "FAILED_EXTERNAL",
+        }:
+            raise ValueError("Unsupported external processing status")
+
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is None:
+                raise LookupError("Processing job not found")
+            if job.kind != "THERMOGRAM" or job.platform != "M3T":
+                raise ValueError("External status is only supported for M3T Thermogram jobs")
+            if new_status not in allowed.get(job.status, set()):
+                raise ValueError(
+                    f"Cannot transition Thermogram job from {job.status} to {new_status}"
+                )
+
+            now = datetime.now(timezone.utc)
+            if new_status == "RUNNING_EXTERNAL":
+                job.started_at = job.started_at or now
+                job.finished_at = None
+                job.progress = 0.5
+                job.error = None
+            elif new_status == "COMPLETED_EXTERNAL":
+                job.started_at = job.started_at or now
+                job.finished_at = now
+                job.progress = 1.0
+                job.error = None
+            else:
+                job.started_at = job.started_at or now
+                job.finished_at = now
+                job.error = error or "External Thermogram processing failed"
+
+            job.status = new_status
+            job.updated_at = now
+            await session.commit()
+            return job
 
     async def _recover(self) -> None:
         now = datetime.now(timezone.utc)

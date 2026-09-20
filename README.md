@@ -225,3 +225,35 @@ radiometric-calibration = camera
 
 This follows ODM's supported Mavic 3 Multispectral workflow. The `camera+sun` mode is not enabled
 by default because ODM currently documents it as experimental.
+
+
+### M3T Thermogram handoff
+
+Thermogram integration is intentionally limited to **DJI Mavic 3 Thermal (M3T)** datasets.
+M3-Cloud detects complete `*_W.JPG` + `*_T.JPG` capture pairs, freezes those exact
+`MediaAsset` records in a persistent `THERMOGRAM` processing job, and keeps the source
+folder read-only.
+
+Thermogram itself runs externally (typically on Windows) and opens the original DJI folder as
+created from the SD card. Thermogram explicitly supports M3T and recommends preserving DJI's
+original file organization. Configure the path visible from that workstation when it differs
+from the backend container path:
+
+```dotenv
+# Example SMB/UNC share visible from Windows:
+M3CLOUD_MEDIA_IMPORT_HANDOFF_ROOT=\\\\m3-cloud\\media-import
+```
+
+The Thermogram workflow is available only when the media dataset platform is `M3T` and at least
+one complete Wide/Thermal capture pair exists.
+
+```text
+POST /api/v1/processing/thermogram
+GET  /api/v1/processing/jobs/<UUID>/handoff
+GET  /api/v1/processing/jobs/<UUID>/handoff/download
+POST /api/v1/processing/jobs/<UUID>/external-status
+```
+
+External job states are tracked as `WAITING_EXTERNAL`, `RUNNING_EXTERNAL`,
+`COMPLETED_EXTERNAL`, or `FAILED_EXTERNAL`. The handoff JSON contains the exact original
+relative paths, SHA-256 hashes and capture groups selected for the job.

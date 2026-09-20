@@ -126,6 +126,10 @@ class Settings(BaseSettings):
         default=5.0,
         validation_alias="M3CLOUD_MEDIA_IMPORT_MIN_AGE_SECONDS",
     )
+    media_import_handoff_root: str = Field(
+        default="",
+        validation_alias="M3CLOUD_MEDIA_IMPORT_HANDOFF_ROOT",
+    )
 
     webodm_enabled: bool = Field(
         default=False,

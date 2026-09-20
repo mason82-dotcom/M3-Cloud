@@ -1309,3 +1309,71 @@ button { font: inherit; }
   font-size: 9px;
   text-decoration: none;
 }
+
+
+.thermogramCreate {
+  min-height: auto;
+  border-left: 3px solid var(--warn);
+}
+
+.thermogramForm {
+  grid-template-columns: minmax(280px, 1.6fr) minmax(220px, 1fr) auto;
+}
+
+.thermogramProfile {
+  border-left-color: var(--warn);
+}
+
+.thermogramActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.thermogramActions a,
+.thermogramActions button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 9px;
+  text-decoration: none;
+}
+
+.thermogramActions button {
+  cursor: pointer;
+}
+
+.thermogramActions a {
+  color: var(--warn);
+}
+
+.thermogramPath {
+  display: grid;
+  gap: 4px;
+  margin-top: 9px;
+  padding: 8px;
+  border: 1px solid #5f4c2d;
+  border-radius: 7px;
+  background: #211b12;
+}
+
+.thermogramPath span,
+.thermogramPath small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.thermogramPath code {
+  overflow-wrap: anywhere;
+  color: #f0cb78;
+  font-size: 10px;
+}
+
+@media (max-width: 800px) {
+  .thermogramForm {
+    grid-template-columns: 1fr;
+  }
+}
