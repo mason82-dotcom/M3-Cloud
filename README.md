@@ -21,4 +21,32 @@ Self-hosted platform for DJI Enterprise aircraft integration, mission operations
 - `minio/`: object/media storage configuration
 - `scripts/`: maintenance/deployment scripts
 
-Initial repository scaffold. Functional implementation follows incrementally.
+## Core stack
+
+The first runnable M3-Cloud core consists of:
+
+- FastAPI backend
+- PostgreSQL + PostGIS
+- Redis
+- EMQX MQTT broker
+- MinIO object storage
+
+Create a local environment file and start the stack:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+Check the backend:
+
+```bash
+curl http://localhost:8000/health/live
+curl http://localhost:8000/health/ready
+```
+
+The readiness endpoint reports PostgreSQL, Redis, MinIO and EMQX independently.
+
+> The default credentials in `.env.example` are development placeholders. Change them before exposing any service beyond a trusted LAN.
+
+Lyrebird remains the aircraft-side integration layer; persistent project, survey, processing and operator services belong in M3-Cloud.

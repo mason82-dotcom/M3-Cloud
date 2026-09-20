@@ -93,3 +93,28 @@ jobs:
           path: |
             lyrebird/LyrebirdApp/android-sdk-v5-as/build/reports/detekt/
             lyrebird/LyrebirdApp/lyrebird-app/build/reports/
+
+
+  backend-core:
+    name: M3-Cloud backend core
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Compile backend
+        run: PYTHONPATH=backend python -m compileall -q backend/app
+
+      - name: Backend tests
+        run: PYTHONPATH=backend python -m pytest -q backend/tests
