@@ -64,17 +64,33 @@ def normalize_telemetry(raw: dict[str, Any], now_ms: int | None = None) -> dict[
         },
     }
 
-def merge_transport_telemetry(mavlink: dict[str, Any] | None, tcp: dict[str, Any] | None) -> dict[str, Any] | None:
-    """MAVLink owns standard aircraft facts; TCP fills only fields MAVLink did not provide."""
-    if mavlink is None:
-        return tcp
-    merged = dict(tcp or {})
-    for key, value in mavlink.items():
+def merge_dicts(base: dict[str, Any] | None, update: dict[str, Any] | None, *, ignore_none: bool = False) -> dict[str, Any]:
+    """Recursively merge telemetry without mutating either input."""
+    merged: dict[str, Any] = {}
+    for key, value in (base or {}).items():
+        merged[key] = merge_dicts(value, None) if isinstance(value, dict) else value
+    for key, value in (update or {}).items():
+        if ignore_none and value is None:
+            continue
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = {**merged[key], **value}
+            merged[key] = merge_dicts(merged[key], value, ignore_none=ignore_none)
+        elif isinstance(value, dict):
+            merged[key] = merge_dicts(None, value, ignore_none=ignore_none)
         else:
             merged[key] = value
+    return merged
+
+def merge_transport_telemetry(mavlink: dict[str, Any] | None, tcp: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Fuse transports recursively: TCP supplies gaps, MAVLink wins where both carry a fact."""
+    if mavlink is None:
+        return merge_dicts(None, tcp) if tcp is not None else None
+    merged = merge_dicts(tcp, mavlink, ignore_none=True)
     merged["source"] = "lyrebird_mavlink2+tcp_gap" if tcp else "lyrebird_mavlink2"
+    merged["provenance"] = {
+        "primary": "mavlink2",
+        "supplemental": ["tcp_gap"] if tcp else [],
+        "policy": "recursive_mavlink_preferred",
+    }
     return merged
 
 def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any] | None = None, camera_capabilities: dict[str, Any] | None = None) -> VehicleSnapshot:

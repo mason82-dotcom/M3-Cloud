@@ -9,7 +9,7 @@ import httpx
 from redis.asyncio import Redis
 
 from app.config import settings
-from app.vehicles.lyrebird import merge_transport_telemetry, normalize_config, normalize_telemetry
+from app.vehicles.lyrebird import merge_dicts, merge_transport_telemetry, normalize_config, normalize_telemetry
 from app.vehicles.mavlink import LyrebirdMavlinkCollector
 
 class LyrebirdLiveBridge:
@@ -115,13 +115,9 @@ class LyrebirdLiveBridge:
                         continue
                     current = normalize_telemetry(raw)
                     if raw.get("telemetryMode") == "gap" and host in self._tcp:
-                        merged = dict(self._tcp[host])
-                        for key, value in current.items():
-                            if isinstance(value, dict) and isinstance(merged.get(key), dict):
-                                merged[key] = {**merged[key], **value}
-                            else:
-                                merged[key] = value
-                        current = merged
+                        # GAP payloads are partial by definition. Nulls from absent normalized
+                        # fields must not erase the last valid TCP value.
+                        current = merge_dicts(self._tcp[host], current, ignore_none=True)
                     self._tcp[host] = current
                     self._tcp_seen[host] = time.monotonic()
                     mavlink = self.collector.snapshot(host)

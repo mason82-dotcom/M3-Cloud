@@ -1,6 +1,6 @@
 import math
 from types import SimpleNamespace
-from app.vehicles.lyrebird import merge_transport_telemetry
+from app.vehicles.lyrebird import merge_dicts, merge_transport_telemetry
 from app.vehicles.mavlink import normalize_mavlink_message, decode_lyrebird_frame, _mavlink2_frames
 
 class Msg(SimpleNamespace):
@@ -32,3 +32,25 @@ def test_frame_splitter_handles_two_mavlink2_frames():
     a = bytes([0xFD,0,0,0,1,1,1,0,0,0,0,0])
     b = bytes([0xFD,0,0,0,2,1,1,0,0,0,0,0])
     assert list(_mavlink2_frames(a+b)) == [a,b]
+
+def test_recursive_transport_merge_preserves_nested_tcp_gaps():
+    tcp={"camera":{"zoom_ratio":2.0,"recording":True},"controller":{"wifi_rssi_dbm":-51},"lrf":{"target":{"latitude":49.1,"longitude":8.5}}}
+    mav={"camera":{"recording":False,"zoom_focal_length_mm":70},"lrf":{"distance_m":12.3}}
+    merged=merge_transport_telemetry(mav,tcp)
+    assert merged["camera"]=={"zoom_ratio":2.0,"recording":False,"zoom_focal_length_mm":70}
+    assert merged["lrf"]=={"target":{"latitude":49.1,"longitude":8.5},"distance_m":12.3}
+    assert merged["controller"]["wifi_rssi_dbm"]==-51
+    assert merged["provenance"]["primary"]=="mavlink2"
+
+def test_gap_merge_ignores_normalized_none_values():
+    previous={"camera":{"recording":True,"zoom_ratio":2.0},"controller":{"wifi_rssi_dbm":-50}}
+    patch={"camera":{"recording":None,"zoom_ratio":3.0},"controller":{"wifi_rssi_dbm":None}}
+    merged=merge_dicts(previous,patch,ignore_none=True)
+    assert merged["camera"]=={"recording":True,"zoom_ratio":3.0}
+    assert merged["controller"]["wifi_rssi_dbm"]==-50
+
+def test_merge_does_not_mutate_inputs():
+    tcp={"lrf":{"target":{"latitude":49.1}}}; mav={"lrf":{"distance_m":4.2}}
+    merged=merge_transport_telemetry(mav,tcp)
+    merged["lrf"]["target"]["latitude"]=0
+    assert tcp["lrf"]["target"]["latitude"]==49.1
