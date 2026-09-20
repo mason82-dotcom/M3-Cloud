@@ -16,14 +16,26 @@ from app.vehicles.lyrebird import (
     normalize_config,
     normalize_telemetry,
 )
+from app.vehicles.base import VehicleSnapshot
 from app.vehicles.mavlink import LyrebirdMavlinkCollector
+
+
+class VehicleTelemetryObserver:
+    async def ingest_vehicle(self, vehicle: VehicleSnapshot) -> None:
+        ...
 
 class LyrebirdLiveBridge:
     """Publish Lyrebird MAVLink immediately and enrich it with the persistent TCP stream."""
 
-    def __init__(self, redis: Redis, collector: LyrebirdMavlinkCollector):
+    def __init__(
+        self,
+        redis: Redis,
+        collector: LyrebirdMavlinkCollector,
+        telemetry_observer: VehicleTelemetryObserver | None = None,
+    ):
         self.redis = redis
         self.collector = collector
+        self.telemetry_observer = telemetry_observer
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._tcp: dict[str, dict[str, Any]] = {}
         self._config: dict[str, dict[str, Any]] = {}
@@ -99,6 +111,8 @@ class LyrebirdLiveBridge:
     async def _publish(self, host: str, telemetry: dict[str, Any]) -> None:
         config, caps = await self._identity(host)
         vehicle = normalize_config(host, config, telemetry, caps)
+        if self.telemetry_observer is not None:
+            await self.telemetry_observer.ingest_vehicle(vehicle)
         await self.redis.publish(settings.live_redis_channel, json.dumps({
             "type": "vehicle_telemetry",
             "vehicle_id": vehicle.id,

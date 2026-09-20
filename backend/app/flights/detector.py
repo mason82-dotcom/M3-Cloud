@@ -37,6 +37,12 @@ class FlightDetector:
 
     def evaluate(self, state: DetectorState, telemetry: dict[str, Any]) -> FlightDecision:
         mode = telemetry.get("mode_code")
+        aircraft_state = telemetry.get("aircraft_state")
+        if not isinstance(aircraft_state, dict):
+            aircraft_state = {}
+        is_flying = aircraft_state.get("is_flying")
+        landed_state = aircraft_state.get("landed_state")
+
         altitude = self._number(telemetry.get("relative_altitude_m"), default=0.0)
         horizontal = abs(self._number(telemetry.get("horizontal_speed_mps"), default=0.0))
         vertical = abs(self._number(telemetry.get("vertical_speed_mps"), default=0.0))
@@ -48,7 +54,8 @@ class FlightDetector:
                 state.start_confirmations = 0
                 return FlightDecision.START
 
-            moving_airborne = mode in AIRBORNE_MODES and (
+            airborne_signal = mode in AIRBORNE_MODES or is_flying is True
+            moving_airborne = airborne_signal and (
                 altitude >= self.START_ALTITUDE_M
                 or horizontal >= self.START_HORIZONTAL_SPEED_MPS
                 or vertical >= self.START_VERTICAL_SPEED_MPS
@@ -61,8 +68,9 @@ class FlightDetector:
             return FlightDecision.NONE
 
         state.start_confirmations = 0
+        ground_signal = mode == STANDBY_MODE or is_flying is False or landed_state == 1
         landed = (
-            mode == STANDBY_MODE
+            ground_signal
             and altitude <= self.LAND_ALTITUDE_M
             and horizontal <= self.LAND_HORIZONTAL_SPEED_MPS
             and vertical <= self.LAND_VERTICAL_SPEED_MPS

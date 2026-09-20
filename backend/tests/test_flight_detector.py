@@ -167,3 +167,33 @@ async def test_flight_recorder_persists_completed_postgis_path() -> None:
         assert sample_count == 5
         assert point_count == 5
         assert isinstance(flight.id, uuid.UUID)
+
+
+
+def test_lyrebird_flying_state_starts_after_confirmation() -> None:
+    detector = FlightDetector()
+    state = DetectorState()
+    airborne = {
+        "aircraft_state": {"is_flying": True, "landed_state": 2},
+        "relative_altitude_m": 2.0,
+        "horizontal_speed_mps": 1.0,
+        "vertical_speed_mps": 0.0,
+    }
+
+    assert detector.evaluate(state, airborne) is FlightDecision.NONE
+    assert detector.evaluate(state, airborne) is FlightDecision.START
+
+
+def test_lyrebird_ground_state_ends_after_confirmation() -> None:
+    detector = FlightDetector()
+    state = DetectorState(active=True)
+    landed = {
+        "aircraft_state": {"is_flying": False, "landed_state": 1},
+        "relative_altitude_m": 0.2,
+        "horizontal_speed_mps": 0.1,
+        "vertical_speed_mps": 0.1,
+    }
+
+    assert detector.evaluate(state, landed) is FlightDecision.NONE
+    assert detector.evaluate(state, landed) is FlightDecision.NONE
+    assert detector.evaluate(state, landed) is FlightDecision.END

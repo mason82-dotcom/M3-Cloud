@@ -137,7 +137,19 @@ class FlightRecorder:
         position_state = telemetry.get("position_state")
         if not isinstance(position_state, dict):
             position_state = {}
-        convergence = self._text(position_state.get("convergence"))
+
+        aircraft_state = telemetry.get("aircraft_state")
+        if not isinstance(aircraft_state, dict):
+            aircraft_state = {}
+        positioning = aircraft_state.get("positioning")
+        if not isinstance(positioning, dict):
+            positioning = {}
+
+        convergence = self._text(positioning.get("fix"))
+        if convergence in (None, "UNKNOWN"):
+            convergence = self._text(positioning.get("convergence"))
+        if convergence in (None, "UNKNOWN"):
+            convergence = self._text(position_state.get("convergence"))
         battery = telemetry.get("battery")
         if not isinstance(battery, dict):
             battery = {}
@@ -158,15 +170,23 @@ class FlightRecorder:
             mode_code=self._int(telemetry.get("mode_code")),
             battery_percent=self._int(battery.get("capacity_percent")),
             position_convergence=convergence,
-            gps_satellites=self._int(position_state.get("gps_satellites")),
-            rtk_satellites=self._int(position_state.get("rtk_satellites")),
+            gps_satellites=self._int(
+                positioning.get("gps_satellites")
+                if positioning.get("gps_satellites") is not None
+                else position_state.get("gps_satellites")
+            ),
+            rtk_satellites=self._int(
+                positioning.get("rtk_satellites")
+                if positioning.get("rtk_satellites") is not None
+                else position_state.get("rtk_satellites")
+            ),
         )
 
         altitude = self._float(telemetry.get("relative_altitude_m"))
         speed = self._float(telemetry.get("horizontal_speed_mps"))
         battery_percent = self._battery_percent(telemetry)
-        converged_delta = 1 if convergence == "CONVERGED" else 0
-        total_delta = 1 if convergence is not None else 0
+        converged_delta = 1 if convergence in {"CONVERGED", "FIXED"} else 0
+        total_delta = 1 if convergence not in (None, "UNKNOWN") else 0
 
         async with self.sessions() as session:
             session.add(sample)

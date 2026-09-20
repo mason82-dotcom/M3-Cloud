@@ -7,6 +7,7 @@ from app.api_flights import router as flights_router
 from app.config import settings
 from app.database import session_factory
 from app.dji.service import DJIService
+from app.flights.router import FlightTelemetryRouter
 from app.flights.service import FlightRecorder
 from app.health import readiness
 from app.live import LiveTelemetryHub, router as live_router
@@ -20,10 +21,11 @@ from app.vehicles.live import LyrebirdLiveBridge
 async def lifespan(app: FastAPI):
     flight_recorder = FlightRecorder(session_factory)
     await flight_recorder.recover_interrupted()
+    flight_router = FlightTelemetryRouter(flight_recorder)
 
     dji_service = DJIService.create(
         redis_client,
-        telemetry_observer=flight_recorder,
+        telemetry_observer=flight_router,
     )
     live_hub = LiveTelemetryHub(
         redis_client,
@@ -31,8 +33,13 @@ async def lifespan(app: FastAPI):
     )
     app.state.dji_service = dji_service
     app.state.flight_recorder = flight_recorder
+    app.state.flight_router = flight_router
     app.state.live_hub = live_hub
-    lyrebird_live = LyrebirdLiveBridge(redis_client, lyrebird_mavlink_collector)
+    lyrebird_live = LyrebirdLiveBridge(
+        redis_client,
+        lyrebird_mavlink_collector,
+        telemetry_observer=flight_router,
+    )
     app.state.lyrebird_live = lyrebird_live
     app.state.lyrebird_mavlink_collector = lyrebird_mavlink_collector
 
