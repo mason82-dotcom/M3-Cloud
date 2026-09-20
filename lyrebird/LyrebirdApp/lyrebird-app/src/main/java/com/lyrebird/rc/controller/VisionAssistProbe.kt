@@ -1,7 +1,12 @@
 package com.lyrebird.rc.controller
 
+import dji.sdk.keyvalue.key.FlightControllerKey
+import dji.sdk.keyvalue.key.KeyTools
 import dji.sdk.keyvalue.value.common.ComponentIndexType
 import dji.sdk.keyvalue.value.flightassistant.VisionAssistDirection
+import dji.v5.common.callback.CommonCallbacks
+import dji.v5.common.error.IDJIError
+import dji.v5.manager.KeyManager
 import dji.v5.manager.datacenter.MediaDataCenter
 import dji.v5.manager.interfaces.ICameraStreamManager
 import org.json.JSONArray
@@ -13,6 +18,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 internal data class VisionAssistSnapshot(
     val available: Boolean?,
+    val streamAvailable: Boolean?,
+    val motorsOn: Boolean?,
     val availableCameraIndices: List<String>,
     val streamEnabled: Boolean?,
     val enabled: Boolean?,
@@ -24,6 +31,8 @@ internal data class VisionAssistSnapshot(
     fun toJsonObject(): JSONObject = JSONObject()
         .put("componentIndex", ComponentIndexType.VISION_ASSIST.name)
         .put("available", available ?: JSONObject.NULL)
+        .put("streamAvailable", streamAvailable ?: JSONObject.NULL)
+        .put("motorsOn", motorsOn ?: JSONObject.NULL)
         .put("availableCameraIndices", JSONArray(availableCameraIndices))
         .put("streamEnabled", streamEnabled ?: JSONObject.NULL)
         .put("enabled", enabled ?: JSONObject.NULL)
@@ -38,7 +47,7 @@ internal object VisionAssistProbe {
 
     fun snapshot(): VisionAssistSnapshot {
         val manager = MediaDataCenter.getInstance().cameraStreamManager
-        val latch = CountDownLatch(5)
+        val latch = CountDownLatch(6)
 
         val cameras = AtomicReference<List<ComponentIndexType>>(emptyList())
         val availableReceived = AtomicBoolean(false)
@@ -50,6 +59,8 @@ internal object VisionAssistProbe {
         val directionReceived = AtomicBoolean(false)
         val range = AtomicReference<List<VisionAssistDirection>>(emptyList())
         val rangeReceived = AtomicBoolean(false)
+        val motorsOn = AtomicReference<Boolean?>(null)
+        val motorsReceived = AtomicBoolean(false)
 
         val cameraListener = object : ICameraStreamManager.AvailableCameraUpdatedListener {
             override fun onAvailableCameraUpdated(
@@ -93,6 +104,20 @@ internal object VisionAssistProbe {
 
         manager.addAvailableCameraUpdatedListener(cameraListener)
         manager.addVisionAssistStatusListener(visionListener)
+        KeyManager.getInstance().getValue(
+            KeyTools.createKey(FlightControllerKey.KeyAreMotorsOn),
+            object : CommonCallbacks.CompletionCallbackWithParam<Boolean> {
+                override fun onSuccess(value: Boolean?) {
+                    motorsOn.set(value)
+                    motorsReceived.set(true)
+                    latch.countDown()
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    latch.countDown()
+                }
+            }
+        )
         try {
             latch.await(SNAPSHOT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         } catch (_: InterruptedException) {
@@ -103,12 +128,15 @@ internal object VisionAssistProbe {
         }
 
         val availableList = cameras.get()
+        val visionStreamAvailable = if (availableReceived.get()) {
+            ComponentIndexType.VISION_ASSIST in availableList
+        } else {
+            null
+        }
         return VisionAssistSnapshot(
-            available = if (availableReceived.get()) {
-                ComponentIndexType.VISION_ASSIST in availableList
-            } else {
-                null
-            },
+            available = visionStreamAvailable,
+            streamAvailable = visionStreamAvailable,
+            motorsOn = if (motorsReceived.get()) motorsOn.get() else null,
             availableCameraIndices = availableList.map { it.name },
             streamEnabled = if (streamMapReceived.get()) streamEnabled.get() else null,
             enabled = if (enabledReceived.get()) enabled.get() else null,
