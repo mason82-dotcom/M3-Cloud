@@ -1,13 +1,62 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#101317" />
-    <title>M3 Cloud</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a0e15">
+  <title>M3-Cloud Operations</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brandMark">M3</span><div><strong>M3-Cloud</strong><small>Enterprise Operations</small></div></div>
+    <nav id="nav">
+      <button class="navItem active" data-view="operations">Operations</button>
+      <button class="navItem" data-view="fleet">Fleet</button>
+      <button class="navItem" data-view="missions">Missions</button>
+      <button class="navItem" data-view="live">Live</button>
+      <button class="navItem" data-view="media">Media</button>
+      <button class="navItem" data-view="processing">Processing</button>
+      <button class="navItem" data-view="system">System</button>
+    </nav>
+    <div class="sourceLegend">
+      <span><i class="dot cloud"></i>DJI Cloud API</span>
+      <span><i class="dot lyrebird"></i>Lyrebird</span>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div><h1 id="viewTitle">Operations</h1><p id="viewSubtitle">Fleet, RTK und Missionen im Überblick</p></div>
+      <div class="topActions"><span id="apiStatus" class="status warn">Backend wartet</span><button id="refreshBtn">Aktualisieren</button></div>
+    </header>
+
+    <section id="operations" class="view active">
+      <div class="metrics">
+        <article><span>Aircraft</span><strong id="aircraftCount">0</strong><small id="aircraftHint">keine Telemetrie</small></article>
+        <article><span>Online</span><strong id="onlineCount">0</strong><small>Cloud + Lyrebird</small></article>
+        <article><span>RTK FIX</span><strong id="rtkCount">0</strong><small>präzise Position</small></article>
+        <article><span>Active missions</span><strong id="missionCount">0</strong><small>Wayline / external</small></article>
+      </div>
+      <div class="workspace">
+        <section class="mapCard"><div id="map"></div><div id="mapFallback" class="mapFallback" hidden>Karte nicht verfügbar – Telemetrie bleibt nutzbar.</div></section>
+        <aside class="fleetPanel">
+          <div class="panelHead"><div><h2>Fleet</h2><small>M3E · M3T · M3M</small></div><span id="fleetState">0 devices</span></div>
+          <div id="fleetList" class="fleetList"><div class="empty">Noch keine Aircraft-Telemetrie vom Backend.</div></div>
+        </aside>
+      </div>
+      <div class="bottomGrid">
+        <section class="panel"><div class="panelHead"><div><h2>Mission activity</h2><small>Waylines und externe Missionen</small></div></div><div id="missionActivity" class="empty">Keine aktive Mission.</div></section>
+        <section class="panel"><div class="panelHead"><div><h2>System links</h2><small>Datenpfade</small></div></div>
+          <div class="links"><span>DJI Cloud API <b id="djiState">waiting</b></span><span>Lyrebird <b id="lyrebirdState">waiting</b></span><span>MQTT / EMQX <b id="mqttState">waiting</b></span><span>Object storage <b id="storageState">waiting</b></span></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="genericView" class="view"><div class="placeholder"><h2 id="genericTitle"></h2><p id="genericText"></p></div></section>
+  </main>
+</div>
+<script type="module" src="./app.js"></script>
+</body>
 </html>
