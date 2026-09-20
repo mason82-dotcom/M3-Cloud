@@ -16,6 +16,7 @@ import type {
   ProcessingResult,
   Project,
   Survey,
+  SurveyLineage,
   ThermogramHandoff,
   SystemHealth,
   Vehicle,
@@ -76,6 +77,18 @@ export async function createSurvey(
     throw new Error(body?.detail ?? `Survey create failed: ${response.status}`);
   }
   return response.json() as Promise<Survey>;
+}
+
+export async function fetchSurveyLineage(
+  surveyId: string,
+): Promise<SurveyLineage> {
+  const response = await fetch(
+    `/api/v1/surveys/${encodeURIComponent(surveyId)}/lineage`,
+  );
+  if (!response.ok) {
+    throw new Error(`Survey lineage request failed: ${response.status}`);
+  }
+  return response.json() as Promise<SurveyLineage>;
 }
 
 export async function assignFlightSurvey(

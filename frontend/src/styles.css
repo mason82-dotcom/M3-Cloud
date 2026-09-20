@@ -1792,3 +1792,55 @@ button { font: inherit; }
     max-height: 300px;
   }
 }
+
+
+.surveyLineageSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(90px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.surveyLineageSummary span {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.surveyLineageSummary b {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.surveyProcessingItem {
+  align-items: flex-start !important;
+}
+
+.surveyResults {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.surveyResults a {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel2);
+  color: var(--info);
+  padding: 3px 5px;
+  font-size: 8px;
+  text-decoration: none;
+}
+
+@media (max-width: 650px) {
+  .surveyLineageSummary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

@@ -10,6 +10,8 @@ import {
   fetchProcessingJobs,
   fetchProjects,
   fetchProjectSurveys,
+  fetchSurveyLineage,
+  processingResultDownloadUrl,
 } from "./api";
 import type {
   FlightSummary,
@@ -17,6 +19,7 @@ import type {
   ProcessingJob,
   Project,
   Survey,
+  SurveyLineage,
 } from "./types";
 
 function stamp(value: string): string {
@@ -30,6 +33,7 @@ export function ProjectsView() {
   const [flights, setFlights] = useState<FlightSummary[]>([]);
   const [datasets, setDatasets] = useState<MediaDataset[]>([]);
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
+  const [lineage, setLineage] = useState<SurveyLineage | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [surveyId, setSurveyId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
@@ -104,6 +108,28 @@ export function ProjectsView() {
   const selectedSurvey =
     surveys.find((item) => item.id === surveyId) ?? null;
 
+  useEffect(() => {
+    if (!surveyId) {
+      setLineage(null);
+      return;
+    }
+
+    let cancelled = false;
+    void fetchSurveyLineage(surveyId)
+      .then((value) => {
+        if (!cancelled) setLineage(value);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [surveyId]);
+
   const surveyFlights = useMemo(
     () => flights.filter((flight) => flight.survey_id === surveyId),
     [flights, surveyId],
@@ -171,6 +197,7 @@ export function ProjectsView() {
     try {
       await assignFlightSurvey(flightId, target);
       await Promise.all([loadBase(), refreshSurveys()]);
+      if (surveyId) setLineage(await fetchSurveyLineage(surveyId));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -183,6 +210,7 @@ export function ProjectsView() {
     try {
       await assignMediaDatasetSurvey(datasetId, target);
       await Promise.all([loadBase(), refreshSurveys()]);
+      if (surveyId) setLineage(await fetchSurveyLineage(surveyId));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -299,6 +327,13 @@ export function ProjectsView() {
               <span>{selectedSurvey.project_id}</span>
             </div>
 
+            <div className="surveyLineageSummary">
+              <span>Flights<b>{lineage?.flights.length ?? selectedSurvey.flight_count}</b></span>
+              <span>Datasets<b>{lineage?.datasets.length ?? selectedSurvey.dataset_count}</b></span>
+              <span>Processing<b>{lineage?.processing_jobs.length ?? selectedSurvey.processing_count}</b></span>
+              <span>Results<b>{lineage?.processing_jobs.reduce((sum, job) => sum + job.results.length, 0) ?? 0}</b></span>
+            </div>
+
             <div className="surveyColumns">
               <section className="panel surveyMemberPanel">
                 <div className="panelHead">
@@ -379,16 +414,28 @@ export function ProjectsView() {
                   <div><h2>Processing</h2><small>{surveyJobs.length} inherited</small></div>
                 </div>
                 <div className="surveyMembers">
-                  {surveyJobs.map((job) => (
-                    <article key={job.id}>
+                  {(lineage?.processing_jobs ?? []).map((job) => (
+                    <article className="surveyProcessingItem" key={job.id}>
                       <div>
                         <strong>{job.name}</strong>
                         <small>{job.kind} · {job.status}</small>
+                        {job.results.length > 0 ? (
+                          <div className="surveyResults">
+                            {job.results.map((result) => (
+                              <a
+                                href={processingResultDownloadUrl(job.id, result.id)}
+                                key={result.id}
+                              >
+                                {result.asset_name}
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                       <span>{job.platform ?? "—"}</span>
                     </article>
                   ))}
-                  {surveyJobs.length === 0 ? (
+                  {(lineage?.processing_jobs.length ?? 0) === 0 ? (
                     <div className="empty">Neue Jobs erben den Survey vom Dataset.</div>
                   ) : null}
                 </div>

@@ -175,6 +175,50 @@ export interface Survey {
   updated_at: string;
 }
 
+export interface SurveyLineage {
+  project: Project;
+  survey: Survey;
+  flights: Array<{
+    id: string;
+    aircraft_sn: string;
+    status: string;
+    started_at: string;
+    ended_at?: string | null;
+    distance_m: number;
+    duration_s?: number | null;
+  }>;
+  datasets: Array<{
+    id: string;
+    platform: string;
+    prefix: string;
+    flight_id?: string | null;
+    present: boolean;
+    flight_match_status?: string | null;
+    capture_started_at?: string | null;
+    capture_ended_at?: string | null;
+  }>;
+  processing_jobs: Array<{
+    id: string;
+    kind: string;
+    status: string;
+    name: string;
+    platform?: string | null;
+    input_prefix: string;
+    flight_id?: string | null;
+    created_at: string;
+    finished_at?: string | null;
+    results: Array<{
+      id: string;
+      asset_name: string;
+      content_type: string;
+      size_bytes: number;
+      sha256: string;
+      details?: Record<string, unknown>;
+      created_at: string;
+    }>;
+  }>;
+}
+
 export interface FlightSummary {
   id: string;
   aircraft_sn: string;
