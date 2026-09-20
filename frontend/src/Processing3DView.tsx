@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Tile3DLayer } from "@deck.gl/geo-layers";
-import { MapboxOverlay } from "@deck.gl/maplibre";
+import { MapLibreOverlay } from "@deck.gl/maplibre";
 import { Tiles3DLoader } from "@loaders.gl/3d-tiles";
 import * as maplibregl from "maplibre-gl";
 import type { Map, StyleSpecification } from "maplibre-gl";
@@ -55,7 +55,7 @@ export function Processing3DView({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
-  const overlayRef = useRef<MapboxOverlay | null>(null);
+  const overlayRef = useRef<MapLibreOverlay | null>(null);
   const [fallbackActive, setFallbackActive] = useState(false);
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export function Processing3DView({
     });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
 
-    const overlay = new MapboxOverlay({
+    const overlay = new MapLibreOverlay({
       interleaved: true,
       layers: [],
     });
