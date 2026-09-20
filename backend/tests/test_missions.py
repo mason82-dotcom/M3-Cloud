@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -6,6 +7,7 @@ from sqlalchemy import delete
 
 from app.api_missions import (
     create_mission_deployment,
+    upload_mission_deployment,
     mission_deployments,
     mission_detail,
     MissionCreate,
@@ -19,6 +21,7 @@ from app.api_missions import (
 from app.api_projects import ProjectCreate, SurveyCreate, create_project, create_survey
 from app.database import session_factory
 from app.missions.deployment import deployment_sha256
+from app.missions.uploader import MissionUploadError, MissionUploadResult
 from app.missions.plans import (
     compatibility,
     compile_mission_item_int,
@@ -353,3 +356,235 @@ async def test_ready_mission_seals_immutable_non_executing_handoff(monkeypatch) 
     assert observed["runtime"]["deployment_id"] == sealed["id"]
     assert observed["runtime"]["revision_version"] == 1
     assert observed["runtime"]["plan_sha256"] == created["plan_sha256"]
+
+
+
+class _ApiUploader:
+    def __init__(self, *, error: MissionUploadError | None = None):
+        self.error = error
+        self.calls = []
+
+    async def upload(self, package, *, aircraft_sn, preferred_executor):
+        self.calls.append(
+            {
+                "package": package,
+                "aircraft_sn": aircraft_sn,
+                "preferred_executor": preferred_executor,
+            }
+        )
+        if self.error is not None:
+            raise self.error
+        return MissionUploadResult(
+            host="10.0.0.2",
+            system_id=123,
+            executor="dji_native",
+            item_count=len(package["wire"]["items"]),
+            requested_sequences=tuple(
+                item["seq"] for item in package["wire"]["items"]
+            ),
+            ack_result=0,
+            runtime_mission_id=int(package["wire"]["mission_id"]),
+        )
+
+
+def _request_with_uploader(uploader):
+    return SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(mission_uploader=uploader)
+        )
+    )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_mission_upload_endpoint_persists_success_and_failure(monkeypatch) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(MissionDeployment))
+        await session.execute(delete(Mission))
+        await session.commit()
+
+    vehicle = VehicleSnapshot(
+        id="vehicle:M3E-UPLOAD",
+        sn="M3E-UPLOAD",
+        name="M3E",
+        model="M3E",
+        source="lyrebird",
+        online=True,
+        sources=("lyrebird",),
+        telemetry={
+            "mission": {"state": 2, "current_seq": 0, "mission_id": 0},
+            "aircraft_state": {
+                "failsafe": False,
+                "positioning": {
+                    "fix": "FIXED",
+                    "rtk": {"fix": "FIXED"},
+                },
+            },
+            "safety": {
+                "ready_to_takeoff": True,
+                "manual_override": False,
+            },
+            "battery": {"capacity_percent": 80},
+        },
+    )
+    monkeypatch.setattr(
+        "app.api_missions._registry",
+        lambda request: _DeploymentRegistry(vehicle),
+    )
+    monkeypatch.setattr(
+        "app.api_missions.settings.mission_upload_enabled",
+        True,
+    )
+
+    created = await create_mission(
+        MissionCreate(
+            name="Upload endpoint",
+            aircraft_sn="M3E-UPLOAD",
+            preferred_executor="DJI_NATIVE",
+            items=[
+                MissionItemInput(
+                    command=16,
+                    latitude_deg=49.0,
+                    longitude_deg=8.0,
+                    altitude_m=50.0,
+                )
+            ],
+        )
+    )
+    mission_id = __import__("uuid").UUID(created["id"])
+    sealed = await create_mission_deployment(mission_id, object())
+    deployment_id = __import__("uuid").UUID(sealed["id"])
+
+    uploader = _ApiUploader()
+    uploaded = await upload_mission_deployment(
+        mission_id,
+        deployment_id,
+        _request_with_uploader(uploader),
+    )
+
+    assert uploaded["upload_status"] == "UPLOADED"
+    assert uploaded["upload_attempts"] == 1
+    assert uploaded["upload_error"] is None
+    assert uploaded["upload_details"]["execution_started"] is False
+    assert uploaded["upload_details"]["runtime_mission_id"] == sealed["package"]["wire"]["mission_id"]
+    assert len(uploader.calls) == 1
+
+    # Seal another immutable package so a failed transport attempt can be audited separately.
+    second = await create_mission_deployment(mission_id, object())
+    second_id = __import__("uuid").UUID(second["id"])
+    failed_uploader = _ApiUploader(
+        error=MissionUploadError(
+            "TRANSPORT_UNAVAILABLE",
+            "socket closed",
+            details={"host": "10.0.0.2"},
+        )
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await upload_mission_deployment(
+            mission_id,
+            second_id,
+            _request_with_uploader(failed_uploader),
+        )
+    assert exc.value.status_code == 502
+
+    async with session_factory() as session:
+        failed = await session.get(MissionDeployment, second_id)
+        assert failed is not None
+        assert failed.upload_status == "FAILED"
+        assert failed.upload_attempts == 1
+        assert failed.upload_error.startswith("TRANSPORT_UNAVAILABLE:")
+        assert failed.upload_details["execution_started"] is False
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_mission_upload_endpoint_blocks_active_runtime(monkeypatch) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(MissionDeployment))
+        await session.execute(delete(Mission))
+        await session.commit()
+
+    active_vehicle = VehicleSnapshot(
+        id="vehicle:M3E-ACTIVE",
+        sn="M3E-ACTIVE",
+        name="M3E",
+        model="M3E",
+        source="lyrebird",
+        online=True,
+        sources=("lyrebird",),
+        telemetry={
+            "mission": {"state": 3, "current_seq": 1, "mission_id": 123},
+            "aircraft_state": {
+                "failsafe": False,
+                "positioning": {
+                    "fix": "FIXED",
+                    "rtk": {"fix": "FIXED"},
+                },
+            },
+            "safety": {
+                "ready_to_takeoff": True,
+                "manual_override": False,
+            },
+            "battery": {"capacity_percent": 80},
+        },
+    )
+    monkeypatch.setattr(
+        "app.api_missions._registry",
+        lambda request: _DeploymentRegistry(active_vehicle),
+    )
+    monkeypatch.setattr(
+        "app.api_missions.settings.mission_upload_enabled",
+        True,
+    )
+
+    created = await create_mission(
+        MissionCreate(
+            name="Active runtime block",
+            aircraft_sn="M3E-ACTIVE",
+            preferred_executor="DJI_NATIVE",
+            items=[
+                MissionItemInput(
+                    command=16,
+                    latitude_deg=49.0,
+                    longitude_deg=8.0,
+                    altitude_m=50.0,
+                )
+            ],
+        )
+    )
+    mission_id = __import__("uuid").UUID(created["id"])
+
+    # Sealing also evaluates preflight, so use an inactive runtime for that one operation.
+    inactive_vehicle = VehicleSnapshot(
+        **{
+            **active_vehicle.__dict__,
+            "telemetry": {
+                **active_vehicle.telemetry,
+                "mission": {"state": 2, "current_seq": 0, "mission_id": 0},
+            },
+        }
+    )
+    monkeypatch.setattr(
+        "app.api_missions._registry",
+        lambda request: _DeploymentRegistry(inactive_vehicle),
+    )
+    sealed = await create_mission_deployment(mission_id, object())
+    deployment_id = __import__("uuid").UUID(sealed["id"])
+
+    monkeypatch.setattr(
+        "app.api_missions._registry",
+        lambda request: _DeploymentRegistry(active_vehicle),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await upload_mission_deployment(
+            mission_id,
+            deployment_id,
+            _request_with_uploader(_ApiUploader()),
+        )
+    assert exc.value.status_code == 409
+    assert "ACTIVE" in str(exc.value.detail)
+
+    async with session_factory() as session:
+        deployment = await session.get(MissionDeployment, deployment_id)
+        assert deployment is not None
+        assert deployment.upload_status == "SEALED"
+        assert deployment.upload_attempts == 0
