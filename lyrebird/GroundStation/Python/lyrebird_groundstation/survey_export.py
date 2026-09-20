@@ -1,12 +1,8 @@
-"""Post-flight M3E survey packaging and optional WebODM upload.
+"""Package the latest reconciled Lyrebird survey and optionally submit it to WebODM.
 
-Reads Lyrebird's actual on-RC survey artifacts for the current day:
-  - captures.csv  (written by MappingRecorder; header defined there)
-  - geo.txt       (written by OdmGeoFileRecorder; WebODM/ODM geo-reference format)
-
-Both files are per-CALENDAR-DAY, aggregating every flight flown that day — there is no
-per-mission or "latest flight" boundary in Lyrebird's on-device logging, so this tool only
-ever exports "today".
+The Android app writes one per-mission captures CSV and one survey summary JSON after the DJI
+native mission finishes. The CSV already contains the camera filenames reconciled against DJI's
+media list, so this module never invents a separate daily mapping/geo.txt contract.
 """
 
 from __future__ import annotations
@@ -31,20 +27,14 @@ from lyrebird_groundstation.webodm_profiles import (
     merge_options,
 )
 
-# RTK solution strings MappingRecorder writes into captures.csv's rtk_solution column, taken
-# verbatim from RtkTelemetryState.solution (see LyrebirdApp .../telemetry/RtkTelemetryState.kt).
-# A stale reading is already folded back into "NONE" upstream (RtkTelemetryBridge), so there is
-# no separate STALE bucket to track here.
-_RTK_FIXED = "FIXED_POINT"
-_RTK_FLOAT = "FLOAT"
-
 
 @dataclass(frozen=True)
 class SurveyQuality:
     total_rows: int
     fixed: int
     float_count: int
-    other: int
+    stale: int
+    missing: int
 
     @property
     def fixed_ratio(self) -> float:
@@ -60,7 +50,7 @@ class SurveyPackage:
     root: Path
     images_dir: Path
     captures_csv: Path
-    geo_txt: Path
+    summary_json: Path
     manifest_json: Path
     images: tuple[Path, ...]
     failed_images: tuple[str, ...]
@@ -72,13 +62,18 @@ def _capture_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "y"}
+
+
 def _wanted_images(rows: list[dict[str, str]]) -> list[str]:
-    """Image filenames in first-seen order, deduplicated (repeat rows are possible if a plan
-    triggers more than one export in the same day)."""
+    """Resolved image filenames in first-seen order, deduplicated."""
     seen: set[str] = set()
     result: list[str] = []
     for row in rows:
-        name = (row.get("image_id") or "").strip()
+        if not _truthy(row.get("media_resolved")):
+            continue
+        name = (row.get("file_name") or "").strip()
         if not name or name in seen:
             continue
         seen.add(name)
@@ -86,93 +81,115 @@ def _wanted_images(rows: list[dict[str, str]]) -> list[str]:
     return result
 
 
-def _quality_from_rows(rows: list[dict[str, str]]) -> SurveyQuality:
-    fixed = sum(1 for row in rows if row.get("rtk_solution") == _RTK_FIXED)
-    float_count = sum(1 for row in rows if row.get("rtk_solution") == _RTK_FLOAT)
-    total = len(rows)
+def _expected_sizes(rows: list[dict[str, str]]) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for row in rows:
+        name = (row.get("file_name") or "").strip()
+        raw = (row.get("file_size_bytes") or "").strip()
+        if not name or not raw:
+            continue
+        try:
+            size = int(raw)
+        except ValueError:
+            continue
+        if size > 0:
+            result[name] = size
+    return result
+
+
+def _quality_from_summary(summary: dict[str, Any]) -> SurveyQuality:
     return SurveyQuality(
-        total_rows=total,
-        fixed=fixed,
-        float_count=float_count,
-        other=total - fixed - float_count,
+        total_rows=int(summary.get("totalCaptures", 0) or 0),
+        fixed=int(summary.get("rtkFixed", 0) or 0),
+        float_count=int(summary.get("rtkFloat", 0) or 0),
+        stale=int(summary.get("rtkStale", 0) or 0),
+        missing=int(summary.get("rtkMissing", 0) or 0),
     )
 
 
 def survey_quality_warnings(quality: SurveyQuality, failed_images: tuple[str, ...]) -> list[str]:
-    """Human-readable warnings; quality issues never silently masquerade as hard failures."""
     warnings: list[str] = []
     if quality.total_rows and quality.fixed_ratio < 0.95:
         warnings.append(
             f"Only {quality.fixed_ratio:.1%} of {quality.total_rows} capture(s) are RTK FIXED "
-            f"(float={quality.float_count}, other={quality.other})."
+            f"(float={quality.float_count}, stale={quality.stale}, missing={quality.missing})."
         )
     if failed_images:
-        warnings.append(f"{len(failed_images)} survey image(s) failed to download from the aircraft.")
+        warnings.append(f"{len(failed_images)} survey image(s) failed validation/download.")
     return warnings
 
 
 class SurveyPackageBuilder:
-    """Pull today's Lyrebird survey from the RC and preserve the original M3E JPEGs."""
+    """Pull the latest per-mission survey and preserve the original DJI media files."""
 
     def __init__(self, client: DJIInterface):
         self.client = client
 
     def build(self, output_root: str | Path) -> SurveyPackage:
-        reports = self.client.downloadTodaySurveyReports(str(output_root))
-        if reports is None:
-            raise RuntimeError("RC reports no completed survey for today")
+        info = self.client.getLatestSurveyInfo()
+        if info is None:
+            raise RuntimeError("RC reports no completed survey")
 
-        root = Path(output_root)
-        images_dir = root / "images"
-        images_dir.mkdir(parents=True, exist_ok=True)
+        captures_name = Path(str(info.get("capturesName") or "survey_captures.csv")).name
+        stem = captures_name.removesuffix("_captures.csv") or "survey"
+        root = Path(output_root) / stem
+        root.mkdir(parents=True, exist_ok=True)
+
+        reports = self.client.downloadLatestSurveyReports(str(root))
+        if reports is None:
+            raise RuntimeError("Failed to download latest survey reports")
 
         captures_csv = Path(reports["captures"])
-        geo_txt = Path(reports["geo"])
+        summary_json = Path(reports["summary"])
+        summary = json.loads(summary_json.read_text(encoding="utf-8"))
+        quality = _quality_from_summary(summary)
 
         rows = _capture_rows(captures_csv)
         wanted = _wanted_images(rows)
         if len(wanted) < 2:
             raise RuntimeError(
-                f"Survey has only {len(wanted)} image(s) logged; WebODM needs at least 2"
+                f"Survey has only {len(wanted)} resolved image(s); WebODM needs at least 2"
             )
-        quality = _quality_from_rows(rows)
+        expected_sizes = _expected_sizes(rows)
+
+        images_dir = root / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
 
         downloaded: list[Path] = []
         failed: list[str] = []
         for name in wanted:
             destination = images_dir / Path(name).name
+            expected = expected_sizes.get(name)
+
             if destination.is_file() and destination.stat().st_size > 0:
-                downloaded.append(destination)
-                continue
+                if expected is None or destination.stat().st_size == expected:
+                    downloaded.append(destination)
+                    continue
+                destination.unlink()
+
             saved = self.client.downloadByName(name, save_path=str(destination))
-            if saved is None:
+            if saved is None or not destination.is_file():
                 failed.append(name)
                 continue
+            if expected is not None and destination.stat().st_size != expected:
+                failed.append(name)
+                destination.unlink(missing_ok=True)
+                continue
             downloaded.append(destination)
-
-        # WebODM/ODM auto-detects a file literally named geo.txt in the image folder.
-        (images_dir / "geo.txt").write_text(geo_txt.read_text(encoding="utf-8"), encoding="utf-8")
 
         manifest = {
             "schemaVersion": 1,
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "source": {
-                "type": "lyrebird-m3e-survey",
+                "type": "lyrebird-per-mission-survey",
                 "rcHost": self.client.IP_RC,
                 "droneName": self.client.drone_name,
             },
             "reports": {
                 "captures": captures_csv.name,
-                "geo": geo_txt.name,
+                "summary": summary_json.name,
             },
-            "quality": {
-                "totalRows": quality.total_rows,
-                "rtkFixed": quality.fixed,
-                "rtkFloat": quality.float_count,
-                "rtkOther": quality.other,
-                "rtkFixedRatio": quality.fixed_ratio,
-                "rtkUsableRatio": quality.usable_ratio,
-            },
+            "quality": summary,
             "images": {
                 "requested": len(wanted),
                 "downloaded": len(downloaded),
@@ -187,7 +204,7 @@ class SurveyPackageBuilder:
             root=root,
             images_dir=images_dir,
             captures_csv=captures_csv,
-            geo_txt=geo_txt,
+            summary_json=summary_json,
             manifest_json=manifest_path,
             images=tuple(downloaded),
             failed_images=tuple(failed),
@@ -201,7 +218,6 @@ def annotate_manifest_for_webodm(
     profile_name: str,
     options: list[dict[str, Any]],
 ) -> None:
-    """Record the actual WebODM processing recipe beside the original survey metadata."""
     manifest = json.loads(package.manifest_json.read_text(encoding="utf-8"))
     profile = get_profile(profile_name)
     manifest["webodm"] = {
@@ -214,11 +230,7 @@ def annotate_manifest_for_webodm(
 
 
 class WebODMClient:
-    """Small client for WebODM's project/task API.
-
-    Images use WebODM's partial-task workflow: create placeholder, upload one image per request,
-    then commit. This keeps M3E surveys memory-bounded even with hundreds of large JPEGs.
-    """
+    """Small client for WebODM's project/task API using the partial-task upload flow."""
 
     def __init__(
         self,
@@ -251,11 +263,7 @@ class WebODMClient:
         return token
 
     def create_project(self, name: str) -> int:
-        response = self.session.post(
-            self._url("projects/"),
-            data={"name": name},
-            timeout=30,
-        )
+        response = self.session.post(self._url("projects/"), data={"name": name}, timeout=30)
         response.raise_for_status()
         return int(response.json()["id"])
 
@@ -305,9 +313,7 @@ class WebODMClient:
         task_name: str | None = None,
         options: list[dict[str, Any]] | None = None,
     ) -> tuple[int, int, dict[str, Any]]:
-        # geo.txt rides along inside images_dir but is not itself an image upload.
-        images = [path for path in package.images if path.name != "geo.txt"]
-        if len(images) < 2:
+        if len(package.images) < 2:
             raise RuntimeError("WebODM task requires at least two downloaded survey images")
         if project_id is None:
             project_id = self.create_project(project_name or package.root.name)
@@ -317,10 +323,8 @@ class WebODMClient:
             task_name or package.root.name,
             options=options,
         )
-        for image in images:
+        for image in package.images:
             self.upload_image(project_id, task_id, image)
-        # geo.txt supplies WebODM/ODM with RTK-preferred positions per the geo-reference format.
-        self.upload_image(project_id, task_id, package.images_dir / "geo.txt")
         task = self.commit_task(project_id, task_id)
         return project_id, task_id, task
 
@@ -342,7 +346,7 @@ def _parse_option(raw: str) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Download today's Lyrebird M3E survey and optionally submit it to WebODM."
+        description="Download Lyrebird's latest survey and optionally submit it to WebODM."
     )
     parser.add_argument("--rc", default=os.getenv("LYREBIRD_RC"), required=False)
     parser.add_argument("--output", default="./lyrebird-surveys")

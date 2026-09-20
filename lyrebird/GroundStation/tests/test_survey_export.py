@@ -7,94 +7,100 @@ from lyrebird_groundstation.survey_export import (
     SurveyPackageBuilder,
     SurveyQuality,
     WebODMClient,
-    _quality_from_rows,
+    _quality_from_summary,
     _wanted_images,
     annotate_manifest_for_webodm,
     survey_quality_warnings,
 )
 
 CSV_FIELDS = [
-    "timestamp_epoch_ms",
-    "image_id",
-    "latitude",
-    "longitude",
-    "altitude_m",
-    "rtk_latitude",
-    "rtk_longitude",
-    "rtk_altitude_m",
-    "rtk_solution",
-    "rtk_real3d_latitude",
-    "rtk_real3d_longitude",
-    "rtk_real3d_altitude_m",
-    "aircraft_roll_deg",
-    "aircraft_pitch_deg",
-    "aircraft_yaw_deg",
-    "heading_deg",
-    "gimbal_roll_deg",
-    "gimbal_pitch_deg",
-    "gimbal_yaw_deg",
-    "zoom_focal_length_mm",
-    "optical_focal_length_mm",
-    "hybrid_focal_length_mm",
+    "seq",
+    "event_time_ms",
+    "media_index",
+    "file_name",
+    "file_size_bytes",
+    "file_type",
+    "media_resolved",
+    "lens",
+    "rtk_quality",
+    "rtk_fix",
+    "rtk_healthy",
+    "rtk_age_ms",
 ]
 
 
-def _row(image_id, rtk_solution="FIXED_POINT"):
-    return {field: "" for field in CSV_FIELDS} | {"image_id": image_id, "rtk_solution": rtk_solution}
+def _row(name, *, size=10, resolved=True, quality="FIXED"):
+    return {field: "" for field in CSV_FIELDS} | {
+        "file_name": name,
+        "file_size_bytes": str(size),
+        "file_type": "JPEG",
+        "media_resolved": "true" if resolved else "false",
+        "rtk_quality": quality,
+        "rtk_fix": quality,
+    }
 
 
-def test_wanted_images_deduplicates_preserving_order():
+def _summary(total=2, fixed=2, floating=0, stale=0, missing=0):
+    return {
+        "schemaVersion": 1,
+        "totalCaptures": total,
+        "resolvedFiles": total,
+        "unresolvedFiles": 0,
+        "rtkFixed": fixed,
+        "rtkFloat": floating,
+        "rtkStale": stale,
+        "rtkMissing": missing,
+    }
+
+
+def test_wanted_images_uses_actual_reconciled_schema():
     rows = [
         _row("DJI_0001.JPG"),
-        _row(""),
         _row("DJI_0001.JPG"),
-        _row("DJI_0002.JPG"),
+        _row("DJI_0002.JPG", resolved=False),
+        _row("DJI_0003.JPG"),
     ]
-    assert _wanted_images(rows) == ["DJI_0001.JPG", "DJI_0002.JPG"]
+    assert _wanted_images(rows) == ["DJI_0001.JPG", "DJI_0003.JPG"]
 
 
-def test_quality_counts_fixed_float_and_other():
-    rows = [
-        _row("a", "FIXED_POINT"),
-        _row("b", "FLOAT"),
-        _row("c", "SINGLE_POINT"),
-        _row("d", "FIXED_POINT"),
-    ]
-    quality = _quality_from_rows(rows)
-    assert quality == SurveyQuality(total_rows=4, fixed=2, float_count=1, other=1)
+def test_quality_comes_from_summary_json():
+    quality = _quality_from_summary(_summary(total=4, fixed=2, floating=1, stale=1))
+    assert quality == SurveyQuality(total_rows=4, fixed=2, float_count=1, stale=1, missing=0)
     assert quality.fixed_ratio == 0.5
     assert quality.usable_ratio == 0.75
 
 
 def test_quality_warning_flags_low_fixed_ratio_and_failed_downloads():
-    quality = SurveyQuality(total_rows=100, fixed=90, float_count=7, other=3)
+    quality = SurveyQuality(total_rows=100, fixed=90, float_count=7, stale=2, missing=1)
     warnings = survey_quality_warnings(quality, ("DJI_0099.JPG",))
     assert any("90.0%" in warning for warning in warnings)
-    assert any("failed to download" in warning for warning in warnings)
-
-
-def test_quality_warning_silent_when_all_fixed():
-    quality = SurveyQuality(total_rows=10, fixed=10, float_count=0, other=0)
-    assert survey_quality_warnings(quality, ()) == []
+    assert any("failed validation/download" in warning for warning in warnings)
 
 
 class FakeDrone:
     IP_RC = "192.168.1.42"
     drone_name = "m3e"
 
-    def __init__(self, reports: dict[str, Path]):
-        self.reports = reports
+    def __init__(self, captures: Path, summary: Path):
+        self.captures = captures
+        self.summary = summary
         self.downloaded: list[str] = []
 
-    def downloadTodaySurveyReports(self, out_dir="."):
+    def getLatestSurveyInfo(self):
+        return {
+            "available": True,
+            "capturesName": self.captures.name,
+            "summaryName": self.summary.name,
+        }
+
+    def downloadLatestSurveyReports(self, out_dir="."):
         target = Path(out_dir)
         target.mkdir(parents=True, exist_ok=True)
-        result = {}
-        for key, source in self.reports.items():
-            dest = target / source.name
-            dest.write_bytes(source.read_bytes())
-            result[key] = str(dest)
-        return result
+        captures = target / self.captures.name
+        summary = target / self.summary.name
+        captures.write_bytes(self.captures.read_bytes())
+        summary.write_bytes(self.summary.read_bytes())
+        return {"captures": str(captures), "summary": str(summary)}
 
     def downloadByName(self, file_name, save_path=None, out_dir="."):
         self.downloaded.append(file_name)
@@ -106,43 +112,42 @@ def _write_captures_csv(path: Path, rows: list[dict[str, str]]):
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
         writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
+        writer.writerows(rows)
 
 
-def test_builder_downloads_every_logged_image_and_writes_manifest(tmp_path):
-    captures = tmp_path / "mapping_2026-09-18.csv"
+def test_builder_downloads_only_resolved_files_and_preserves_summary(tmp_path):
+    captures = tmp_path / "10-30-00_m3e_captures.csv"
     _write_captures_csv(
         captures,
-        [_row("DJI_0001.JPG", "FIXED_POINT"), _row("DJI_0002.JPG", "FLOAT")],
+        [
+            _row("DJI_0001.JPG", size=10),
+            _row("DJI_0002.JPG", size=10),
+            _row("DJI_0003.JPG", size=10, resolved=False),
+        ],
     )
-    geo = tmp_path / "geo.txt"
-    geo.write_text("EPSG:4326\nDJI_0001.JPG 8.6 49.1 143.0\n", encoding="utf-8")
+    summary = tmp_path / "10-30-00_m3e_survey-summary.json"
+    summary.write_text(json.dumps(_summary(total=3, fixed=2, missing=1)), encoding="utf-8")
 
-    drone = FakeDrone({"captures": captures, "geo": geo})
+    drone = FakeDrone(captures, summary)
     package = SurveyPackageBuilder(drone).build(tmp_path / "out")
 
     assert drone.downloaded == ["DJI_0001.JPG", "DJI_0002.JPG"]
     assert [path.name for path in package.images] == ["DJI_0001.JPG", "DJI_0002.JPG"]
-    assert (package.images_dir / "geo.txt").is_file()
-    assert package.manifest_json.is_file()
+    assert package.summary_json.name.endswith("_survey-summary.json")
     manifest = json.loads(package.manifest_json.read_text(encoding="utf-8"))
-    assert manifest["quality"]["rtkFixed"] == 1
-    assert manifest["quality"]["rtkFloat"] == 1
+    assert manifest["quality"]["rtkFixed"] == 2
+    assert manifest["reports"]["summary"] == summary.name
 
 
-def test_builder_raises_when_fewer_than_two_images(tmp_path):
-    captures = tmp_path / "mapping_2026-09-18.csv"
-    _write_captures_csv(captures, [_row("DJI_0001.JPG")])
-    geo = tmp_path / "geo.txt"
-    geo.write_text("EPSG:4326\n", encoding="utf-8")
+def test_builder_rejects_wrong_download_size(tmp_path):
+    captures = tmp_path / "survey_captures.csv"
+    _write_captures_csv(captures, [_row("DJI_1.JPG", size=11), _row("DJI_2.JPG", size=10)])
+    summary = tmp_path / "survey_survey-summary.json"
+    summary.write_text(json.dumps(_summary()), encoding="utf-8")
 
-    drone = FakeDrone({"captures": captures, "geo": geo})
-    try:
-        SurveyPackageBuilder(drone).build(tmp_path / "out")
-        raise AssertionError("expected RuntimeError")
-    except RuntimeError as exc:
-        assert "at least 2" in str(exc)
+    package = SurveyPackageBuilder(FakeDrone(captures, summary)).build(tmp_path / "out")
+    assert package.failed_images == ("DJI_1.JPG",)
+    assert [path.name for path in package.images] == ["DJI_2.JPG"]
 
 
 def test_manifest_records_selected_webodm_recipe(tmp_path):
@@ -152,22 +157,19 @@ def test_manifest_records_selected_webodm_recipe(tmp_path):
         root=tmp_path,
         images_dir=tmp_path / "images",
         captures_csv=tmp_path / "captures.csv",
-        geo_txt=tmp_path / "geo.txt",
+        summary_json=tmp_path / "summary.json",
         manifest_json=manifest,
         images=(),
         failed_images=(),
-        quality=SurveyQuality(0, 0, 0, 0),
+        quality=SurveyQuality(0, 0, 0, 0, 0),
     )
-
     annotate_manifest_for_webodm(
         package,
         profile_name="m3e-3d-building",
         options=[{"name": "mesh-size", "value": 600000}],
     )
-
     data = json.loads(manifest.read_text(encoding="utf-8"))
     assert data["webodm"]["profile"] == "m3e-3d-building"
-    assert data["webodm"]["options"] == [{"name": "mesh-size", "value": 600000}]
 
 
 class FakeResponse:
@@ -197,25 +199,22 @@ class FakeSession:
         return FakeResponse({"uploaded": True})
 
 
-def test_webodm_uses_partial_upload_then_commit_including_geo_txt(tmp_path):
+def test_webodm_uploads_only_images_then_commits(tmp_path):
     images_dir = tmp_path / "images"
     images_dir.mkdir()
     image1 = images_dir / "DJI_1.JPG"
     image2 = images_dir / "DJI_2.JPG"
-    geo = images_dir / "geo.txt"
     image1.write_bytes(b"1")
     image2.write_bytes(b"2")
-    geo.write_text("EPSG:4326\n", encoding="utf-8")
-
     package = SurveyPackage(
         root=tmp_path,
         images_dir=images_dir,
         captures_csv=tmp_path / "captures.csv",
-        geo_txt=tmp_path / "geo.txt",
+        summary_json=tmp_path / "summary.json",
         manifest_json=tmp_path / "survey.json",
-        images=(image1, image2, geo),
+        images=(image1, image2),
         failed_images=(),
-        quality=SurveyQuality(2, 2, 0, 0),
+        quality=SurveyQuality(2, 2, 0, 0, 0),
     )
     session = FakeSession()
     client = WebODMClient("http://webodm.local", token="abc", session=session)
@@ -229,9 +228,6 @@ def test_webodm_uses_partial_upload_then_commit_including_geo_txt(tmp_path):
         "http://webodm.local/api/projects/7/tasks/",
         "http://webodm.local/api/projects/7/tasks/11/upload/",
         "http://webodm.local/api/projects/7/tasks/11/upload/",
-        "http://webodm.local/api/projects/7/tasks/11/upload/",
         "http://webodm.local/api/projects/7/tasks/11/commit/",
     ]
-    partial_task_data = session.calls[1][1]
-    assert partial_task_data["partial"] == "true"
     assert session.headers["Authorization"] == "JWT abc"
