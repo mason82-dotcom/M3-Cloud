@@ -29,6 +29,23 @@ const ACTIVE_STATUSES = new Set([
   "IMPORTING_RESULTS",
 ]);
 
+function percent(value: number): string {
+  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+}
+
+function statusClass(status: string): string {
+  if (status === "COMPLETED") return "good";
+  if (
+    status === "FAILED" ||
+    status === "CANCELED" ||
+    status === "INTERRUPTED" ||
+    status === "RESULT_IMPORT_FAILED"
+  ) {
+    return "bad";
+  }
+  return "warn";
+}
+
 function bytes(value: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = value;
