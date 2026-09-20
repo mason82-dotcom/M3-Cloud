@@ -1,7 +1,7 @@
 import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.mjs';
 
 const API='/api/v1';
-const state={vehicles:[],map:null,markers:new Map(),selectedVehicleId:null,activeView:'operations'};
+const state={vehicles:[],map:null,markers:new Map(),selectedVehicleId:null,activeView:'operations',ws:null,wsRetry:null,wsConnected:false};
 const $=(s)=>document.querySelector(s);
 const texts={
  fleet:['Fleet','Aircraft, Payloads, RTK und Verbindungsstatus.'],
@@ -75,6 +75,31 @@ function updateMarkers(vs){
  vs.filter(v=>Number.isFinite(v.lat)&&Number.isFinite(v.lng)).forEach(v=>{alive.add(v.id);let m=state.markers.get(v.id);if(!m){const el=document.createElement('div');el.style.cssText='width:14px;height:14px;border-radius:50%;background:#4fc3b6;border:2px solid white;box-shadow:0 0 0 4px #4fc3b633';m=new maplibregl.Marker({element:el}).setLngLat([v.lng,v.lat]).setPopup(new maplibregl.Popup({offset:12}).setText(v.name)).addTo(state.map);state.markers.set(v.id,m)}else m.setLngLat([v.lng,v.lat])});
  for(const [id,m] of state.markers)if(!alive.has(id)){m.remove();state.markers.delete(id)}
 }
+function mergeDeep(base,patch){
+ const out={...(base||{})}; for(const [k,v] of Object.entries(patch||{})){out[k]=v&&typeof v==='object'&&!Array.isArray(v)&&out[k]&&typeof out[k]==='object'&&!Array.isArray(out[k])?mergeDeep(out[k],v):v} return out
+}
+function applyLiveEvent(event){
+ if(!event||typeof event!=='object')return;
+ if(event.type==='telemetry'&&event.device_sn&&event.state){
+  const i=state.vehicles.findIndex(v=>(v.sn||v.device_sn||v.id)===event.device_sn);
+  if(i>=0)state.vehicles[i]={...state.vehicles[i],online:true,telemetry:mergeDeep(state.vehicles[i].telemetry,event.state)};
+  else state.vehicles.push({id:event.device_sn,sn:event.device_sn,name:event.device_sn,model:'DJI',source:'dji_cloud',online:true,telemetry:event.state});
+  render();
+ }else if((event.type==='device_online'||event.type==='device_offline')&&event.device_sn){
+  const v=state.vehicles.find(v=>(v.sn||v.device_sn||v.id)===event.device_sn); if(v){v.online=event.type==='device_online';render()}
+ }else if(event.type==='topology'){scheduleRestSync(150)}
+}
+function wsUrl(){const proto=location.protocol==='https:'?'wss:':'ws:';return proto+'//'+location.host+'/ws/live'}
+function connectLive(){
+ if(state.ws&&(state.ws.readyState===WebSocket.OPEN||state.ws.readyState===WebSocket.CONNECTING))return;
+ const ws=new WebSocket(wsUrl());state.ws=ws;
+ ws.onopen=()=>{state.wsConnected=true;$('#apiStatus').textContent='Backend live';$('#apiStatus').className='status good';if(state.wsRetry){clearTimeout(state.wsRetry);state.wsRetry=null}};
+ ws.onmessage=e=>{try{applyLiveEvent(JSON.parse(e.data))}catch(_){}};
+ ws.onerror=()=>ws.close();
+ ws.onclose=()=>{state.wsConnected=false;if(state.ws===ws)state.ws=null;if(!state.wsRetry)state.wsRetry=setTimeout(()=>{state.wsRetry=null;connectLive()},1500)};
+}
+let restSyncTimer=null;
+function scheduleRestSync(delay=0){if(restSyncTimer)clearTimeout(restSyncTimer);restSyncTimer=setTimeout(()=>{restSyncTimer=null;refresh()},delay)}
 async function getJson(url){const r=await fetch(url,{headers:{accept:'application/json'}});if(!r.ok)throw new Error(r.status);return r.json()}
 async function refresh(){
  try{
@@ -86,4 +111,4 @@ async function refresh(){
 }
 document.querySelectorAll('.navItem').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.navItem').forEach(x=>x.classList.remove('active'));b.classList.add('active');const v=b.dataset.view;state.activeView=v;$('#operations').classList.remove('active');$('#liveView').classList.remove('active');$('#genericView').classList.remove('active');if(v==='operations'){$('#operations').classList.add('active');$('#viewTitle').textContent='Operations';$('#viewSubtitle').textContent='Fleet, RTK und Missionen im Überblick';setTimeout(()=>state.map?.resize(),0)}else if(v==='live'){$('#liveView').classList.add('active');$('#viewTitle').textContent='Live';$('#viewSubtitle').textContent='Aircraft, RTK, Controller, Gimbal und Payload in Echtzeit';render()}else{$('#genericView').classList.add('active');$('#genericTitle').textContent=texts[v][0];$('#genericText').textContent=texts[v][1];$('#viewTitle').textContent=texts[v][0];$('#viewSubtitle').textContent=texts[v][1]}}));
 $('#refreshBtn').addEventListener('click',refresh);
-initMap(); refresh(); setInterval(refresh,5000);
+initMap(); refresh(); connectLive(); setInterval(()=>{if(!state.wsConnected)refresh()},5000); setInterval(()=>refresh(),30000);
