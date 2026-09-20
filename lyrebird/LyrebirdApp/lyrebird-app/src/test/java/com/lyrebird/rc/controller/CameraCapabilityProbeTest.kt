@@ -28,6 +28,7 @@ class CameraCapabilityProbeTest {
                     "RGB_CAMERA", "NDVI_CAMERA", "MS_G_CAMERA", "MS_R_CAMERA",
                     "MS_RE_CAMERA", "MS_NIR_CAMERA"
                 ),
+                recordStoredSources = listOf("RGB_CAMERA", "NDVI_CAMERA"),
                 captureCurrentScreen = false,
                 thermalCapture = false,
                 multispectralCapture = true
@@ -39,5 +40,7 @@ class CameraCapabilityProbeTest {
         assertFalse(json.getBoolean("thermalCapture"))
         assertTrue(json.getBoolean("multispectralCapture"))
         assertEquals(6, json.getJSONArray("captureStoredSources").length())
+        assertEquals(2, json.getJSONArray("recordStoredSources").length())
+        assertEquals("NDVI_CAMERA", json.getJSONArray("recordStoredSources").getString(1))
     }
 }
