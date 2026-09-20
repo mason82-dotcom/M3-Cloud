@@ -152,6 +152,8 @@ def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any
             enriched["payload"]["vision_assist"] = {
                 "component_index": vision.get("componentIndex"),
                 "available": vision.get("available"),
+                "stream_available": vision.get("streamAvailable", vision.get("available")),
+                "motors_on": vision.get("motorsOn"),
                 "available_camera_indices": vision.get("availableCameraIndices") or [],
                 "stream_enabled": vision.get("streamEnabled"),
                 "enabled": vision.get("enabled"),
