@@ -1,7 +1,6 @@
 package com.lyrebird.rc.mavlink
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SurveyDistanceCompilerTest {
@@ -22,15 +21,15 @@ class SurveyDistanceCompilerTest {
     private fun distance(
         seq: Int,
         metres: Float,
-        triggerNow: Float = 0f,
-        cameraId: Float = 0f
+        param3: Float = 0f,
+        param4: Float = 0f
     ) = MissionItem(
         seq = seq,
         command = Mav.CMD_DO_SET_CAM_TRIGG_DIST,
         param1 = metres,
         param2 = 0f,
-        param3 = triggerNow,
-        param4 = cameraId,
+        param3 = param3,
+        param4 = param4,
         latitudeDeg = 0.0,
         longitudeDeg = 0.0,
         altitudeM = 0.0,
@@ -91,16 +90,29 @@ class SurveyDistanceCompilerTest {
     }
 
     @Test
-    fun immediateTriggerAndCameraIdSurviveCompilation() {
+    fun param3AndParam4ArePreservedButNotInterpreted() {
         val result = SurveyDistanceCompiler.compile(
             listOf(
                 waypoint(0),
-                distance(1, 10f, triggerNow = 1f, cameraId = 1f),
+                distance(1, 10f, param3 = 2.75f, param4 = 42f),
                 waypoint(2),
                 distance(3, 0f)
             )
         )
-        assertTrue(result.single().triggerImmediately)
-        assertEquals(1, result.single().targetCameraId)
+        assertEquals(2.75, result.single().param3Raw ?: Double.NaN, 0.001)
+        assertEquals(42.0, result.single().param4Raw ?: Double.NaN, 0.001)
+    }
+
+    @Test
+    fun arbitraryFiniteParam3DoesNotRejectMission() {
+        val result = SurveyDistanceCompiler.compile(
+            listOf(
+                distance(0, 12f, param3 = 0.35f, param4 = 99f),
+                waypoint(1),
+                waypoint(2)
+            )
+        )
+        assertEquals(1, result.size)
+        assertEquals(12.0, result.single().distanceM, 0.001)
     }
 }

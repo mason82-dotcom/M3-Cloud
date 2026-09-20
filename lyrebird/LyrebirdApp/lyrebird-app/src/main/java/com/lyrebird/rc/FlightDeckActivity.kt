@@ -7018,12 +7018,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             }
 
             val surveyActionGroups = surveyCaptures.map { capture ->
-                if (capture.targetCameraId !in 0..1) {
-                    return CommandResult(
-                        MavlinkCommandOutcome.DENIED,
-                        "Unsupported camera id ${capture.targetCameraId} for distance capture"
-                    )
-                }
                 if (capture.startWaypointIndex !in waypointModels.indices ||
                     capture.endWaypointIndex !in waypointModels.indices
                 ) {
@@ -7033,15 +7027,11 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                     )
                 }
 
-                if (capture.triggerImmediately) {
-                    val waypoint = waypointModels[capture.startWaypointIndex]
-                    val immediatePhoto = WaylineActionInfo().apply {
-                        actionType = WaylineActionType.TAKE_PHOTO
-                        takePhotoParam = ActionTakePhotoParam().apply { payloadPositionIndex = 0 }
-                    }
-                    waypoint.actionInfos = ArrayList(waypoint.actionInfos + immediatePhoto)
-                }
-
+                // Only MAV_CMD_DO_SET_CAM_TRIGG_DIST.param1 has a portable meaning here:
+                // the distance interval. param3/param4 are retained by SurveyDistanceCompiler for
+                // diagnostics but are deliberately not reinterpreted as an immediate shutter or
+                // DJI camera/payload selector. M3E, M3T and M3M all use the integrated payload at
+                // position 0; lens/capture-profile selection belongs to the camera configurator.
                 WaylineMissionHelper.createDistancePhotoActionGroup(
                     startIndex = capture.startWaypointIndex,
                     endIndex = capture.endWaypointIndex,

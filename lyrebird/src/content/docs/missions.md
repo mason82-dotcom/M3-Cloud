@@ -73,7 +73,7 @@ WPML construct has the matching meaning:
 | `DO_CHANGE_SPEED` | The waypoint's own `speed` field, applying to the legs that follow it, exactly like the onboard executor's running-speed variable |
 | `IMAGE_START_CAPTURE` / `VIDEO_START_CAPTURE` / `VIDEO_STOP_CAPTURE` | A `takePhoto` / `startRecord` / `stopRecord` wayline action, triggered on reaching the waypoint the item sits after |
 | `DO_GIMBAL_MANAGER_PITCHYAW` | A `gimbalRotate` wayline action, absolute pitch/yaw |
-| `DO_SET_CAM_TRIGG_DIST` | A `multipleDistance` wayline action group, spanning every waypoint between the start and end of the triggered span, with a single `takePhoto` action — see below |
+| `DO_SET_CAM_TRIGG_DIST` | A `multipleDistance` wayline action group using `param1` as the distance interval. `param3`/`param4` are preserved for diagnostics but not assigned DJI-specific semantics — see below |
 | `DO_SET_ROI_LOCATION` / `DO_SET_ROI` (location mode) | Waypoint yaw mode `towardPOI` + gimbal heading mode `towardPOI`, both pointed at the ROI coordinate — see below |
 | `DO_SET_ROI_NONE` / `DO_SET_ROI` (non-location mode) | Clears the active ROI for waypoints that follow |
 | `SET_CAMERA_MODE` | No wayline equivalent — skipped |
@@ -101,7 +101,9 @@ moving ROI has to use `onboard`, which re-reads the live ROI command like a norm
 ### Distance-triggered capture, compiled to one wayline action group
 
 `DO_SET_CAM_TRIGG_DIST` is modal, the same way ROI is: `param1 > 0` (re)starts triggering a photo
-every `param1` metres of ground travel from that item on; `param1 == 0` stops it. A survey/grid
+every `param1` metres of ground travel from that item on; `param1 == 0` stops it. Lyrebird deliberately
+uses only `param1` for DJI native distance capture: `param3` is dialect-sensitive across MAVLink
+implementations and `param4` is not repurposed as a DJI camera/payload index. A survey/grid
 plan from a photogrammetry planner (UgCS, QGC's Survey tool) typically emits exactly one of these
 before the grid's waypoints and one `param1 == 0` after — or never turns it off, letting the
 mission's end close it implicitly.

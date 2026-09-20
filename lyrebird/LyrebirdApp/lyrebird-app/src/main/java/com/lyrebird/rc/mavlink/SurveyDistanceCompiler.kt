@@ -1,13 +1,13 @@
 package com.lyrebird.rc.mavlink
 
-import kotlin.math.roundToInt
-
 internal data class SurveyDistanceCapture(
     val startWaypointIndex: Int,
     val endWaypointIndex: Int,
     val distanceM: Double,
-    val triggerImmediately: Boolean,
-    val targetCameraId: Int
+    /** Preserved for trace/debugging only. Lyrebird assigns no portable control meaning to it. */
+    val param3Raw: Double?,
+    /** Preserved for trace/debugging only. It is not treated as a DJI payload/camera id. */
+    val param4Raw: Double?
 )
 
 internal object SurveyDistanceCompiler {
@@ -19,8 +19,8 @@ internal object SurveyDistanceCompiler {
         data class Active(
             val startWaypointIndex: Int,
             val distanceM: Double,
-            val triggerImmediately: Boolean,
-            val targetCameraId: Int
+            val param3Raw: Double?,
+            val param4Raw: Double?
         )
 
         val result = mutableListOf<SurveyDistanceCapture>()
@@ -33,8 +33,8 @@ internal object SurveyDistanceCompiler {
                 startWaypointIndex = current.startWaypointIndex,
                 endWaypointIndex = endWaypointIndex.coerceAtLeast(current.startWaypointIndex),
                 distanceM = current.distanceM,
-                triggerImmediately = current.triggerImmediately,
-                targetCameraId = current.targetCameraId
+                param3Raw = current.param3Raw,
+                param4Raw = current.param4Raw
             )
             active = null
         }
@@ -51,17 +51,6 @@ internal object SurveyDistanceCompiler {
                 "Camera trigger distance must be finite and >= 0 m"
             }
 
-            val triggerRaw = item.param3.toDouble()
-            require(!triggerRaw.isFinite() || triggerRaw == 0.0 || triggerRaw == 1.0) {
-                "Camera trigger param3 must be MAV_BOOL (0 or 1)"
-            }
-            val triggerImmediately = triggerRaw == 1.0
-
-            val targetCameraId = if (item.param4.isFinite()) item.param4.roundToInt() else 0
-            require(targetCameraId in 0..255) {
-                "Camera target id must be in 0..255"
-            }
-
             if (distanceM == 0.0) {
                 closeActive(waypointIndex.coerceAtLeast(0))
                 continue
@@ -71,8 +60,8 @@ internal object SurveyDistanceCompiler {
             active = Active(
                 startWaypointIndex = waypointIndex.coerceAtLeast(0),
                 distanceM = distanceM,
-                triggerImmediately = triggerImmediately,
-                targetCameraId = targetCameraId
+                param3Raw = item.param3.toDouble().takeIf { it.isFinite() },
+                param4Raw = item.param4.toDouble().takeIf { it.isFinite() }
             )
         }
 

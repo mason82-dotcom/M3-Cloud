@@ -67,27 +67,33 @@ internal class RtkTelemetryMonitor(
     @Volatile
     private var started = false
 
+    private val stateLock = Any()
+
     private val locationListener = RTKLocationInfoListener { info ->
         val location = info.rtkLocation
         val mobile = location?.mobileStationLocation
-        raw = raw.copy(
-            fix = mapFix(location?.positioningSolution),
-            latitudeDeg = mobile?.latitude,
-            longitudeDeg = mobile?.longitude,
-            altitudeM = mobile?.altitude,
-            stdLatitudeM = location?.stdLatitude,
-            stdLongitudeM = location?.stdLongitude,
-            stdAltitudeM = location?.stdAltitude,
-            locationUpdatedAtMs = monotonicMs()
-        )
+        synchronized(stateLock) {
+            raw = raw.copy(
+                fix = mapFix(location?.positioningSolution),
+                latitudeDeg = mobile?.latitude,
+                longitudeDeg = mobile?.longitude,
+                altitudeM = mobile?.altitude,
+                stdLatitudeM = location?.stdLatitude,
+                stdLongitudeM = location?.stdLongitude,
+                stdAltitudeM = location?.stdAltitude,
+                locationUpdatedAtMs = monotonicMs()
+            )
+        }
     }
 
     private val systemListener = RTKSystemStateListener { state ->
-        raw = raw.copy(
-            enabled = state.isRTKEnabled,
-            healthy = state.rtkHealthy,
-            source = state.rtkReferenceStationSource?.name ?: "UNKNOWN"
-        )
+        synchronized(stateLock) {
+            raw = raw.copy(
+                enabled = state.isRTKEnabled,
+                healthy = state.rtkHealthy,
+                source = state.rtkReferenceStationSource?.name ?: "UNKNOWN"
+            )
+        }
     }
 
     @Synchronized
@@ -107,7 +113,7 @@ internal class RtkTelemetryMonitor(
     }
 
     fun snapshot(): RtkTelemetryState {
-        val current = raw
+        val current = synchronized(stateLock) { raw }
         val age = if (current.locationUpdatedAtMs == 0L) {
             Long.MAX_VALUE
         } else {
@@ -115,7 +121,9 @@ internal class RtkTelemetryMonitor(
         }
         val effectiveFix = when {
             age > staleAfterMs &&
-                (current.fix == RtkFix.FIXED || current.fix == RtkFix.FLOAT) -> RtkFix.STALE
+                (current.fix == RtkFix.FIXED ||
+                    current.fix == RtkFix.FLOAT ||
+                    current.fix == RtkFix.SINGLE) -> RtkFix.STALE
             else -> current.fix
         }
         return RtkTelemetryState(
