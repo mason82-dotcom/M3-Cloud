@@ -167,3 +167,53 @@ def _nullable_finite(value: Any, label: str) -> float | None:
     if value is None:
         return None
     return _finite(value, label)
+
+
+
+def compile_mission_item_int(plan: dict[str, object]) -> dict[str, object]:
+    """Compile a normalized plan to logical MISSION_ITEM_INT fields without sending it."""
+
+    info = compatibility(plan)
+    if not info["wire_ready"]:
+        raise ValueError("Mission plan is not wire-ready")
+
+    raw_items = plan.get("items")
+    items = raw_items if isinstance(raw_items, list) else []
+    compiled: list[dict[str, object]] = []
+
+    for raw in items:
+        if not isinstance(raw, dict):
+            raise ValueError("Mission plan contains a non-object item")
+
+        latitude = float(raw["latitude_deg"])
+        longitude = float(raw["longitude_deg"])
+        x = round(latitude * 10_000_000)
+        y = round(longitude * 10_000_000)
+        if not -(2**31) <= x < 2**31 or not -(2**31) <= y < 2**31:
+            raise ValueError("Mission coordinate does not fit MISSION_ITEM_INT")
+
+        compiled.append(
+            {
+                "seq": int(raw["seq"]),
+                "frame": int(raw["frame"]),
+                "command": int(raw["command"]),
+                "current": 0,
+                "autocontinue": 1 if bool(raw.get("autocontinue", True)) else 0,
+                "param1": raw.get("param1"),
+                "param2": raw.get("param2"),
+                "param3": raw.get("param3"),
+                "param4": raw.get("param4"),
+                "x": x,
+                "y": y,
+                "z": float(raw["altitude_m"]),
+                "mission_type": 0,
+            }
+        )
+
+    return {
+        "message": "MISSION_ITEM_INT",
+        "target_system": "RUNTIME",
+        "target_component": "RUNTIME",
+        "null_float_encoding": "IEEE754_NAN",
+        "items": compiled,
+    }

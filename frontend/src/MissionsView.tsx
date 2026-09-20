@@ -657,6 +657,7 @@ export function MissionsView() {
                         key={deployment.id}
                       >
                         v{deployment.revision_version} · {deployment.package_sha256.slice(0, 8)}
+                        {deployment.package.wire ? ` · ${deployment.package.wire.items.length} wire items` : ""}
                       </a>
                     ))}
                   </div>

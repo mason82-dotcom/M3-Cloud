@@ -230,6 +230,27 @@ export interface MissionDeployment {
     };
     compatibility: Mission["compatibility"];
     preflight: MissionPreflight;
+    wire?: {
+      message: "MISSION_ITEM_INT" | string;
+      target_system: "RUNTIME" | string;
+      target_component: "RUNTIME" | string;
+      null_float_encoding: string;
+      items: Array<{
+        seq: number;
+        frame: number;
+        command: number;
+        current: number;
+        autocontinue: number;
+        param1?: number | null;
+        param2?: number | null;
+        param3?: number | null;
+        param4?: number | null;
+        x: number;
+        y: number;
+        z: number;
+        mission_type: number;
+      }>;
+    } | null;
     handoff: {
       protocol: string;
       wire_ready: boolean;

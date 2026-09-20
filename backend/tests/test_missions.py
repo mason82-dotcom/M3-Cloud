@@ -18,7 +18,12 @@ from app.api_missions import (
 from app.api_projects import ProjectCreate, SurveyCreate, create_project, create_survey
 from app.database import session_factory
 from app.missions.deployment import deployment_sha256
-from app.missions.plans import compatibility, normalize_plan, plan_sha256
+from app.missions.plans import (
+    compatibility,
+    compile_mission_item_int,
+    normalize_plan,
+    plan_sha256,
+)
 from app.vehicles.base import VehicleSnapshot
 from app.models import Mission, MissionDeployment, Project, Survey
 
@@ -154,6 +159,29 @@ def test_plan_validation_rejects_non_contiguous_sequence_and_reports_unsupported
     assert frame_info["wire_ready"] is False
     assert frame_info["lyrebird_unsupported_frames"] == [{"seq": 0, "frame": 0}]
 
+    wire_plan = normalize_plan(
+        [
+            {
+                "seq": 0,
+                "frame": 6,
+                "command": 16,
+                "param4": None,
+                "latitude_deg": 49.1234567,
+                "longitude_deg": 8.7654321,
+                "altitude_m": 50.5,
+                "autocontinue": False,
+            }
+        ]
+    )
+    wire = compile_mission_item_int(wire_plan)
+    assert wire["target_system"] == "RUNTIME"
+    assert wire["null_float_encoding"] == "IEEE754_NAN"
+    assert wire["items"][0]["x"] == 491234567
+    assert wire["items"][0]["y"] == 87654321
+    assert wire["items"][0]["z"] == 50.5
+    assert wire["items"][0]["param4"] is None
+    assert wire["items"][0]["autocontinue"] == 0
+
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_empty_mission_cannot_be_marked_ready() -> None:
@@ -239,6 +267,10 @@ async def test_ready_mission_seals_immutable_non_executing_handoff(monkeypatch) 
     assert sealed["package"]["handoff"]["execution_enabled"] is False
     assert sealed["package"]["handoff"]["wire_ready"] is True
     assert sealed["package"]["handoff"]["frame_policy"] == "EXPLICIT_PER_ITEM"
+    assert sealed["package"]["wire"]["message"] == "MISSION_ITEM_INT"
+    assert sealed["package"]["wire"]["target_system"] == "RUNTIME"
+    assert sealed["package"]["wire"]["items"][0]["frame"] == 6
+    assert sealed["package"]["wire"]["items"][0]["x"] == 490000000
     assert sealed["package_sha256"] == deployment_sha256(sealed["package"])
 
     listed = await mission_deployments(mission_id)

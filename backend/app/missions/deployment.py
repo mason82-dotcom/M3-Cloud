@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from app.missions.plans import compatibility
+from app.missions.plans import compatibility, compile_mission_item_int
 from app.models import Mission, MissionRevision
 
 
@@ -21,6 +21,11 @@ def build_deployment_package(
     """Freeze the persisted revision and current safety evidence into one handoff artifact."""
 
     compat = compatibility(revision.plan_json or {})
+    wire = (
+        compile_mission_item_int(revision.plan_json or {})
+        if compat.get("wire_ready")
+        else None
+    )
     return {
         "schema_version": 1,
         "kind": "M3_CLOUD_MISSION_HANDOFF",
@@ -46,6 +51,7 @@ def build_deployment_package(
         },
         "compatibility": compat,
         "preflight": preflight,
+        "wire": wire,
         "handoff": {
             "protocol": "MAVLINK_MISSION",
             "wire_ready": bool(compat.get("wire_ready")),
@@ -58,8 +64,9 @@ def build_deployment_package(
             ),
             "note": (
                 "This is an immutable handoff/audit package, not a flight command. "
-                "Wire-ready means frame semantics are explicit and compatible; "
-                "M3-Cloud still does not upload or execute this plan."
+                "Wire-ready includes logical MISSION_ITEM_INT fields with runtime target IDs. "
+                "Null float params must be encoded as IEEE NaN. M3-Cloud still does not "
+                "upload or execute this plan."
             ),
         },
     }
