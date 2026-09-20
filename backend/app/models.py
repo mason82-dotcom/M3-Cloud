@@ -52,6 +52,38 @@ class Survey(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class Mission(Base):
+    __tablename__ = "missions"
+    __table_args__ = (
+        UniqueConstraint("survey_id", "name", name="uq_mission_survey_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    survey_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("surveys.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="WAYLINE", index=True)
+    source: Mapped[str] = mapped_column(String(32), default="M3_CLOUD", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="DRAFT", index=True)
+    aircraft_sn: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    preferred_executor: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    external_ref: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    plan_version: Mapped[int] = mapped_column(Integer, default=1)
+    item_count: Mapped[int] = mapped_column(Integer, default=0)
+    plan_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    plan_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class Flight(Base):
     __tablename__ = "flights"
 

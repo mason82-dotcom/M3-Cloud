@@ -1,0 +1,283 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Literal
+
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+
+from app.api_operations import _registry
+from app.database import session_factory
+from app.missions.plans import (
+    compatibility,
+    mission_state_name,
+    normalize_plan,
+    plan_sha256,
+)
+from app.models import Mission, Survey
+
+
+router = APIRouter(prefix="/api/v1/missions", tags=["missions"])
+
+
+class MissionItemInput(BaseModel):
+    seq: int | None = Field(default=None, ge=0)
+    command: int = Field(ge=0)
+    param1: float | None = None
+    param2: float | None = None
+    param3: float | None = None
+    param4: float | None = None
+    latitude_deg: float = 0.0
+    longitude_deg: float = 0.0
+    altitude_m: float = 0.0
+    autocontinue: bool = True
+
+
+class MissionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    survey_id: uuid.UUID | None = None
+    aircraft_sn: str | None = Field(default=None, max_length=128)
+    preferred_executor: Literal["DJI_NATIVE", "ONBOARD"] | None = None
+    items: list[MissionItemInput] = Field(default_factory=list)
+
+
+class MissionUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    survey_id: uuid.UUID | None = None
+    aircraft_sn: str | None = Field(default=None, max_length=128)
+    preferred_executor: Literal["DJI_NATIVE", "ONBOARD"] | None = None
+    status: Literal["DRAFT", "READY", "ARCHIVED"] | None = None
+    items: list[MissionItemInput] | None = None
+
+
+def _base_payload(mission: Mission) -> dict[str, Any]:
+    return {
+        "id": str(mission.id),
+        "survey_id": str(mission.survey_id) if mission.survey_id else None,
+        "name": mission.name,
+        "kind": mission.kind,
+        "source": mission.source,
+        "status": mission.status,
+        "aircraft_sn": mission.aircraft_sn,
+        "preferred_executor": mission.preferred_executor,
+        "external_ref": mission.external_ref,
+        "plan_version": mission.plan_version,
+        "item_count": mission.item_count,
+        "plan_sha256": mission.plan_sha256,
+        "plan": mission.plan_json,
+        "compatibility": compatibility(mission.plan_json or {}),
+        "created_at": mission.created_at.isoformat(),
+        "updated_at": mission.updated_at.isoformat(),
+    }
+
+
+async def _runtime_by_aircraft(request: Request) -> dict[str, dict[str, Any]]:
+    vehicles = await _registry(request).list_vehicles()
+    result: dict[str, dict[str, Any]] = {}
+
+    for vehicle in vehicles:
+        telemetry = vehicle.telemetry if isinstance(vehicle.telemetry, dict) else {}
+        mission = telemetry.get("mission")
+        reach = telemetry.get("reach")
+        if not isinstance(mission, dict) and not isinstance(reach, dict):
+            continue
+
+        state_code = mission.get("state") if isinstance(mission, dict) else None
+        result[vehicle.sn] = {
+            "available": True,
+            "source": vehicle.source,
+            "state_code": state_code,
+            "state": mission_state_name(state_code),
+            "current_seq": mission.get("current_seq") if isinstance(mission, dict) else None,
+            "waypoint_reached_seq": (
+                reach.get("waypoint_seq") if isinstance(reach, dict) else None
+            ),
+            "runtime_plan_identity": "UNVERIFIED",
+            "linked_to_persisted_plan": False,
+        }
+    return result
+
+
+async def _mission_payload(
+    mission: Mission,
+    runtime: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    payload = _base_payload(mission)
+    payload["runtime"] = (
+        runtime.get(mission.aircraft_sn)
+        if mission.aircraft_sn
+        else None
+    )
+    return payload
+
+
+async def _validate_survey(session, survey_id: uuid.UUID | None) -> None:
+    if survey_id is None:
+        return
+    if await session.get(Survey, survey_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Survey not found",
+        )
+
+
+def _input_plan(items: list[MissionItemInput]) -> dict[str, object]:
+    try:
+        return normalize_plan(
+            [
+                {
+                    **item.model_dump(exclude_none=True),
+                    "seq": item.seq if item.seq is not None else index,
+                }
+                for index, item in enumerate(items)
+            ]
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("")
+async def list_missions(
+    request: Request,
+    survey_id: uuid.UUID | None = None,
+    aircraft_sn: str | None = None,
+    include_archived: bool = False,
+    limit: int = Query(default=500, ge=1, le=2000),
+) -> list[dict[str, Any]]:
+    statement = select(Mission).order_by(Mission.updated_at.desc()).limit(limit)
+    if survey_id is not None:
+        statement = statement.where(Mission.survey_id == survey_id)
+    if aircraft_sn:
+        statement = statement.where(Mission.aircraft_sn == aircraft_sn)
+    if not include_archived:
+        statement = statement.where(Mission.status != "ARCHIVED")
+
+    async with session_factory() as session:
+        missions = (await session.scalars(statement)).all()
+
+    runtime = await _runtime_by_aircraft(request)
+    return [await _mission_payload(mission, runtime) for mission in missions]
+
+
+@router.get("/{mission_id}")
+async def mission_detail(
+    mission_id: uuid.UUID,
+    request: Request,
+) -> dict[str, Any]:
+    async with session_factory() as session:
+        mission = await session.get(Mission, mission_id)
+        if mission is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission not found",
+            )
+    runtime = await _runtime_by_aircraft(request)
+    return await _mission_payload(mission, runtime)
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_mission(body: MissionCreate) -> dict[str, Any]:
+    plan = _input_plan(body.items)
+    now = datetime.now(timezone.utc)
+    mission = Mission(
+        survey_id=body.survey_id,
+        name=body.name.strip(),
+        kind="WAYLINE",
+        source="M3_CLOUD",
+        status="READY" if body.items else "DRAFT",
+        aircraft_sn=body.aircraft_sn.strip() if body.aircraft_sn else None,
+        preferred_executor=body.preferred_executor,
+        external_ref=None,
+        plan_version=1,
+        item_count=len(body.items),
+        plan_sha256=plan_sha256(plan),
+        plan_json=plan,
+        created_at=now,
+        updated_at=now,
+    )
+
+    async with session_factory() as session:
+        await _validate_survey(session, body.survey_id)
+        if body.survey_id is not None:
+            duplicate = await session.scalar(
+                select(Mission).where(
+                    Mission.survey_id == body.survey_id,
+                    Mission.name == mission.name,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Mission name already exists in survey",
+                )
+        session.add(mission)
+        await session.commit()
+        await session.refresh(mission)
+        return _base_payload(mission)
+
+
+@router.patch("/{mission_id}")
+async def update_mission(
+    mission_id: uuid.UUID,
+    body: MissionUpdate,
+) -> dict[str, Any]:
+    async with session_factory() as session:
+        mission = await session.get(Mission, mission_id)
+        if mission is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission not found",
+            )
+
+        values = body.model_dump(exclude_unset=True)
+        if "survey_id" in values:
+            await _validate_survey(session, body.survey_id)
+            mission.survey_id = body.survey_id
+        if "name" in values and body.name is not None:
+            mission.name = body.name.strip()
+        if "aircraft_sn" in values:
+            mission.aircraft_sn = (
+                body.aircraft_sn.strip() if body.aircraft_sn else None
+            )
+        if "preferred_executor" in values:
+            mission.preferred_executor = body.preferred_executor
+
+        if body.items is not None:
+            plan = _input_plan(body.items)
+            mission.plan_json = plan
+            mission.plan_sha256 = plan_sha256(plan)
+            mission.item_count = len(body.items)
+            mission.plan_version += 1
+            mission.status = "READY" if body.items else "DRAFT"
+
+        if body.status is not None:
+            if body.status == "READY" and mission.item_count == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Empty mission cannot be READY",
+                )
+            mission.status = body.status
+
+        if mission.survey_id is not None:
+            duplicate = await session.scalar(
+                select(Mission).where(
+                    Mission.survey_id == mission.survey_id,
+                    Mission.name == mission.name,
+                    Mission.id != mission.id,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Mission name already exists in survey",
+                )
+
+        mission.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+        await session.refresh(mission)
+        return _base_payload(mission)

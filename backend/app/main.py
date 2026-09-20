@@ -5,6 +5,7 @@ from fastapi import FastAPI, Response, status
 from app.api_devices import router as devices_router
 from app.api_flights import router as flights_router
 from app.api_media import router as media_router
+from app.api_missions import router as missions_router
 from app.api_processing import router as processing_router
 from app.api_projects import router as projects_router
 from app.config import settings
@@ -118,6 +119,7 @@ app = FastAPI(
 app.include_router(devices_router)
 app.include_router(flights_router)
 app.include_router(media_router)
+app.include_router(missions_router)
 app.include_router(processing_router)
 app.include_router(projects_router)
 app.include_router(live_router)

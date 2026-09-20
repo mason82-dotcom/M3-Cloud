@@ -18,6 +18,7 @@ from app.models import (
     Flight,
     MediaAsset,
     MediaDatasetRecord,
+    Mission,
     ProcessingJob,
     ProcessingJobAsset,
     ProcessingResult,
@@ -102,6 +103,12 @@ async def _survey_payload(session, survey: Survey) -> dict[str, Any]:
         )
         or 0
     )
+    mission_count = int(
+        await session.scalar(
+            select(func.count(Mission.id)).where(Mission.survey_id == survey.id)
+        )
+        or 0
+    )
     processing_count = int(
         await session.scalar(
             select(func.count(ProcessingJob.id)).where(
@@ -119,6 +126,7 @@ async def _survey_payload(session, survey: Survey) -> dict[str, Any]:
         "status": survey.status,
         "flight_count": flight_count,
         "dataset_count": dataset_count,
+        "mission_count": mission_count,
         "processing_count": processing_count,
         "created_at": survey.created_at.isoformat(),
         "updated_at": survey.updated_at.isoformat(),
@@ -403,6 +411,13 @@ async def survey_lineage(survey_id: uuid.UUID) -> dict[str, Any]:
                 .order_by(MediaDatasetRecord.prefix)
             )
         ).all()
+        missions = (
+            await session.scalars(
+                select(Mission)
+                .where(Mission.survey_id == survey_id)
+                .order_by(Mission.updated_at.desc(), Mission.name)
+            )
+        ).all()
         jobs = (
             await session.scalars(
                 select(ProcessingJob)
@@ -458,6 +473,21 @@ async def survey_lineage(survey_id: uuid.UUID) -> dict[str, Any]:
                     "duration_s": flight.duration_s,
                 }
                 for flight in flights
+            ],
+            "missions": [
+                {
+                    "id": str(mission.id),
+                    "name": mission.name,
+                    "status": mission.status,
+                    "source": mission.source,
+                    "aircraft_sn": mission.aircraft_sn,
+                    "preferred_executor": mission.preferred_executor,
+                    "item_count": mission.item_count,
+                    "plan_version": mission.plan_version,
+                    "plan_sha256": mission.plan_sha256,
+                    "updated_at": mission.updated_at.isoformat(),
+                }
+                for mission in missions
             ],
             "datasets": [
                 {
@@ -616,6 +646,13 @@ async def _survey_manifest_payload(
             select(MediaDatasetRecord)
             .where(MediaDatasetRecord.survey_id == survey.id)
             .order_by(MediaDatasetRecord.platform, MediaDatasetRecord.prefix)
+        )
+    ).all()
+    missions = (
+        await session.scalars(
+            select(Mission)
+            .where(Mission.survey_id == survey.id)
+            .order_by(Mission.updated_at, Mission.id)
         )
     ).all()
     jobs = (
@@ -806,6 +843,25 @@ async def _survey_manifest_payload(
         ),
         "survey": await _survey_payload(session, survey),
         "flights": flight_items,
+        "missions": [
+            {
+                "id": str(mission.id),
+                "name": mission.name,
+                "kind": mission.kind,
+                "source": mission.source,
+                "status": mission.status,
+                "aircraft_sn": mission.aircraft_sn,
+                "preferred_executor": mission.preferred_executor,
+                "external_ref": mission.external_ref,
+                "plan_version": mission.plan_version,
+                "item_count": mission.item_count,
+                "plan_sha256": mission.plan_sha256,
+                "plan": mission.plan_json,
+                "created_at": mission.created_at.isoformat(),
+                "updated_at": mission.updated_at.isoformat(),
+            }
+            for mission in missions
+        ],
         "datasets": dataset_items,
         "processing_jobs": job_items,
     }
