@@ -183,3 +183,29 @@ GET /api/v1/processing/jobs/<UUID>/map/tiles/<z>/<x>/<y>
 
 The React Processing view can open the published orthophoto directly on MapLibre. The original
 `orthophoto.mbtiles` remains archived in MinIO and is not modified.
+
+
+### Media dataset readiness and external handoff
+
+The media catalog evaluates each imported folder as a workflow dataset. Duplicate and missing files
+are excluded from readiness calculations.
+
+```text
+GET /api/v1/media/datasets
+GET /api/v1/media/datasets/manifest?prefix=M3T/site-a
+```
+
+Workflow readiness is reported separately:
+
+- `WEBODM`: at least two present, non-duplicate RGB/Wide originals.
+- `THERMOGRAM`: M3T capture groups contain both Wide and Thermal originals.
+- `MULTISPECTRAL`: M3M capture groups contain RGB plus Green, Red, Red Edge, and NIR.
+
+The handoff manifest contains the original relative paths, SHA-256 values, capture groups, and
+completeness status. It references `/media-import/<prefix>`; it does not copy, rename, resize,
+or rewrite the source files. This is the intended path for desktop tools such as Thermogram that
+need the original DJI folder contents.
+
+WebODM remains fully server-driven. When a WebODM processing job is created, M3-Cloud freezes the
+selected `MediaAsset` IDs in `processing_job_assets` before upload, so later watch-folder changes
+cannot silently modify a queued/running job.
