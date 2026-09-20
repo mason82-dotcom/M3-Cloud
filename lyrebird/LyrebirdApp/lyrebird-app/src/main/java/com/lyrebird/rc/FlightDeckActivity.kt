@@ -1682,8 +1682,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             // (speed limits, PID gains, gimbal/payload wiring) was selected for it, so an
             // operator can confirm the right profile is active without opening the app.
             val detectedProductType = productTypeKey.get(ProductType.UNKNOWN) ?: ProductType.UNKNOWN
+            val detectedAircraftVariant = CameraCapabilityProbe.detectedPlatform()
             val activeControlProfile = DroneControlProfiles.fromProductType(detectedProductType)
             append("\"detectedAircraft\":\"${jsonEscape(detectedProductType.name)}\",")
+            append("\"aircraftVariant\":\"${jsonEscape(detectedAircraftVariant.name)}\",")
             append("\"controlProfile\":\"${jsonEscape(activeControlProfile.displayName)}\",")
             // UI grouping metadata: each setting key maps to a group slug so
             // consumers (dashboard, ROS, ...) can render settings in sections.
@@ -1693,6 +1695,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             append("\"mavlinkSystemId\":\"identity\",")
             append("\"missionExecutor\":\"flight\",")
             append("\"detectedAircraft\":\"identity\",")
+            append("\"aircraftVariant\":\"identity\",")
             append("\"controlProfile\":\"identity\",")
             append("\"videoSource\":\"video\",")
             append("\"cameraLiveSource\":\"video\",")
