@@ -298,8 +298,9 @@ async def test_unique_capture_window_auto_matches_dataset_to_flight(tmp_path: Pa
         assert dataset is not None
         assert dataset.flight_id == flight_id
         assert dataset.flight_assignment_source == "AUTO"
-        assert dataset.flight_match_status == "MATCHED"
+        assert dataset.flight_match_status == "MATCHED_TIME_ONLY"
         assert dataset.flight_match_candidates == [str(flight_id)]
+        assert dataset.flight_match_details["validation"] == "TIME_ONLY"
         assert dataset.capture_started_at == datetime(
             2026, 9, 20, 12, 0, tzinfo=timezone.utc
         )
