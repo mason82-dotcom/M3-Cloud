@@ -54,6 +54,7 @@ internal class RtkTelemetryMonitor(
 ) {
     private data class RawState(
         val enabled: Boolean = false,
+        val connected: Boolean = false,
         val healthy: Boolean = false,
         val fix: RtkFix = RtkFix.UNKNOWN,
         val latitudeDeg: Double? = null,
