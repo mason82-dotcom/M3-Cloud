@@ -20,6 +20,23 @@ def _dji_cloud_state(result: dict[str, Any]) -> dict[str, Any]:
     # DJI Cloud quality and is_fixed/convergence are kept as DJI-native facts.
     # They are not MAVLink GPS fix types and therefore do not imply FLOAT/SINGLE.
     rtk_fixed = quality == 10 and convergence == "CONVERGED"
+    # Keep the same canonical positioning.rtk shape used by Lyrebird, but leave fields
+    # unavailable in DJI Cloud telemetry explicitly unknown instead of fabricating MSDK facts.
+    rtk = {
+        "enabled": None,
+        "connected": None,
+        "healthy": None,
+        "fix": "FIXED" if rtk_fixed else "UNKNOWN",
+        "raw_fix": None,
+        "age_ms": None,
+        "source": None,
+        "std_latitude_m": None,
+        "std_longitude_m": None,
+        "std_altitude_m": None,
+        "satellites": position.get("rtk_satellites"),
+        "convergence": convergence,
+        "quality": quality,
+    }
     return {
         "mode": mode,
         "armed": None,
@@ -39,7 +56,12 @@ def _dji_cloud_state(result: dict[str, Any]) -> dict[str, Any]:
             "rtk_fixed": rtk_fixed,
             "fix": "FIXED" if rtk_fixed else "UNKNOWN",
             "position_source": "DJI_CLOUD",
-            "native": {"dji_quality": quality, "dji_convergence": convergence},
+            "rtk": rtk,
+            "native": {
+                "dji_quality": quality,
+                "dji_convergence": convergence,
+                "dji_is_fixed_code": position.get("code"),
+            },
         },
         "native": {
             "dji_mode_code": code,

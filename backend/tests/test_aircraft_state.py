@@ -23,6 +23,11 @@ def test_dji_cloud_documented_home_and_rtk_are_exposed_without_flight_inference(
     assert common["home"]=={"latitude":49.1,"longitude":8.5,"distance_m":42.0}
     assert common["positioning"]["rtk_fixed"] is True
     assert common["positioning"]["rtk_satellites"]==27
+    assert common["positioning"]["rtk"]["fix"]=="FIXED"
+    assert common["positioning"]["rtk"]["satellites"]==27
+    assert common["positioning"]["rtk"]["convergence"]=="CONVERGED"
+    assert common["positioning"]["rtk"]["quality"]==10
+    assert common["positioning"]["rtk"]["enabled"] is None
     assert common["armed"] is None and common["is_flying"] is None and common["failsafe"] is None
 
 def test_unknown_dji_cloud_mode_code_remains_unmapped():
@@ -33,7 +38,11 @@ def test_dji_positioning_does_not_translate_quality_into_mavlink_fix_type():
     common=normalize_aircraft_state({"position_state":{"convergence":"CONVERGING","quality":10,"gps_satellites":18,"rtk_satellites":20}},source="dji_cloud")["aircraft_state"]
     assert common["positioning"]["rtk_fixed"] is False
     assert common["positioning"]["fix"]=="UNKNOWN"
-    assert common["positioning"]["native"]=={"dji_quality":10,"dji_convergence":"CONVERGING"}
+    assert common["positioning"]["rtk"]["fix"]=="UNKNOWN"
+    assert common["positioning"]["rtk"]["convergence"]=="CONVERGING"
+    assert common["positioning"]["rtk"]["quality"]==10
+    assert common["positioning"]["rtk"]["raw_fix"] is None
+    assert common["positioning"]["native"]=={"dji_quality":10,"dji_convergence":"CONVERGING","dji_is_fixed_code":None}
 
 def test_lyrebird_stale_rtk_overrides_retained_fixed_gps_state():
     telemetry={
@@ -78,3 +87,16 @@ def test_lyrebird_positioning_does_not_invent_rtk_diagnostics_without_private_st
     positioning=normalize_aircraft_state(telemetry,source="lyrebird")["aircraft_state"]["positioning"]
     assert "rtk" not in positioning
     assert "native" not in positioning
+
+
+def test_dji_cloud_positioning_preserves_is_fixed_code_without_inventing_mavlink_fix():
+    telemetry={"position_state":{"code":1,"convergence":"CONVERGING","quality":5,
+                                "gps_satellites":15,"rtk_satellites":18}}
+    positioning=normalize_aircraft_state(telemetry,source="dji_cloud")["aircraft_state"]["positioning"]
+    assert positioning["fix"]=="UNKNOWN"
+    assert positioning["rtk"]["fix"]=="UNKNOWN"
+    assert positioning["rtk"]["satellites"]==18
+    assert positioning["rtk"]["enabled"] is None
+    assert positioning["rtk"]["connected"] is None
+    assert positioning["rtk"]["healthy"] is None
+    assert positioning["native"]["dji_is_fixed_code"]==1
