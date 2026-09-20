@@ -108,3 +108,45 @@ async def test_missing_import_root_does_not_mark_catalog_missing(tmp_path: Path)
         )
     assert asset is not None
     assert asset.present is True
+
+
+
+@pytest.mark.asyncio
+async def test_recent_visible_file_is_not_marked_missing(tmp_path: Path) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(MediaAsset))
+        await session.commit()
+
+    root = tmp_path / "media"
+    path = root / "M3E" / "flight" / "DJI_0001_W.JPG"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"stable")
+
+    initial = MediaImporter(
+        session_factory,
+        root=str(root),
+        min_age_seconds=0,
+    )
+    await initial.scan()
+
+    path.write_bytes(b"copy still in progress")
+
+    guarded = MediaImporter(
+        session_factory,
+        root=str(root),
+        min_age_seconds=3600,
+    )
+    result = await guarded.scan()
+
+    assert result.scanned == 0
+    assert result.skipped_unstable == 1
+    assert result.marked_missing == 0
+
+    async with session_factory() as session:
+        asset = await session.scalar(
+            select(MediaAsset).where(
+                MediaAsset.relative_path == "M3E/flight/DJI_0001_W.JPG"
+            )
+        )
+    assert asset is not None
+    assert asset.present is True
