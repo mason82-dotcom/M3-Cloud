@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.missions.plans import mission_runtime_id
 from app.missions.uploader import (
     MissionTarget,
     MissionUploadError,
@@ -15,7 +16,9 @@ class FakeCollector:
         self.item_count = item_count
         self.ack_result = ack_result
         self.waiters = []
+        self.queues = []
         self.sent = []
+        self.stored = {}
 
     def message_waiter(self, host, predicate):
         future = asyncio.get_running_loop().create_future()
@@ -28,6 +31,17 @@ class FakeCollector:
             if item[0] != host or item[2] is not future
         ]
 
+    def message_queue(self, host, predicate):
+        queue = asyncio.Queue()
+        self.queues.append((host, predicate, queue))
+        return queue
+
+    def remove_message_queue(self, host, queue):
+        self.queues = [
+            item for item in self.queues
+            if item[0] != host or item[2] is not queue
+        ]
+
     def _reply(self, message):
         for index, (host, predicate, future) in enumerate(list(self.waiters)):
             if not future.done() and predicate(message):
@@ -35,12 +49,18 @@ class FakeCollector:
                 future.set_result(message)
                 return
 
+    def _queue(self, message):
+        for _host, predicate, queue in list(self.queues):
+            if predicate(message):
+                queue.put_nowait(message)
+
     def send_mission_count(self, host, count):
         self.sent.append(("count", host, count))
         self._reply(SimpleNamespace(get_type=lambda: "MISSION_REQUEST_INT", seq=0))
 
     def send_mission_item_int(self, host, item):
         self.sent.append(("item", host, item["seq"]))
+        self.stored[item["seq"]] = dict(item)
         next_seq = item["seq"] + 1
         if next_seq < self.item_count:
             self._reply(
@@ -57,6 +77,27 @@ class FakeCollector:
                 )
             )
 
+    def send_mission_request_list(self, host):
+        self.sent.append(("request_list", host))
+        self._queue(
+            SimpleNamespace(
+                get_type=lambda: "MISSION_COUNT",
+                count=len(self.stored),
+                target_system=255,
+                target_component=190,
+            )
+        )
+        for seq in sorted(self.stored):
+            item = self.stored[seq]
+            self._queue(
+                SimpleNamespace(
+                    get_type=lambda: "MISSION_ITEM_INT",
+                    target_system=255,
+                    target_component=190,
+                    **item,
+                )
+            )
+
 
 async def resolver(_aircraft_sn, _executor):
     return MissionTarget(
@@ -67,14 +108,14 @@ async def resolver(_aircraft_sn, _executor):
 
 
 def package(*, upload_enabled=True):
-    return {
+    result = {
         "handoff": {
             "upload_enabled": upload_enabled,
             "execution_enabled": False,
         },
         "wire": {
             "message": "MISSION_ITEM_INT",
-            "mission_id": 0x12345678,
+            "mission_id": 0,
             "items": [
                 {
                     "seq": 0,
@@ -109,6 +150,8 @@ def package(*, upload_enabled=True):
             ],
         },
     }
+    result["wire"]["mission_id"] = mission_runtime_id(result["wire"])
+    return result
 
 
 @pytest.mark.asyncio
@@ -128,10 +171,15 @@ async def test_upload_only_completes_request_int_handshake(monkeypatch) -> None:
         ("item", "10.0.0.2", 0),
         ("item", "10.0.0.2", 1),
     ]
-    assert result.runtime_mission_id == 0x12345678
+    expected_id = mission_runtime_id(package()["wire"])
+    assert result.runtime_mission_id == expected_id
+    assert result.readback_verified is True
+    assert result.readback_runtime_mission_id == expected_id
+    assert result.readback_item_count == 2
     assert result.requested_sequences == (0, 1)
     assert result.ack_result == 0
     assert result.as_dict()["execution_started"] is False
+    assert collector.sent[-1] == ("request_list", "10.0.0.2")
 
 
 @pytest.mark.asyncio

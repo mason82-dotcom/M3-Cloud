@@ -356,6 +356,10 @@ class LyrebirdMavlinkCollector:
             str,
             list[tuple[Callable[[Any], bool], asyncio.Future[Any]]],
         ] = defaultdict(list)
+        self._message_queues: dict[
+            str,
+            list[tuple[Callable[[Any], bool], asyncio.Queue[Any]]],
+        ] = defaultdict(list)
 
     def set_publisher(self, publisher: Callable[[str, dict[str, Any]], Awaitable[None]] | None) -> None:
         self._publisher = publisher
@@ -443,6 +447,26 @@ class LyrebirdMavlinkCollector:
             if item is not future
         ]
 
+    def message_queue(
+        self,
+        host: str,
+        predicate: Callable[[Any], bool],
+    ) -> asyncio.Queue[Any]:
+        queue: asyncio.Queue[Any] = asyncio.Queue()
+        self._message_queues[host].append((predicate, queue))
+        return queue
+
+    def remove_message_queue(
+        self,
+        host: str,
+        queue: asyncio.Queue[Any],
+    ) -> None:
+        self._message_queues[host] = [
+            (predicate, item)
+            for predicate, item in self._message_queues.get(host, [])
+            if item is not queue
+        ]
+
     def _dispatch_message(self, host: str, message: Any) -> None:
         current = self._message_waiters.get(host, [])
         remaining: list[tuple[Callable[[Any], bool], asyncio.Future[Any]]] = []
@@ -458,6 +482,14 @@ class LyrebirdMavlinkCollector:
             else:
                 remaining.append((predicate, future))
         self._message_waiters[host] = remaining
+
+        for predicate, queue in tuple(self._message_queues.get(host, [])):
+            try:
+                matched = predicate(message)
+            except Exception:
+                matched = False
+            if matched:
+                queue.put_nowait(message)
 
     def _mission_encoder(self, host: str) -> tuple[Any, bytearray, int]:
         if self._transport is None:
@@ -486,6 +518,20 @@ class LyrebirdMavlinkCollector:
             system_id,
             AUTOPILOT_COMPONENT,
             count,
+            0,
+        )
+        self._tx_sequence[host] = (self._tx_sequence[host] + 1) & 0xFF
+        assert self._transport is not None
+        self._transport.sendto(
+            bytes(sink),
+            (host, settings.lyrebird_mavlink_peer_port),
+        )
+
+    def send_mission_request_list(self, host: str) -> None:
+        encoder, sink, system_id = self._mission_encoder(host)
+        encoder.mission_request_list_send(
+            system_id,
+            AUTOPILOT_COMPONENT,
             0,
         )
         self._tx_sequence[host] = (self._tx_sequence[host] + 1) & 0xFF

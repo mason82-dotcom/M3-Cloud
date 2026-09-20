@@ -458,3 +458,10 @@ POST /api/v1/missions/<mission-id>/deployments/<deployment-id>/upload
 The action only replaces/stores the mission plan. M3-Cloud still exposes no mission start, pause,
 resume, land, RTH, or abort command. Old handoff packages sealed before upload support remain
 audit-only because immutable packages are never rewritten.
+
+
+After Lyrebird acknowledges an upload, M3-Cloud immediately performs a read-only mission-list
+read-back. The returned `MISSION_ITEM_INT` records are fingerprinted with the same canonical CRC32
+used for `MISSION_CURRENT.mission_id`. A deployment reaches `UPLOADED` only when that fingerprint
+matches the immutable sealed package. An acknowledged upload that cannot be verified is retained
+as `UPLOAD_UNVERIFIED` rather than being reported as a clean success.

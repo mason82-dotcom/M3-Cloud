@@ -735,7 +735,11 @@ async def upload_mission_deployment(
         async with session_factory() as session:
             failed = await session.get(MissionDeployment, deployment_id)
             if failed is not None:
-                failed.upload_status = "FAILED"
+                failed.upload_status = (
+                    "UPLOAD_UNVERIFIED"
+                    if exc.details.get("upload_acknowledged") is True
+                    else "FAILED"
+                )
                 failed.upload_error = f"{exc.code}: {exc}"
                 failed.upload_details = {
                     "code": exc.code,

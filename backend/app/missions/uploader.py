@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 
 from app.config import settings
+from app.missions.plans import mission_runtime_id
 from app.vehicles.lyrebird import aircraft_serial, merge_identity_config
 
 
@@ -33,6 +34,9 @@ class MissionUploadResult:
     requested_sequences: tuple[int, ...]
     ack_result: int
     runtime_mission_id: int
+    readback_verified: bool
+    readback_item_count: int
+    readback_runtime_mission_id: int
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +47,9 @@ class MissionUploadResult:
             "requested_sequences": list(self.requested_sequences),
             "ack_result": self.ack_result,
             "runtime_mission_id": self.runtime_mission_id,
+            "readback_verified": self.readback_verified,
+            "readback_item_count": self.readback_item_count,
+            "readback_runtime_mission_id": self.readback_runtime_mission_id,
             "execution_started": False,
         }
 
@@ -51,7 +58,36 @@ TargetResolver = Callable[[str, str | None], Awaitable[MissionTarget]]
 
 
 class MissionUploader:
-    """Upload a sealed mission into Lyrebird's mission store without starting it."""
+    """Upload and read back a sealed mission without ever starting execution."""
+
+    GCS_SYSTEM = 255
+    GCS_COMPONENT = 190
+
+    @classmethod
+    def _reply_for_us(cls, message: Any) -> bool:
+        if message.get_type() not in (
+            "MISSION_REQUEST_INT",
+            "MISSION_REQUEST",
+            "MISSION_ACK",
+        ):
+            return False
+        target_system = getattr(message, "target_system", cls.GCS_SYSTEM)
+        target_component = getattr(message, "target_component", cls.GCS_COMPONENT)
+        return (
+            int(target_system) == cls.GCS_SYSTEM
+            and int(target_component) in (0, cls.GCS_COMPONENT)
+        )
+
+    @classmethod
+    def _download_for_us(cls, message: Any) -> bool:
+        if message.get_type() not in ("MISSION_COUNT", "MISSION_ITEM_INT"):
+            return False
+        target_system = getattr(message, "target_system", cls.GCS_SYSTEM)
+        target_component = getattr(message, "target_component", cls.GCS_COMPONENT)
+        return (
+            int(target_system) == cls.GCS_SYSTEM
+            and int(target_component) in (0, cls.GCS_COMPONENT)
+        )
 
     def __init__(self, collector: Any, resolver: TargetResolver | None = None):
         self.collector = collector
@@ -208,8 +244,7 @@ class MissionUploader:
             requested: list[int] = []
             waiter = self.collector.message_waiter(
                 target.host,
-                lambda msg: msg.get_type()
-                in ("MISSION_REQUEST_INT", "MISSION_REQUEST", "MISSION_ACK"),
+                self._reply_for_us,
             )
             try:
                 try:
@@ -246,6 +281,10 @@ class MissionUploader:
                                     "requested_sequences": requested,
                                 },
                             )
+                        readback_count, readback_id = await self._verify_readback(
+                            target,
+                            wire,
+                        )
                         return MissionUploadResult(
                             host=target.host,
                             system_id=target.system_id,
@@ -254,6 +293,9 @@ class MissionUploader:
                             requested_sequences=tuple(requested),
                             ack_result=result,
                             runtime_mission_id=int(wire.get("mission_id") or 0),
+                            readback_verified=True,
+                            readback_item_count=readback_count,
+                            readback_runtime_mission_id=readback_id,
                         )
 
                     seq = int(reply.seq)
@@ -267,8 +309,7 @@ class MissionUploader:
 
                     waiter = self.collector.message_waiter(
                         target.host,
-                        lambda msg: msg.get_type()
-                        in ("MISSION_REQUEST_INT", "MISSION_REQUEST", "MISSION_ACK"),
+                        self._reply_for_us,
                     )
                     try:
                         self.collector.send_mission_item_int(target.host, item)
@@ -289,3 +330,136 @@ class MissionUploader:
                 )
             finally:
                 self.collector.remove_message_waiter(target.host, waiter)
+
+
+    async def _verify_readback(
+        self,
+        target: MissionTarget,
+        wire: dict[str, Any],
+    ) -> tuple[int, int]:
+        expected_items = wire.get("items")
+        if not isinstance(expected_items, list):
+            raise MissionUploadError(
+                "READBACK_INVALID",
+                "Deployment wire items are unavailable for read-back verification",
+                details={"upload_acknowledged": True},
+            )
+        expected_count = len(expected_items)
+        expected_id = int(wire.get("mission_id") or 0)
+
+        queue = self.collector.message_queue(
+            target.host,
+            self._download_for_us,
+        )
+        try:
+            try:
+                self.collector.send_mission_request_list(target.host)
+            except (OSError, RuntimeError) as exc:
+                raise MissionUploadError(
+                    "READBACK_TRANSPORT_UNAVAILABLE",
+                    "Mission upload was acknowledged, but read-back could not be requested",
+                    details={
+                        "host": target.host,
+                        "upload_acknowledged": True,
+                    },
+                ) from exc
+
+            count: int | None = None
+            downloaded: dict[int, dict[str, Any]] = {}
+            deadline = asyncio.get_running_loop().time() + settings.mission_upload_timeout_seconds
+
+            while count is None or len(downloaded) < count:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    raise MissionUploadError(
+                        "READBACK_TIMEOUT",
+                        "Mission upload was acknowledged, but read-back timed out",
+                        details={
+                            "host": target.host,
+                            "upload_acknowledged": True,
+                            "expected_count": expected_count,
+                            "reported_count": count,
+                            "received_count": len(downloaded),
+                        },
+                    )
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=remaining)
+                except TimeoutError as exc:
+                    raise MissionUploadError(
+                        "READBACK_TIMEOUT",
+                        "Mission upload was acknowledged, but read-back timed out",
+                        details={
+                            "host": target.host,
+                            "upload_acknowledged": True,
+                            "expected_count": expected_count,
+                            "reported_count": count,
+                            "received_count": len(downloaded),
+                        },
+                    ) from exc
+
+                if message.get_type() == "MISSION_COUNT":
+                    count = int(message.count)
+                    if count != expected_count:
+                        raise MissionUploadError(
+                            "READBACK_COUNT_MISMATCH",
+                            (
+                                f"Lyrebird stored {count} mission items; "
+                                f"deployment contains {expected_count}"
+                            ),
+                            details={
+                                "upload_acknowledged": True,
+                                "expected_count": expected_count,
+                                "actual_count": count,
+                            },
+                        )
+                    continue
+
+                seq = int(message.seq)
+                downloaded[seq] = {
+                    "seq": seq,
+                    "frame": int(message.frame),
+                    "command": int(message.command),
+                    "current": int(getattr(message, "current", 0)),
+                    "autocontinue": int(message.autocontinue),
+                    "param1": float(message.param1),
+                    "param2": float(message.param2),
+                    "param3": float(message.param3),
+                    "param4": float(message.param4),
+                    "x": int(message.x),
+                    "y": int(message.y),
+                    "z": float(message.z),
+                    "mission_type": int(getattr(message, "mission_type", 0)),
+                }
+
+            if set(downloaded) != set(range(expected_count)):
+                raise MissionUploadError(
+                    "READBACK_SEQUENCE_MISMATCH",
+                    "Lyrebird read-back mission sequence is incomplete",
+                    details={
+                        "upload_acknowledged": True,
+                        "expected_sequences": list(range(expected_count)),
+                        "actual_sequences": sorted(downloaded),
+                    },
+                )
+
+            readback_wire = {
+                "items": [downloaded[index] for index in range(expected_count)]
+            }
+            actual_id = mission_runtime_id(readback_wire)
+            if actual_id != expected_id:
+                raise MissionUploadError(
+                    "READBACK_FINGERPRINT_MISMATCH",
+                    (
+                        f"Lyrebird read-back fingerprint {actual_id} "
+                        f"does not match sealed mission {expected_id}"
+                    ),
+                    details={
+                        "upload_acknowledged": True,
+                        "expected_runtime_mission_id": expected_id,
+                        "actual_runtime_mission_id": actual_id,
+                    },
+                )
+
+            return expected_count, actual_id
+        finally:
+            self.collector.remove_message_queue(target.host, queue)
