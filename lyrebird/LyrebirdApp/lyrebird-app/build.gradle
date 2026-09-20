@@ -226,9 +226,6 @@ dependencies {
     // On-device edge inference for exported YOLO/TFLite models
     implementation 'org.tensorflow:tensorflow-lite:2.16.1'
 
-    // JVM unit tests that exercise MSDK-facing policy classes need DJI's API stubs at runtime.
-    // Production still uses compileOnly + the aircraft implementation above.
-    testImplementation rootProject.deps.aircraftProvided
     testImplementation rootProject.deps.junit4
     testImplementation rootProject.deps.json
 }
