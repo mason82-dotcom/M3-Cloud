@@ -5922,7 +5922,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             homeAltitudeAslM = takeoffAltitudeAmsl
                 ?: (position.altitudeAmslM - position.altitudeRelativeTakeoffM),
             homeSet = isHomeSet(),
-            flightMode = getFlightMode().name,
+            // Use the listener-backed value: it is stable across snapshot ticks and avoids a
+            // transient synchronous key miss collapsing HEARTBEAT.custom_mode to UNKNOWN.
+            flightMode = cachedFlightMode.name,
             // KeyAreMotorsOn is the direct motor state. isFlying is kept as a fallback because
             // some DJI products briefly fail to publish the motor key during state transitions.
             motorsRunning = areMotorsOnKey.get(false) || isFlyingKey.get(false),
