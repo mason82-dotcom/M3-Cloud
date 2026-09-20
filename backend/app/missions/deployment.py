@@ -48,14 +48,18 @@ def build_deployment_package(
         "preflight": preflight,
         "handoff": {
             "protocol": "MAVLINK_MISSION",
-            "wire_ready": False,
+            "wire_ready": bool(compat.get("wire_ready")),
             "upload_enabled": False,
             "execution_enabled": False,
-            "frame_policy": "UNRESOLVED",
+            "frame_policy": (
+                "EXPLICIT_PER_ITEM"
+                if compat.get("wire_ready")
+                else "UNRESOLVED"
+            ),
             "note": (
                 "This is an immutable handoff/audit package, not a flight command. "
-                "The persisted M3-Cloud plan does not yet store MAV_FRAME per item, "
-                "so no wire-ready MISSION_ITEM_INT upload is generated here."
+                "Wire-ready means frame semantics are explicit and compatible; "
+                "M3-Cloud still does not upload or execute this plan."
             ),
         },
     }

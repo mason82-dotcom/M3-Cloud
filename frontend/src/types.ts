@@ -178,6 +178,7 @@ export interface Survey {
 
 export interface MissionPlanItem {
   seq: number;
+  frame?: number;
   command: number;
   param1?: number | null;
   param2?: number | null;
@@ -291,8 +292,10 @@ export interface Mission {
   };
   compatibility: {
     m3cloud_execution_enabled: boolean;
+    wire_ready?: boolean;
     lyrebird_mavlink_upload_compatible: boolean;
     lyrebird_unsupported_items: Array<{ seq: number; command: number }>;
+    lyrebird_unsupported_frames?: Array<{ seq: number; frame: number | null }>;
     dji_native_execution_compatible?: boolean | null;
     note: string;
   };

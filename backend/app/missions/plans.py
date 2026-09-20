@@ -9,6 +9,11 @@ from pymavlink.dialects.v20 import common as mavlink_common
 
 
 MAX_MISSION_ITEMS = 1000
+MAV_FRAME_GLOBAL_RELATIVE_ALT = 3
+MAV_FRAME_GLOBAL_RELATIVE_ALT_INT = 6
+LYREBIRD_RELATIVE_GLOBAL_FRAMES = frozenset(
+    {MAV_FRAME_GLOBAL_RELATIVE_ALT, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT}
+)
 
 LYREBIRD_UPLOAD_COMMANDS = frozenset(
     {
@@ -45,6 +50,14 @@ def normalize_plan(items: list[dict[str, Any]]) -> dict[str, object]:
         if not isinstance(command, int) or isinstance(command, bool) or command < 0:
             raise ValueError(f"Mission item {seq} has invalid command")
 
+        frame = raw.get("frame", MAV_FRAME_GLOBAL_RELATIVE_ALT_INT)
+        if (
+            not isinstance(frame, int)
+            or isinstance(frame, bool)
+            or not 0 <= frame <= 255
+        ):
+            raise ValueError(f"Mission item {seq} has invalid frame")
+
         latitude = _finite(raw.get("latitude_deg", 0.0), f"item {seq} latitude")
         longitude = _finite(raw.get("longitude_deg", 0.0), f"item {seq} longitude")
         altitude = _finite(raw.get("altitude_m", 0.0), f"item {seq} altitude")
@@ -61,6 +74,7 @@ def normalize_plan(items: list[dict[str, Any]]) -> dict[str, object]:
         normalized.append(
             {
                 "seq": seq,
+                "frame": frame,
                 "command": command,
                 "param1": params[0],
                 "param2": params[1],
@@ -74,7 +88,7 @@ def normalize_plan(items: list[dict[str, Any]]) -> dict[str, object]:
         )
 
     payload: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "protocol": "MAVLINK_MISSION",
         "items": normalized,
     }
@@ -95,6 +109,7 @@ def compatibility(plan: dict[str, object]) -> dict[str, object]:
     raw_items = plan.get("items")
     items = raw_items if isinstance(raw_items, list) else []
     unsupported: list[dict[str, int]] = []
+    unsupported_frames: list[dict[str, int | None]] = []
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -103,14 +118,27 @@ def compatibility(plan: dict[str, object]) -> dict[str, object]:
         if isinstance(seq, int) and isinstance(command, int) and command not in LYREBIRD_UPLOAD_COMMANDS:
             unsupported.append({"seq": seq, "command": command})
 
+        frame = item.get("frame")
+        if not isinstance(frame, int) or isinstance(frame, bool):
+            unsupported_frames.append(
+                {"seq": seq if isinstance(seq, int) else -1, "frame": None}
+            )
+        elif frame not in LYREBIRD_RELATIVE_GLOBAL_FRAMES:
+            unsupported_frames.append(
+                {"seq": seq if isinstance(seq, int) else -1, "frame": frame}
+            )
+
+    wire_ready = bool(items) and not unsupported and not unsupported_frames
     return {
         "m3cloud_execution_enabled": False,
-        "lyrebird_mavlink_upload_compatible": not unsupported,
+        "wire_ready": wire_ready,
+        "lyrebird_mavlink_upload_compatible": wire_ready,
         "lyrebird_unsupported_items": unsupported,
+        "lyrebird_unsupported_frames": unsupported_frames,
         "dji_native_execution_compatible": None,
         "note": (
-            "Planning/status only. M3-Cloud does not expose mission upload or execution "
-            "actions in R6.1; DJI-native executability is therefore not asserted."
+            "Planning/handoff only. New M3-Cloud revisions persist MAV_FRAME explicitly, "
+            "but M3-Cloud still exposes no mission upload or execution action."
         ),
     }
 

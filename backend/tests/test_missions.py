@@ -65,7 +65,10 @@ async def test_mission_plan_is_persistent_hashed_and_non_executable() -> None:
     assert created["status"] == "READY"
     assert created["item_count"] == 2
     assert created["compatibility"]["m3cloud_execution_enabled"] is False
+    assert created["compatibility"]["wire_ready"] is True
     assert created["compatibility"]["lyrebird_mavlink_upload_compatible"] is True
+    assert created["plan"]["schema_version"] == 2
+    assert created["plan"]["items"][0]["frame"] == 6
     assert len(created["plan_sha256"]) == 64
 
     mission_id = __import__("uuid").UUID(created["id"])
@@ -132,7 +135,24 @@ def test_plan_validation_rejects_non_contiguous_sequence_and_reports_unsupported
     assert info["m3cloud_execution_enabled"] is False
     assert info["lyrebird_mavlink_upload_compatible"] is False
     assert info["lyrebird_unsupported_items"] == [{"seq": 0, "command": 999999}]
+    assert info["lyrebird_unsupported_frames"] == []
     assert plan_sha256(plan) == plan_sha256(plan)
+
+    unsupported_frame = normalize_plan(
+        [
+            {
+                "seq": 0,
+                "frame": 0,
+                "command": 16,
+                "latitude_deg": 49.0,
+                "longitude_deg": 8.0,
+                "altitude_m": 50.0,
+            }
+        ]
+    )
+    frame_info = compatibility(unsupported_frame)
+    assert frame_info["wire_ready"] is False
+    assert frame_info["lyrebird_unsupported_frames"] == [{"seq": 0, "frame": 0}]
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -217,7 +237,8 @@ async def test_ready_mission_seals_immutable_non_executing_handoff(monkeypatch) 
     assert sealed["package"]["preflight"]["checks_passed"] is True
     assert sealed["package"]["handoff"]["upload_enabled"] is False
     assert sealed["package"]["handoff"]["execution_enabled"] is False
-    assert sealed["package"]["handoff"]["wire_ready"] is False
+    assert sealed["package"]["handoff"]["wire_ready"] is True
+    assert sealed["package"]["handoff"]["frame_policy"] == "EXPLICIT_PER_ITEM"
     assert sealed["package_sha256"] == deployment_sha256(sealed["package"])
 
     listed = await mission_deployments(mission_id)

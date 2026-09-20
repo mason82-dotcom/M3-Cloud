@@ -18,6 +18,7 @@ def mission(**overrides):
             "items": [
                 {
                     "seq": 0,
+                    "frame": 6,
                     "command": 16,
                     "param1": 0.0,
                     "param2": None,

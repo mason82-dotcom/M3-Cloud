@@ -29,6 +29,7 @@ router = APIRouter(prefix="/api/v1/missions", tags=["missions"])
 
 class MissionItemInput(BaseModel):
     seq: int | None = Field(default=None, ge=0)
+    frame: int = Field(default=6, ge=0, le=255)
     command: int = Field(ge=0)
     param1: float | None = None
     param2: float | None = None

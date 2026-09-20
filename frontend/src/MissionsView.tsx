@@ -230,6 +230,7 @@ function nextWaypoint(
 
   return {
     seq: items.length,
+    frame: 6,
     command: 16,
     param1: 0,
     param2: null,
@@ -299,7 +300,11 @@ export function MissionsView() {
     missions.find((mission) => mission.id === selectedId) ?? null;
 
   useEffect(() => {
-    setDraftItems(selected ? selected.plan.items.map((item) => ({ ...item })) : []);
+    setDraftItems(
+      selected
+        ? selected.plan.items.map((item) => ({ ...item, frame: item.frame ?? 6 }))
+        : [],
+    );
     if (!selectedId) {
       setRevisions([]);
       setDeployments([]);
@@ -602,8 +607,14 @@ export function MissionsView() {
                   <dt>Lyrebird upload shape</dt>
                   <dd>
                     {selected.compatibility.lyrebird_mavlink_upload_compatible
-                      ? "compatible"
-                      : "unsupported commands"}
+                      ? "wire-ready"
+                      : "not wire-ready"}
+                  </dd>
+                  <dt>MAVLink frame</dt>
+                  <dd>
+                    {selected.compatibility.wire_ready
+                      ? "explicit per item"
+                      : "missing/unsupported"}
                   </dd>
                   <dt>M3-Cloud execute</dt><dd>disabled</dd>
                   <dt>DJI-native execution</dt><dd>not asserted</dd>
@@ -731,6 +742,7 @@ export function MissionsView() {
                   <thead>
                     <tr>
                       <th>#</th>
+                      <th>Frame</th>
                       <th>Latitude</th>
                       <th>Longitude</th>
                       <th>Altitude m</th>
@@ -743,6 +755,25 @@ export function MissionsView() {
                     {draftItems.map((item, index) => (
                       <tr key={`${index}:${item.seq}`}>
                         <td>{index}</td>
+                        <td>
+                          <select
+                            disabled={selected.status === "ARCHIVED"}
+                            value={item.frame ?? 6}
+                            onChange={(event) => {
+                              const frame = Number(event.target.value);
+                              setDraftItems((current) =>
+                                current.map((candidate, candidateIndex) =>
+                                  candidateIndex === index
+                                    ? { ...candidate, frame }
+                                    : candidate,
+                                ),
+                              );
+                            }}
+                          >
+                            <option value={6}>REL_ALT_INT (6)</option>
+                            <option value={3}>REL_ALT (3)</option>
+                          </select>
+                        </td>
                         {([
                           ["latitude_deg", item.latitude_deg],
                           ["longitude_deg", item.longitude_deg],
