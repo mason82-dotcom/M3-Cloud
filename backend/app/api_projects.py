@@ -527,6 +527,11 @@ async def create_survey_from_dataset(
         if dataset.survey_id is not None:
             existing = await session.get(Survey, dataset.survey_id)
             if existing is not None:
+                if existing.project_id != project_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Media dataset already belongs to a survey in another project",
+                    )
                 return await _survey_payload(session, existing)
 
         requested_name = body.name.strip() if body and body.name else ""
