@@ -714,6 +714,10 @@ internal object MavlinkMessages {
             .f32(std(snapshot.rtkStdAltitudeM))
             .u8(flags)
             .u8(fix)
+            // MAVLink 2 extension fields: adding these does not change CRC_EXTRA or the base
+            // layout, so older 42104 receivers remain wire-compatible.
+            .chars(snapshot.rtkRawFix.name, 24)
+            .chars(snapshot.rtkSource, 32)
             .build()
     }
 

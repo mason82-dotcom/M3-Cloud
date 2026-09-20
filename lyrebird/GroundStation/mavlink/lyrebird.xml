@@ -187,6 +187,9 @@
       <field type="float" name="std_altitude_m" units="m">Altitude standard deviation, NaN when unknown.</field>
       <field type="uint8_t" name="flags">Bit 0 enabled, bit 1 connected, bit 2 healthy.</field>
       <field type="uint8_t" name="fix">0 UNKNOWN, 1 NONE, 2 SINGLE, 3 FLOAT, 4 FIXED, 5 STALE.</field>
+      <extensions/>
+      <field type="char[24]" name="raw_fix">Raw DJI RTK positioning solution mapped to the SDK-free Lyrebird fix name.</field>
+      <field type="char[32]" name="source">DJI RTK reference-station source name.</field>
     </message>
   </messages>
 </mavlink>

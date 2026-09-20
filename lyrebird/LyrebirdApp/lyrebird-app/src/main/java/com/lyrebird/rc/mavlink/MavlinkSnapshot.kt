@@ -64,6 +64,10 @@ internal data class MavlinkSnapshot(
     // RTK state is kept SDK-free. FIX/FLOAT are promoted into GPS_RAW_INT; STALE or unhealthy RTK
     // deliberately falls back to the ordinary GNSS fix inferred from satellite count.
     val rtkFix: RtkFix = RtkFix.UNKNOWN,
+    /** Last non-freshness-adjusted DJI positioning solution. */
+    val rtkRawFix: RtkFix = RtkFix.UNKNOWN,
+    /** DJI RTK reference-station source enum name, kept SDK-free. */
+    val rtkSource: String = "UNKNOWN",
     val rtkEnabled: Boolean = false,
     val rtkConnected: Boolean = false,
     val rtkHealthy: Boolean = false,

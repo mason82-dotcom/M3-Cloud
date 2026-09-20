@@ -36,8 +36,10 @@ AUTOSENSING_TARGET_SIZE = 46
 AUTOSENSING_TARGET_CRC_EXTRA = 83
 
 LYREBIRD_RTK_STATUS_ID = 42104
-LYREBIRD_RTK_STATUS_STRUCT = "<IIfffBB"
-LYREBIRD_RTK_STATUS_SIZE = 22
+LYREBIRD_RTK_STATUS_BASE_STRUCT = "<IIfffBB"
+LYREBIRD_RTK_STATUS_BASE_SIZE = 22
+LYREBIRD_RTK_STATUS_STRUCT = "<IIfffBB24s32s"
+LYREBIRD_RTK_STATUS_SIZE = 78
 LYREBIRD_RTK_STATUS_CRC_EXTRA = 241
 
 LB_FLAG_MANUAL_OVERRIDE = 1
@@ -76,7 +78,7 @@ def _mavlink2_frames(data: bytes):
         offset += size
 
 def decode_lyrebird_rtk_status(payload: bytes) -> dict[str, Any]:
-    _boot, age, std_lat, std_lon, std_alt, flags, fix = struct.unpack(
+    _boot, age, std_lat, std_lon, std_alt, flags, fix, raw_fix, source = struct.unpack(
         LYREBIRD_RTK_STATUS_STRUCT, payload.ljust(LYREBIRD_RTK_STATUS_SIZE, b"\x00")
     )
     names = {0: "UNKNOWN", 1: "NONE", 2: "SINGLE", 3: "FLOAT", 4: "FIXED", 5: "STALE"}
@@ -87,7 +89,16 @@ def decode_lyrebird_rtk_status(payload: bytes) -> dict[str, Any]:
         "std_latitude_m": None if math.isnan(std_lat) else std_lat,
         "std_longitude_m": None if math.isnan(std_lon) else std_lon,
         "std_altitude_m": None if math.isnan(std_alt) else std_alt,
-    }, "positioning": {"fix": name if name == "STALE" else None, "rtk_stale": name == "STALE"}}
+        "raw_fix": _trim(raw_fix) or None,
+        "source": _trim(source) or None,
+    }, "positioning": {
+        "fix": name if name == "STALE" else None,
+        "rtk_stale": name == "STALE",
+        "native": {
+            "dji_rtk_raw_fix": _trim(raw_fix) or None,
+            "dji_rtk_source": _trim(source) or None,
+        },
+    }}
 
 
 def decode_autosensing_target(payload: bytes) -> dict[str, Any]:

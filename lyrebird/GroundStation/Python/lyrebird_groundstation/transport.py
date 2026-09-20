@@ -349,8 +349,8 @@ LYREBIRD_STATUS_STRUCT = "<IiiffIIIHHHhhHHHBBB24s"
 LYREBIRD_STATUS_SIZE = 75
 
 LYREBIRD_RTK_STATUS_ID = 42104
-LYREBIRD_RTK_STATUS_STRUCT = "<IIfffBB"
-LYREBIRD_RTK_STATUS_SIZE = 22
+LYREBIRD_RTK_STATUS_STRUCT = "<IIfffBB24s32s"
+LYREBIRD_RTK_STATUS_SIZE = 78
 LYREBIRD_RTK_STATUS_CRC_EXTRA = 241
 
 LB_FLAG_MANUAL_OVERRIDE = 1
@@ -363,7 +363,7 @@ LB_FLAG_ALTITUDE_REACHED = 64
 
 
 def decode_lyrebird_rtk_status(payload: bytes) -> dict[str, Any]:
-    _boot, age, std_lat, std_lon, std_alt, flags, fix = struct.unpack(
+    _boot, age, std_lat, std_lon, std_alt, flags, fix, raw_fix, source = struct.unpack(
         LYREBIRD_RTK_STATUS_STRUCT, payload.ljust(LYREBIRD_RTK_STATUS_SIZE, b"\x00")
     )
     names = {0: "UNKNOWN", 1: "NONE", 2: "SINGLE", 3: "FLOAT", 4: "FIXED", 5: "STALE"}
@@ -373,6 +373,8 @@ def decode_lyrebird_rtk_status(payload: bytes) -> dict[str, Any]:
         "rtkStdLatitudeM": None if math.isnan(std_lat) else std_lat,
         "rtkStdLongitudeM": None if math.isnan(std_lon) else std_lon,
         "rtkStdAltitudeM": None if math.isnan(std_alt) else std_alt,
+        "rtkRawFix": raw_fix.split(b"\x00", 1)[0].decode("ascii", "replace") or "UNKNOWN",
+        "rtkSource": source.split(b"\x00", 1)[0].decode("ascii", "replace") or "UNKNOWN",
     }
 
 

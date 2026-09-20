@@ -5873,6 +5873,8 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             satelliteCount = getSatelliteCount(),
             gnssSignalLevel = getGpsSignalLevel(),
             rtkFix = rtk.fix,
+            rtkRawFix = rtk.rawFix,
+            rtkSource = rtk.source,
             rtkEnabled = rtk.enabled,
             rtkConnected = rtk.connected,
             rtkHealthy = rtk.healthy,

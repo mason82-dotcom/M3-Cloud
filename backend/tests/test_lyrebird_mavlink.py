@@ -106,3 +106,20 @@ def test_gps_raw_int_exposes_neutral_fix_without_losing_mavlink_type():
     assert single["positioning"]["fix"]=="SINGLE"
     assert single["positioning"]["position_source"]=="FLIGHT_CONTROLLER"
     assert single["rtk"]["active"] is False
+
+
+def test_private_rtk_status_extension_preserves_raw_fix_and_source():
+    payload=struct.pack("<IIfffBB24s32s",123,42,0.01,0.02,0.03,7,5,b"FIXED"+b"\0"*19,b"CUSTOM_NETWORK_SERVICE"+b"\0"*10)
+    decoded=decode_lyrebird_rtk_status(payload)
+    assert decoded["rtk"]["fix"]=="STALE"
+    assert decoded["rtk"]["raw_fix"]=="FIXED"
+    assert decoded["rtk"]["source"]=="CUSTOM_NETWORK_SERVICE"
+    assert decoded["positioning"]["native"]["dji_rtk_raw_fix"]=="FIXED"
+    assert decoded["positioning"]["native"]["dji_rtk_source"]=="CUSTOM_NETWORK_SERVICE"
+
+def test_private_rtk_status_old_base_payload_remains_decodable():
+    payload=struct.pack("<IIfffBB",123,3501,0.01,0.02,0.03,3,5)
+    decoded=decode_lyrebird_rtk_status(payload)
+    assert decoded["rtk"]["fix"]=="STALE"
+    assert decoded["rtk"]["raw_fix"] is None
+    assert decoded["rtk"]["source"] is None
