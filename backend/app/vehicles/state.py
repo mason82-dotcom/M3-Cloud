@@ -17,16 +17,15 @@ def _dji_cloud_state(result: dict[str, Any]) -> dict[str, Any]:
     position = result.get("position_state") if isinstance(result.get("position_state"), dict) else {}
     quality = position.get("quality")
     convergence = position.get("convergence")
-    # DJI Cloud quality and is_fixed/convergence are kept as DJI-native facts.
-    # They are not MAVLink GPS fix types and therefore do not imply FLOAT/SINGLE.
-    rtk_fixed = quality == 10 and convergence == "CONVERGED"
-    # Keep the same canonical positioning.rtk shape used by Lyrebird, but leave fields
-    # unavailable in DJI Cloud telemetry explicitly unknown instead of fabricating MSDK facts.
+    # Pilot-to-Cloud M3 position_state exposes convergence, acquisition quality and
+    # satellite counts. It does not expose the MSDK RTK positioning solution (FLOAT/FIXED).
+    # Keep fix state unknown even if an unexpected quality value is received; source-native
+    # values remain available under positioning.native for diagnostics.
     rtk = {
         "enabled": None,
         "connected": None,
         "healthy": None,
-        "fix": "FIXED" if rtk_fixed else "UNKNOWN",
+        "fix": "UNKNOWN",
         "raw_fix": None,
         "age_ms": None,
         "source": None,
@@ -53,8 +52,8 @@ def _dji_cloud_state(result: dict[str, Any]) -> dict[str, Any]:
             "quality": quality,
             "gps_satellites": position.get("gps_satellites"),
             "rtk_satellites": position.get("rtk_satellites"),
-            "rtk_fixed": rtk_fixed,
-            "fix": "FIXED" if rtk_fixed else "UNKNOWN",
+            "rtk_fixed": None,
+            "fix": "UNKNOWN",
             "position_source": "DJI_CLOUD",
             "rtk": rtk,
             "native": {
