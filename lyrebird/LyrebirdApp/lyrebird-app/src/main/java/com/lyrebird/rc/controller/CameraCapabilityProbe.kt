@@ -28,6 +28,20 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal object CameraCapabilityProbe {
 
+    /**
+     * Lightweight product-variant probe for settings/identity endpoints.
+     *
+     * ProductType only identifies the shared Mavic 3 Enterprise series. CameraType is the MSDK
+     * discriminator that separates M3E, M3T and M3M, so expose that distinction without running
+     * the heavier capture/record capability reads used by [snapshot].
+     */
+    fun detectedPlatform(
+        index: ComponentIndexType = ComponentIndexType.LEFT_OR_MAIN
+    ): CameraPlatform {
+        val type = key(CameraKey.KeyCameraType, index).get(CameraType.NOT_SUPPORTED)
+        return CameraPlatformCapabilities.fromCameraTypeName(type?.name).platform
+    }
+
     private fun <T> key(
         info: dji.sdk.keyvalue.key.DJIKeyInfo<T>,
         index: ComponentIndexType
