@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   fetchMedia,
+  fetchMediaDatasetManifest,
   fetchMediaDatasets,
   fetchMediaGroups,
   fetchMediaImportStatus,
@@ -10,6 +11,7 @@ import {
 import type {
   MediaAsset,
   MediaDataset,
+  MediaDatasetManifest,
   MediaGroup,
   MediaImportStatus,
 } from "./types";
@@ -39,6 +41,7 @@ export function MediaView() {
   const [platform, setPlatform] = useState("");
   const [mediaKind, setMediaKind] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [manifest, setManifest] = useState<MediaDatasetManifest | null>(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -177,10 +180,53 @@ export function MediaView() {
                   .map(([kind, count]) => `${kind} ${count}`)
                   .join(" · ")}
               </small>
+              <button
+                className="datasetManifestButton"
+                onClick={() => {
+                  void fetchMediaDatasetManifest(dataset.prefix)
+                    .then(setManifest)
+                    .catch((reason: unknown) =>
+                      setError(reason instanceof Error ? reason.message : String(reason)),
+                    );
+                }}
+                type="button"
+              >
+                Handoff manifest
+              </button>
             </article>
           ))}
         </div>
       </section>
+
+      {manifest ? (
+        <section className="panel mediaManifest">
+          <div className="panelHead">
+            <div>
+              <h2>Dataset handoff</h2>
+              <small>{manifest.platform} · originals remain external/read-only</small>
+            </div>
+            <button onClick={() => setManifest(null)} type="button">Close</button>
+          </div>
+          <div className="manifestPath">
+            <span>External path</span>
+            <code>{manifest.external_path}</code>
+          </div>
+          <div className="manifestGroups">
+            {manifest.capture_groups.map((group) => (
+              <article
+                className={group.complete ? "manifestGroup complete" : "manifestGroup incomplete"}
+                key={group.capture_group}
+              >
+                <strong>{group.capture_group.split("/").pop()}</strong>
+                <span>{group.complete ? "COMPLETE" : "INCOMPLETE"}</span>
+                <small>
+                  {group.files.map((file) => `${file.media_kind}: ${file.filename}`).join(" · ")}
+                </small>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="panel mediaCatalog">
         <div className="panelHead">

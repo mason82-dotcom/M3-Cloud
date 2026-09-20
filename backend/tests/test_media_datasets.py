@@ -95,3 +95,30 @@ def test_duplicates_and_missing_files_do_not_make_dataset_ready() -> None:
     dataset = build_media_datasets(items)[0]
     assert dataset["asset_count"] == 1
     assert workflow(dataset, "WEBODM")["ready"] is False
+
+
+
+def test_m3t_manifest_keeps_original_paths_and_pair_completeness() -> None:
+    items = [
+        asset("M3T/site/DJI_0001_W.JPG", platform="M3T", kind="WIDE", group="M3T/site/DJI_0001"),
+        asset("M3T/site/DJI_0001_T.JPG", platform="M3T", kind="THERMAL", group="M3T/site/DJI_0001"),
+        asset("M3T/site/DJI_0002_W.JPG", platform="M3T", kind="WIDE", group="M3T/site/DJI_0002"),
+    ]
+
+    from app.media.datasets import build_dataset_manifest
+
+    manifest = build_dataset_manifest(
+        items,
+        prefix="M3T/site",
+        import_root="/media-import",
+    )
+
+    assert manifest["platform"] == "M3T"
+    assert manifest["external_path"] == "/media-import/M3T/site"
+
+    groups = manifest["capture_groups"]
+    assert isinstance(groups, list)
+    assert groups[0]["complete"] is True
+    assert groups[1]["complete"] is False
+    assert groups[0]["required_kinds"] == ["THERMAL", "WIDE"]
+    assert groups[0]["files"][0]["relative_path"].startswith("M3T/site/")

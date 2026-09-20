@@ -249,6 +249,35 @@ export interface MediaDataset {
   workflows: MediaWorkflowReadiness[];
 }
 
+export interface MediaDatasetManifestFile {
+  id: string;
+  relative_path: string;
+  filename: string;
+  media_kind: string;
+  size_bytes: number;
+  sha256: string;
+}
+
+export interface MediaDatasetManifestGroup {
+  capture_group: string;
+  complete: boolean;
+  required_kinds: string[];
+  media_kinds: string[];
+  files: MediaDatasetManifestFile[];
+}
+
+export interface MediaDatasetManifest {
+  prefix: string;
+  platform: string;
+  external_path: string;
+  asset_count: number;
+  size_bytes: number;
+  media_kinds: Record<string, number>;
+  workflows: MediaWorkflowReadiness[];
+  capture_groups: MediaDatasetManifestGroup[];
+  ungrouped_files: MediaDatasetManifestFile[];
+}
+
 export interface MediaImportStatus {
   enabled: boolean;
   status: string;

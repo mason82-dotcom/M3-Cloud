@@ -7,7 +7,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 
 from app.database import session_factory
-from app.media.datasets import build_media_datasets
+from app.config import settings
+from app.media.datasets import build_dataset_manifest, build_media_datasets
 from app.models import MediaAsset
 
 
@@ -60,6 +61,44 @@ async def list_media(
     async with session_factory() as session:
         result = await session.scalars(statement)
         return [_asset(asset) for asset in result.all()]
+
+
+@router.get("/datasets/manifest")
+async def media_dataset_manifest(
+    prefix: str = Query(min_length=1, max_length=1024),
+) -> dict[str, object]:
+    normalized = prefix.strip().replace("\\", "/").strip("/")
+    if not normalized or ".." in normalized.split("/"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Dataset prefix must stay inside the media import root",
+        )
+
+    async with session_factory() as session:
+        assets = (
+            await session.scalars(
+                select(MediaAsset).where(
+                    MediaAsset.present.is_(True),
+                    MediaAsset.duplicate_of.is_(None),
+                    (
+                        (MediaAsset.relative_path == normalized)
+                        | MediaAsset.relative_path.startswith(normalized + "/")
+                    ),
+                )
+            )
+        ).all()
+
+    try:
+        return build_dataset_manifest(
+            assets,
+            prefix=normalized,
+            import_root=settings.media_import_root,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("/datasets")

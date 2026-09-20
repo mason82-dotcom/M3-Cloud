@@ -4,6 +4,7 @@ import type {
   FlightSummary,
   MediaAsset,
   MediaDataset,
+  MediaDatasetManifest,
   MediaGroup,
   MediaImportStatus,
   ProcessingJob,
@@ -90,6 +91,19 @@ export async function fetchMediaDatasets(
     throw new Error(`Media datasets request failed: ${response.status}`);
   }
   return response.json() as Promise<MediaDataset[]>;
+}
+
+export async function fetchMediaDatasetManifest(
+  prefix: string,
+): Promise<MediaDatasetManifest> {
+  const params = new URLSearchParams({ prefix });
+  const response = await fetch(
+    `/api/v1/media/datasets/manifest?${params.toString()}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Media dataset manifest failed: ${response.status}`);
+  }
+  return response.json() as Promise<MediaDatasetManifest>;
 }
 
 export async function fetchMediaGroups(

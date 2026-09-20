@@ -1128,3 +1128,85 @@ button { font: inherit; }
     grid-template-columns: 1fr;
   }
 }
+
+
+.datasetManifestButton,
+.mediaManifest .panelHead button {
+  margin-top: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 5px 7px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.mediaManifest {
+  min-height: auto;
+}
+
+.manifestPath {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+}
+
+.manifestPath span {
+  color: var(--muted);
+}
+
+.manifestPath code {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+}
+
+.manifestGroups {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.manifestGroup {
+  display: grid;
+  grid-template-columns: minmax(120px, .8fr) 90px minmax(0, 2fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0e151e;
+  padding: 8px 9px;
+}
+
+.manifestGroup strong {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.manifestGroup > span {
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.manifestGroup.complete > span {
+  color: var(--good);
+}
+
+.manifestGroup.incomplete > span {
+  color: var(--warn);
+}
+
+.manifestGroup small {
+  color: var(--muted);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .manifestGroup {
+    grid-template-columns: 1fr;
+  }
+}
