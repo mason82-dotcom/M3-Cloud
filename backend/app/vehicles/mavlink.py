@@ -147,6 +147,32 @@ def _heading_deg(value: int) -> float | None:
 def normalize_mavlink_message(msg: Any) -> dict[str, Any]:
     """Map only facts carried by standard MAVLink messages; no altitude/RTK inference."""
     kind = msg.get_type()
+    if kind == "HEARTBEAT":
+        base_mode = int(msg.base_mode)
+        system_status = int(msg.system_status)
+        custom_mode = int(msg.custom_mode)
+        px4_modes = {
+            (3 << 16): "POSITION_HOLD",
+            (2 << 16): "ALTITUDE_HOLD",
+            (6 << 16): "OFFBOARD",
+            (4 << 16) | (4 << 24): "MISSION",
+            (4 << 16) | (2 << 24): "TAKEOFF",
+            (4 << 16) | (6 << 24): "LAND",
+            (4 << 16) | (5 << 24): "SAFE_RECOVERY",
+            (4 << 16) | (9 << 24): "ORBIT",
+            (1 << 16): "MANUAL",
+            (4 << 16) | (8 << 24): "INTELLIGENT",
+        }
+        return {"flight_state": {
+            "custom_mode": custom_mode,
+            "mode": px4_modes.get(custom_mode, "UNKNOWN"),
+            "armed": bool(base_mode & mavlink_common.MAV_MODE_FLAG_SAFETY_ARMED),
+            "guided": bool(base_mode & mavlink_common.MAV_MODE_FLAG_GUIDED_ENABLED),
+            "manual_input": bool(base_mode & mavlink_common.MAV_MODE_FLAG_MANUAL_INPUT_ENABLED),
+            "stabilized": bool(base_mode & mavlink_common.MAV_MODE_FLAG_STABILIZE_ENABLED),
+            "system_status": system_status,
+            "failsafe": system_status == mavlink_common.MAV_STATE_CRITICAL,
+        }}
     if kind == "GLOBAL_POSITION_INT":
         return {
             "latitude": msg.lat / 1e7,

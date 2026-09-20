@@ -81,3 +81,18 @@ def test_extended_sys_state_exposes_flying_without_inference():
 def test_vfr_hud_alt_is_amsl_and_climb_is_positive_up():
     patch=normalize_mavlink_message(Msg(kind="VFR_HUD",alt=142.5,climb=1.25))
     assert patch=={"amsl_altitude_m":142.5,"climb_rate_mps":1.25}
+
+def test_heartbeat_preserves_lyrebird_px4_compatibility_semantics():
+    base=(1 | 8 | 16 | 128)
+    patch=normalize_mavlink_message(Msg(kind="HEARTBEAT",base_mode=base,system_status=4,custom_mode=(4<<16)|(5<<24)))
+    state=patch["flight_state"]
+    assert state["mode"]=="SAFE_RECOVERY"
+    assert state["armed"] is True and state["guided"] is True
+    assert state["manual_input"] is True and state["stabilized"] is True
+    assert state["failsafe"] is False
+
+def test_heartbeat_critical_is_failsafe_and_unknown_mode_stays_unknown():
+    patch=normalize_mavlink_message(Msg(kind="HEARTBEAT",base_mode=1,system_status=5,custom_mode=123456))
+    assert patch["flight_state"]["mode"]=="UNKNOWN"
+    assert patch["flight_state"]["failsafe"] is True
+    assert patch["flight_state"]["armed"] is False
