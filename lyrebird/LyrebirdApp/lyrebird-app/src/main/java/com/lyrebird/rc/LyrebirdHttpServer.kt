@@ -50,6 +50,7 @@ internal const val AUTONOMOUS_COMMAND_REJECTED =
 internal interface LyrebirdCommandHost {
     val mainHandler: Handler
     val droneName: String
+    val aircraftSerialNumber: String
     val mediaVM: MediaVM
     val payloadWidgetVM: PayloadWidgetVM
     val gimbalKey: DJIKey.ActionKey<GimbalAngleRotation, EmptyMsg>
@@ -832,7 +833,7 @@ internal class SimpleHttpServer(
             return when (uri) {
                 "/config" -> {
                     val deviceIp = NetworkUtils.getDeviceIpAddress() ?: "unknown"
-                    """{"droneName":"${host.droneName}","ipAddress":"$deviceIp","httpPort":$HTTP_PORT,""" +
+                    """{"droneName":"${host.droneName}","aircraftSerialNumber":"${host.aircraftSerialNumber}","ipAddress":"$deviceIp","httpPort":$HTTP_PORT,""" +
                         """"telemetryPort":$TELEMETRY_PORT,"videoMode":"whip",""" +
                         """"hasThermal":${host.hasThermalCamera()}}"""
                 }

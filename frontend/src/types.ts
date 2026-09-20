@@ -35,6 +35,7 @@ export interface Vehicle {
   name: string;
   model: string;
   source: string;
+  sources?: string[];
   online: boolean;
   gateway_sn?: string | null;
   updated_at_ms?: number | null;

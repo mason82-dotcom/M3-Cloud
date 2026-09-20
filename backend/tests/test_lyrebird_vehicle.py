@@ -1,11 +1,32 @@
 from app.vehicles.lyrebird import normalize_config, normalize_telemetry
 
-def test_normalize_config_matches_actual_lyrebird_config_surface():
-    vehicle = normalize_config("192.168.1.42", {"droneName":"field-drone","ipAddress":"192.168.1.42","httpPort":8080,"telemetryPort":8081,"videoMode":"whip","hasThermal":True})
-    assert vehicle.id == "lyrebird:192.168.1.42"
-    assert vehicle.sn == "lyrebird@192.168.1.42"
+def test_normalize_config_uses_real_aircraft_serial_as_canonical_identity():
+    vehicle = normalize_config(
+        "192.168.1.42",
+        {
+            "droneName":"field-drone",
+            "aircraftSerialNumber":"1581F-TEST",
+            "ipAddress":"192.168.1.42",
+            "httpPort":8080,
+            "telemetryPort":8081,
+            "videoMode":"whip",
+            "hasThermal":True,
+        },
+    )
+    assert vehicle.id == "vehicle:1581F-TEST"
+    assert vehicle.sn == "1581F-TEST"
+    assert vehicle.sources == ("lyrebird",)
     assert vehicle.name == "field-drone"
     assert vehicle.model == "LYREBIRD_AIRCRAFT"
+
+
+def test_normalize_config_falls_back_to_host_when_serial_is_unknown():
+    vehicle = normalize_config(
+        "192.168.1.42",
+        {"droneName":"field-drone","aircraftSerialNumber":"UNKNOWN"},
+    )
+    assert vehicle.id == "lyrebird:192.168.1.42"
+    assert vehicle.sn == "lyrebird@192.168.1.42"
 
 def test_tcp_telemetry_keeps_aircraft_and_controller_position_separate():
     state = normalize_telemetry({"location":{"latitude":49.1,"longitude":8.5},"altitude":42.5,"heading":123.0,"batteryLevel":81,"satelliteCount":19,"remainingFlightTime":900,"phoneLocation":{"latitude":49.2,"longitude":8.6,"heading":200.0,"battery":66,"wifiRssi":-55}}, now_ms=1000)

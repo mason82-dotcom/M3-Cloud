@@ -6,7 +6,7 @@ import time
 from typing import Any
 import httpx
 from app.config import settings
-from app.vehicles.base import VehicleSnapshot
+from app.vehicles.base import VehicleSnapshot, canonical_vehicle_id
 from app.vehicles.payloads import AircraftPlatform, attach_payload_capabilities, platform_from_camera_type
 from app.vehicles.state import normalize_aircraft_state
 
@@ -21,6 +21,31 @@ def _finite(value: Any) -> float | None:
 
 def _object(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def aircraft_serial(config: dict[str, Any]) -> str | None:
+    value = config.get("aircraftSerialNumber")
+    if not isinstance(value, str):
+        return None
+    serial = value.strip()
+    if not serial or serial.upper() == "UNKNOWN":
+        return None
+    return serial
+
+
+def merge_identity_config(
+    config: dict[str, Any],
+    settings_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Backfill serial identity from /config/settings for older Lyrebird /config surfaces."""
+
+    result = dict(config)
+    if aircraft_serial(result) is None and isinstance(settings_snapshot, dict):
+        serial = aircraft_serial(settings_snapshot)
+        if serial is not None:
+            result["aircraftSerialNumber"] = serial
+    return result
+
 
 def normalize_telemetry(raw: dict[str, Any], now_ms: int | None = None) -> dict[str, Any]:
     """Map Lyrebird TCP JSON to neutral M3-Cloud fields without inventing RTK/altitude data."""
@@ -113,7 +138,26 @@ def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any
             "capture_stored_sources": caps.get("captureStoredSources") or [],
             "capture_current_screen": caps.get("captureCurrentScreen"),
         }
-    return VehicleSnapshot(id=f"lyrebird:{host}", sn=f"lyrebird@{host}", name=name, model=model, source="lyrebird", online=True, updated_at_ms=int(time.time() * 1000), telemetry=enriched)
+
+    serial = aircraft_serial(config)
+    if serial is None:
+        vehicle_id = f"lyrebird:{host}"
+        vehicle_sn = f"lyrebird@{host}"
+    else:
+        vehicle_id = canonical_vehicle_id(serial)
+        vehicle_sn = serial
+
+    return VehicleSnapshot(
+        id=vehicle_id,
+        sn=vehicle_sn,
+        name=name,
+        model=model,
+        source="lyrebird",
+        online=True,
+        updated_at_ms=int(time.time() * 1000),
+        telemetry=enriched,
+        sources=("lyrebird",),
+    )
 
 class LyrebirdVehicleProvider:
     source = "lyrebird"
@@ -141,6 +185,18 @@ class LyrebirdVehicleProvider:
                 except OSError:
                     pass
 
+    async def _read_identity_settings(self, client: httpx.AsyncClient, host: str) -> dict[str, Any] | None:
+        try:
+            response = await client.get(
+                f"http://{host}:{settings.lyrebird_http_port}/config/settings",
+                timeout=settings.lyrebird_timeout_seconds,
+            )
+            response.raise_for_status()
+            value = response.json()
+            return value if isinstance(value, dict) else None
+        except (httpx.HTTPError, ValueError):
+            return None
+
     async def _read_camera_capabilities(self, client: httpx.AsyncClient, host: str) -> dict[str, Any] | None:
         try:
             response = await client.get(
@@ -160,10 +216,12 @@ class LyrebirdVehicleProvider:
             config = response.json()
             if not isinstance(config, dict):
                 return None
-            tcp, camera_caps = await asyncio.gather(
+            tcp, camera_caps, identity_settings = await asyncio.gather(
                 self._read_telemetry(host),
                 self._read_camera_capabilities(client, host),
+                self._read_identity_settings(client, host),
             )
+            config = merge_identity_config(config, identity_settings)
             mavlink = self._mavlink_collector.snapshot(host) if self._mavlink_collector is not None else None
             telemetry = merge_transport_telemetry(mavlink, tcp)
             return normalize_config(host, config, telemetry, camera_caps)

@@ -22,7 +22,7 @@ function initMap(){
 function n(v,d='—'){return v===null||v===undefined?d:v}
 function normalizeVehicle(v){
  const t=v.telemetry||{}; const p=t.payload||{}; const b=t.battery||{}; const aircraft=t.aircraft_state||{}, positioning=aircraft.positioning||{}, rtk=positioning.rtk||t.rtk||{};
- return {raw:v,telemetry:t,aircraft,positioning,rtkState:rtk,id:v.id||v.sn||v.device_sn||'unknown',name:v.name||v.callsign||v.model||'Aircraft',model:v.model||v.product||p.platform||'DJI',source:v.source||'unknown',online:v.online!==false,lat:Number(v.lat??v.latitude??t.latitude),lng:Number(v.lng??v.longitude??t.longitude),alt:v.alt??v.altitude??t.relative_altitude_m,amsl:t.amsl_altitude_m,rtk:positioning.fix||rtk.fix||v.rtk||v.rtk_status||'—',battery:v.battery??v.battery_percent??b.capacity_percent,sats:v.satellites??v.gps_satellites??positioning.gps_satellites??t.gps_satellites,payload:p,lrf:t.lrf||{},camera:t.camera||{}}
+ return {raw:v,telemetry:t,aircraft,positioning,rtkState:rtk,id:v.id||v.sn||v.device_sn||'unknown',name:v.name||v.callsign||v.model||'Aircraft',model:v.model||v.product||p.platform||'DJI',source:(v.sources||[v.source||'unknown']).join(' + '),online:v.online!==false,lat:Number(v.lat??v.latitude??t.latitude),lng:Number(v.lng??v.longitude??t.longitude),alt:v.alt??v.altitude??t.relative_altitude_m,amsl:t.amsl_altitude_m,rtk:positioning.fix||rtk.fix||v.rtk||v.rtk_status||'—',battery:v.battery??v.battery_percent??b.capacity_percent,sats:v.satellites??v.gps_satellites??positioning.gps_satellites??t.gps_satellites,payload:p,lrf:t.lrf||{},camera:t.camera||{}}
 }
 function esc(v){return String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function positioningStatus(v){
@@ -93,8 +93,15 @@ function applyLiveEvent(event){
  if(event.type==='vehicle_telemetry'&&event.vehicle){
   const incoming=event.vehicle; const key=incoming.id||event.vehicle_id;
   const i=state.vehicles.findIndex(v=>(v.id||v.sn)===key);
-  if(i>=0)state.vehicles[i]={...state.vehicles[i],...incoming,telemetry:mergeDeep(state.vehicles[i].telemetry,incoming.telemetry)};
-  else state.vehicles.push(incoming);
+  if(i>=0){
+   const current=state.vehicles[i];
+   state.vehicles[i]={
+    ...current,
+    ...incoming,
+    sources:[...new Set([...(current.sources||[current.source]).filter(Boolean),...(incoming.sources||[incoming.source]).filter(Boolean)])],
+    telemetry:mergeDeep(current.telemetry,incoming.telemetry)
+   };
+  } else state.vehicles.push(incoming);
   render();
  }else if(event.type==='telemetry'&&event.device_sn&&event.state){
   const i=state.vehicles.findIndex(v=>(v.sn||v.device_sn||v.id)===event.device_sn);

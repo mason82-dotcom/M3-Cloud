@@ -6,6 +6,46 @@ import { useLiveEvents } from "./live";
 import { MapView } from "./MapView";
 import type { LiveEvent, Telemetry, Vehicle } from "./types";
 
+function mergeTelemetry(
+  base: Telemetry | null | undefined,
+  patch: Telemetry | null | undefined,
+): Telemetry | null | undefined {
+  if (!base) return patch;
+  if (!patch) return base;
+
+  const result = { ...base } as Record<string, unknown>;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null || value === undefined) continue;
+    const current = result[key];
+    if (
+      typeof current === "object" &&
+      current !== null &&
+      !Array.isArray(current) &&
+      typeof value === "object" &&
+      !Array.isArray(value)
+    ) {
+      result[key] = mergeTelemetry(current as Telemetry, value as Telemetry);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result as unknown as Telemetry;
+}
+
+function mergeVehicle(current: Vehicle, incoming: Vehicle): Vehicle {
+  return {
+    ...current,
+    ...incoming,
+    sources: Array.from(
+      new Set([
+        ...(current.sources ?? [current.source]),
+        ...(incoming.sources ?? [incoming.source]),
+      ]),
+    ),
+    telemetry: mergeTelemetry(current.telemetry, incoming.telemetry),
+  };
+}
+
 export default function App() {
   const [devices, setDevices] = useState<Vehicle[]>([]);
   const [telemetry, setTelemetry] = useState<Record<string, Telemetry>>({});
@@ -45,10 +85,7 @@ export default function App() {
       }
 
       const next = [...current];
-      next[index] = {
-        ...next[index],
-        ...device,
-      };
+      next[index] = mergeVehicle(next[index], device);
       return next;
     });
   }, []);
@@ -58,13 +95,13 @@ export default function App() {
       if (event.type === "telemetry") {
         setTelemetry((current) => ({
           ...current,
-          [event.device_sn]: event.state,
+          [event.device_sn]: mergeTelemetry(current[event.device_sn], event.state) as Telemetry,
         }));
 
         setDevices((current) =>
           current.map((device) =>
             device.sn === event.device_sn
-              ? { ...device, online: true, telemetry: event.state }
+              ? { ...device, online: true, telemetry: mergeTelemetry(device.telemetry, event.state) }
               : device,
           ),
         );

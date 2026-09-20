@@ -536,6 +536,8 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     // Drone Configuration
     private lateinit var sharedPreferences: SharedPreferences
     override var droneName: String = DEFAULT_DRONE_NAME
+    override val aircraftSerialNumber: String
+        get() = droneSerialNumber
 
     // Phone Location
     private var locationManager: LocationManager? = null

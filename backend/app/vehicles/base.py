@@ -17,6 +17,7 @@ class VehicleSnapshot:
     gateway_sn: str | None = None
     updated_at_ms: int | None = None
     telemetry: dict[str, Any] | None = None
+    sources: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -27,3 +28,9 @@ class VehicleProvider(Protocol):
 
     async def list_vehicles(self) -> list[VehicleSnapshot]:
         ...
+
+
+def canonical_vehicle_id(serial: str) -> str:
+    """Stable source-neutral ID for an aircraft with a known DJI serial."""
+
+    return f"vehicle:{serial}"

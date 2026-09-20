@@ -12,12 +12,14 @@ class Collector:
 def test_live_bridge_publishes_normalized_vehicle(monkeypatch):
     redis=Redis(); bridge=LyrebirdLiveBridge(redis, Collector())
     async def identity(host):
-        return {"droneName":"M3M field"}, {"cameraType":"M3M","captureStoredSources":["RGB_CAMERA","MS_NIR_CAMERA"]}
+        return {"droneName":"M3M field","aircraftSerialNumber":"1581F-M3M"}, {"cameraType":"M3M","captureStoredSources":["RGB_CAMERA","MS_NIR_CAMERA"]}
     bridge._identity=identity
     asyncio.run(bridge._publish("10.0.0.2", {"latitude":49.0}))
     assert len(redis.messages)==1
     import json
     event=json.loads(redis.messages[0][1])
     assert event["type"]=="vehicle_telemetry"
+    assert event["vehicle_id"]=="vehicle:1581F-M3M"
+    assert event["device_sn"]=="1581F-M3M"
     assert event["vehicle"]["model"]=="M3M"
     assert event["vehicle"]["telemetry"]["payload"]["multispectral"] is True

@@ -9,7 +9,13 @@ import httpx
 from redis.asyncio import Redis
 
 from app.config import settings
-from app.vehicles.lyrebird import merge_dicts, merge_transport_telemetry, normalize_config, normalize_telemetry
+from app.vehicles.lyrebird import (
+    merge_dicts,
+    merge_identity_config,
+    merge_transport_telemetry,
+    normalize_config,
+    normalize_telemetry,
+)
 from app.vehicles.mavlink import LyrebirdMavlinkCollector
 
 class LyrebirdLiveBridge:
@@ -46,13 +52,20 @@ class LyrebirdLiveBridge:
             return self._config[host], self._camera_caps.get(host, {})
         async with httpx.AsyncClient() as client:
             try:
-                cfg, caps = await asyncio.gather(
+                cfg, caps, identity = await asyncio.gather(
                     client.get(f"http://{host}:{settings.lyrebird_http_port}/config", timeout=settings.lyrebird_timeout_seconds),
                     client.get(f"http://{host}:{settings.lyrebird_http_port}/get/camera/capabilities", timeout=settings.lyrebird_timeout_seconds),
+                    client.get(f"http://{host}:{settings.lyrebird_http_port}/config/settings", timeout=settings.lyrebird_timeout_seconds),
                 )
                 config = cfg.json() if cfg.is_success else {}
                 camera = caps.json() if caps.is_success else {}
-                if isinstance(config, dict): self._config[host] = config
+                identity_settings = identity.json() if identity.is_success else {}
+                if isinstance(config, dict):
+                    config = merge_identity_config(
+                        config,
+                        identity_settings if isinstance(identity_settings, dict) else None,
+                    )
+                    self._config[host] = config
                 if isinstance(config, dict) and config: self._http_seen[host] = time.monotonic()
                 if isinstance(camera, dict): self._camera_caps[host] = camera
             except (httpx.HTTPError, ValueError):
