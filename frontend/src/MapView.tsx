@@ -58,11 +58,13 @@ function featureCollection(
     type: "FeatureCollection",
     features: devices.flatMap((device) => {
       const state = telemetry[device.sn];
+      const latitude = state?.latitude;
+      const longitude = state?.longitude;
       if (
-        state?.latitude === undefined ||
-        state.longitude === undefined ||
-        !Number.isFinite(state.latitude) ||
-        !Number.isFinite(state.longitude)
+        typeof latitude !== "number" ||
+        typeof longitude !== "number" ||
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude)
       ) {
         return [];
       }
@@ -72,7 +74,7 @@ function featureCollection(
           type: "Feature" as const,
           geometry: {
             type: "Point" as const,
-            coordinates: [state.longitude, state.latitude],
+            coordinates: [longitude, latitude],
           },
           properties: {
             sn: device.sn,
@@ -208,15 +210,17 @@ export function MapView({
     }
 
     const state = telemetry[selectedSn];
+    const latitude = state?.latitude;
+    const longitude = state?.longitude;
     if (
-      state?.latitude === undefined ||
-      state.longitude === undefined
+      typeof latitude !== "number" ||
+      typeof longitude !== "number"
     ) {
       return;
     }
 
     map.flyTo({
-      center: [state.longitude, state.latitude],
+      center: [longitude, latitude],
       zoom: Math.max(map.getZoom(), 15),
       essential: true,
     });
