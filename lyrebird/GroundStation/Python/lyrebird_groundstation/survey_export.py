@@ -120,6 +120,51 @@ def survey_quality_warnings(quality: SurveyQuality, failed_images: tuple[str, ..
     return warnings
 
 
+def _valid_cached_image(destination: Path, expected_size: int | None) -> bool:
+    if not destination.is_file() or destination.stat().st_size <= 0:
+        return False
+    if expected_size is None or destination.stat().st_size == expected_size:
+        return True
+    destination.unlink()
+    return False
+
+
+def _download_survey_image(
+    client: DJIInterface,
+    images_dir: Path,
+    name: str,
+    expected_size: int | None,
+) -> Path | None:
+    destination = images_dir / Path(name).name
+    if _valid_cached_image(destination, expected_size):
+        return destination
+
+    saved = client.downloadByName(name, save_path=str(destination))
+    if saved is None or not destination.is_file():
+        return None
+    if expected_size is not None and destination.stat().st_size != expected_size:
+        destination.unlink(missing_ok=True)
+        return None
+    return destination
+
+
+def _download_survey_images(
+    client: DJIInterface,
+    images_dir: Path,
+    wanted: list[str],
+    expected_sizes: dict[str, int],
+) -> tuple[tuple[Path, ...], tuple[str, ...]]:
+    downloaded: list[Path] = []
+    failed: list[str] = []
+    for name in wanted:
+        image = _download_survey_image(client, images_dir, name, expected_sizes.get(name))
+        if image is None:
+            failed.append(name)
+        else:
+            downloaded.append(image)
+    return tuple(downloaded), tuple(failed)
+
+
 class SurveyPackageBuilder:
     """Pull the latest per-mission survey and preserve the original DJI media files."""
 
@@ -156,27 +201,12 @@ class SurveyPackageBuilder:
         images_dir = root / "images"
         images_dir.mkdir(parents=True, exist_ok=True)
 
-        downloaded: list[Path] = []
-        failed: list[str] = []
-        for name in wanted:
-            destination = images_dir / Path(name).name
-            expected = expected_sizes.get(name)
-
-            if destination.is_file() and destination.stat().st_size > 0:
-                if expected is None or destination.stat().st_size == expected:
-                    downloaded.append(destination)
-                    continue
-                destination.unlink()
-
-            saved = self.client.downloadByName(name, save_path=str(destination))
-            if saved is None or not destination.is_file():
-                failed.append(name)
-                continue
-            if expected is not None and destination.stat().st_size != expected:
-                failed.append(name)
-                destination.unlink(missing_ok=True)
-                continue
-            downloaded.append(destination)
+        downloaded, failed = _download_survey_images(
+            self.client,
+            images_dir,
+            wanted,
+            expected_sizes,
+        )
 
         manifest = {
             "schemaVersion": 1,
@@ -194,7 +224,7 @@ class SurveyPackageBuilder:
             "images": {
                 "requested": len(wanted),
                 "downloaded": len(downloaded),
-                "failed": failed,
+                "failed": list(failed),
                 "files": [f"images/{path.name}" for path in downloaded],
             },
         }
@@ -207,8 +237,8 @@ class SurveyPackageBuilder:
             captures_csv=captures_csv,
             summary_json=summary_json,
             manifest_json=manifest_path,
-            images=tuple(downloaded),
-            failed_images=tuple(failed),
+            images=downloaded,
+            failed_images=failed,
             quality=quality,
         )
 
