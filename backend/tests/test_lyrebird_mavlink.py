@@ -69,3 +69,15 @@ def test_standard_mission_and_vfr_messages_are_normalized():
     assert current["mission"]=={"current_seq":4,"state":3}
     reached=normalize_mavlink_message(Msg(kind="MISSION_ITEM_REACHED",seq=4))
     assert reached["reach"]=={"waypoint_reached":True,"waypoint_seq":4}
+
+def test_altitude_keeps_reference_frames_separate_and_unknowns_null():
+    patch=normalize_mavlink_message(Msg(kind="ALTITUDE",altitude_monotonic=12.0,altitude_amsl=142.0,altitude_local=12.0,altitude_relative=12.0,altitude_terrain=-1001.0,bottom_clearance=-1.0))
+    assert patch["altitude"]=={"monotonic_m":12.0,"amsl_m":142.0,"local_m":12.0,"relative_m":12.0,"terrain_m":None,"bottom_clearance_m":None}
+
+def test_extended_sys_state_exposes_flying_without_inference():
+    patch=normalize_mavlink_message(Msg(kind="EXTENDED_SYS_STATE",landed_state=2))
+    assert patch["flight_state"]=={"landed_state":2,"is_flying":True}
+
+def test_vfr_hud_alt_is_amsl_and_climb_is_positive_up():
+    patch=normalize_mavlink_message(Msg(kind="VFR_HUD",alt=142.5,climb=1.25))
+    assert patch=={"amsl_altitude_m":142.5,"climb_rate_mps":1.25}

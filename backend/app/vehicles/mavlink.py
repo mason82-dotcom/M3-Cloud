@@ -155,7 +155,7 @@ def normalize_mavlink_message(msg: Any) -> dict[str, Any]:
             "relative_altitude_m": msg.relative_alt / 1000.0,
             "velocity_north_mps": msg.vx / 100.0,
             "velocity_east_mps": msg.vy / 100.0,
-            "vertical_speed_mps": msg.vz / 100.0,
+            # MAVLink GLOBAL_POSITION_INT.vz is NED: positive down. Keep that fact explicit.\n            "velocity_down_mps": msg.vz / 100.0,
             "heading_deg": _heading_deg(msg.hdg),
         }
     if kind == "GPS_RAW_INT":
@@ -176,11 +176,32 @@ def normalize_mavlink_message(msg: Any) -> dict[str, Any]:
                 "yaw_deg": math.degrees(msg.yaw),
             }
         }
+    if kind == "ALTITUDE":
+        terrain = float(msg.altitude_terrain)
+        clearance = float(msg.bottom_clearance)
+        return {"altitude": {
+            "monotonic_m": float(msg.altitude_monotonic),
+            "amsl_m": float(msg.altitude_amsl),
+            "local_m": float(msg.altitude_local),
+            "relative_m": float(msg.altitude_relative),
+            "terrain_m": None if terrain < -1000.0 else terrain,
+            "bottom_clearance_m": None if clearance < 0.0 else clearance,
+        }}
+    if kind == "EXTENDED_SYS_STATE":
+        landed = int(msg.landed_state)
+        return {"flight_state": {
+            "landed_state": landed,
+            "is_flying": landed in (
+                mavlink_common.MAV_LANDED_STATE_TAKEOFF,
+                mavlink_common.MAV_LANDED_STATE_IN_AIR,
+                mavlink_common.MAV_LANDED_STATE_LANDING,
+            ),
+        }}
     if kind == "SYS_STATUS":
         remaining = int(msg.battery_remaining)
         return {"battery": {"capacity_percent": None if remaining < 0 else remaining}}
     if kind == "VFR_HUD":
-        return {"relative_altitude_m": float(msg.alt), "vertical_speed_mps": -float(msg.climb)}
+        # Lyrebird sends VFR_HUD.alt from altitudeAslM and climb positive-up.\n        return {"amsl_altitude_m": float(msg.alt), "climb_rate_mps": float(msg.climb)}
     if kind == "MISSION_CURRENT":
         return {"mission": {"current_seq": int(msg.seq), "state": int(getattr(msg, "mission_state", 0))}}
     if kind == "MISSION_ITEM_REACHED":
