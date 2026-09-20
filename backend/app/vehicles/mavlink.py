@@ -351,6 +351,7 @@ class LyrebirdMavlinkCollector:
         self._detection_frame: dict[str, int] = {}
         self._detection_targets: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self._heartbeat_task: asyncio.Task[None] | None = None
+        self._tx_sequence: dict[str, int] = defaultdict(int)
         self._message_waiters: dict[
             str,
             list[tuple[Callable[[Any], bool], asyncio.Future[Any]]],
@@ -476,6 +477,7 @@ class LyrebirdMavlinkCollector:
             srcSystem=GCS_SYSTEM,
             srcComponent=GCS_COMPONENT,
         )
+        encoder.seq = self._tx_sequence[host]
         return encoder, sink, system_id
 
     def send_mission_count(self, host: str, count: int) -> None:
@@ -486,6 +488,7 @@ class LyrebirdMavlinkCollector:
             count,
             0,
         )
+        self._tx_sequence[host] = (self._tx_sequence[host] + 1) & 0xFF
         assert self._transport is not None
         self._transport.sendto(
             bytes(sink),
@@ -516,6 +519,7 @@ class LyrebirdMavlinkCollector:
             float(item["z"]),
             int(item.get("mission_type", 0)),
         )
+        self._tx_sequence[host] = (self._tx_sequence[host] + 1) & 0xFF
         assert self._transport is not None
         self._transport.sendto(
             bytes(sink),
