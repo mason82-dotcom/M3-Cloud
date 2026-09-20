@@ -93,14 +93,19 @@ class MavlinkMissionProtocolTest {
     }
 
     @Test
-    fun thePlanIdChangesWheneverThePlanDoes() {
+    fun planIdIsDeterministicForMissionContent() {
+        assertEquals(0, store.currentPlanId())
+        uploadPlan(1)
         val first = store.currentPlanId()
         uploadPlan(1)
-        val second = store.currentPlanId()
-        uploadPlan(1)
 
-        assertTrue("upload changed the id", second != first)
-        assertTrue("second upload changed it again", store.currentPlanId() != second)
+        assertTrue("non-empty plan has a content fingerprint", first != 0)
+        assertEquals("same plan produces the same mission_id", first, store.currentPlanId())
+
+        store.beginUpload(1, MavlinkMissionStore.MISSION_TYPE_MISSION)
+        store.acceptItem(waypoint(0).copy(altitudeM = 31.0))
+        store.commitUpload()
+        assertTrue("changed plan changes mission_id", store.currentPlanId() != first)
     }
 
     // -- item semantics ----------------------------------------------------------------------
@@ -142,6 +147,14 @@ class MavlinkMissionProtocolTest {
             6,
             payload[34].toInt()
         )
+
+        val relativeFloatFrame = MavlinkMessages.missionItemInt(
+            item.copy(frame = 3),
+            targetSystem = 255,
+            targetComponent = 190,
+            isCurrent = false
+        )
+        assertEquals("stored frame round-trips", 3, relativeFloatFrame[34].toInt())
     }
 
     @Test
@@ -161,6 +174,7 @@ class MavlinkMissionProtocolTest {
         requireNotNull(parsed)
 
         assertEquals("frame byte 34", 6, parsed.frame)
+        assertEquals("stored item preserves frame", 6, parsed.item.frame)
         assertFalse("autocontinue byte 36 must not be confused with current byte 35", parsed.item.autocontinue)
         assertEquals("mission_type extension byte 37", 1, parsed.missionType)
     }

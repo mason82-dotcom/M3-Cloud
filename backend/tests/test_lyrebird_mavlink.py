@@ -66,8 +66,8 @@ def test_autosensing_layout_matches_lyrebird_dialect():
 def test_standard_mission_and_vfr_messages_are_normalized():
     hud=normalize_mavlink_message(Msg(kind="VFR_HUD",alt=42.5,climb=1.25))
     assert hud=={"amsl_altitude_m":42.5,"climb_rate_mps":1.25}
-    current=normalize_mavlink_message(Msg(kind="MISSION_CURRENT",seq=4,mission_state=3))
-    assert current["mission"]=={"current_seq":4,"state":3}
+    current=normalize_mavlink_message(Msg(kind="MISSION_CURRENT",seq=4,mission_state=3,mission_id=0xF1234567))
+    assert current["mission"]=={"current_seq":4,"state":3,"mission_id":0xF1234567}
     reached=normalize_mavlink_message(Msg(kind="MISSION_ITEM_REACHED",seq=4))
     assert reached["reach"]=={"waypoint_reached":True,"waypoint_seq":4}
 

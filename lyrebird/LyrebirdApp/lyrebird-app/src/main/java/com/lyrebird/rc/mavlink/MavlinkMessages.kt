@@ -563,7 +563,7 @@ internal object MavlinkMessages {
             .u16(item.command)
             .u8(targetSystem)
             .u8(targetComponent)
-            .u8(MAV_FRAME_GLOBAL_RELATIVE_ALT_INT)
+            .u8(item.frame)
             .u8(if (isCurrent) 1 else 0)
             .u8(if (item.autocontinue) 1 else 0)
             .build()

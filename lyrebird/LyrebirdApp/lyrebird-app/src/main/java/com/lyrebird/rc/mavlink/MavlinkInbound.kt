@@ -222,7 +222,8 @@ internal object MavlinkInbound {
             latitudeDeg = buffer.getInt(16) / COORD_SCALE,
             longitudeDeg = buffer.getInt(20) / COORD_SCALE,
             altitudeM = buffer.getFloat(24).toDouble(),
-            autocontinue = payload[MISSION_ITEM_AUTOCONTINUE_OFFSET].toInt() != 0
+            autocontinue = payload[MISSION_ITEM_AUTOCONTINUE_OFFSET].toInt() != 0,
+            frame = payload[MISSION_ITEM_FRAME_OFFSET].toInt() and 0xFF
         )
         return MavlinkMissionItem(
             item = item,

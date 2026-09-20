@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from app.missions.plans import compatibility, compile_mission_item_int
+from app.missions.plans import compatibility, compile_mission_item_int, mission_runtime_id
 from app.models import Mission, MissionRevision
 
 
@@ -26,6 +26,8 @@ def build_deployment_package(
         if compat.get("wire_ready")
         else None
     )
+    if wire is not None:
+        wire["mission_id"] = mission_runtime_id(wire)
     return {
         "schema_version": 1,
         "kind": "M3_CLOUD_MISSION_HANDOFF",

@@ -26,7 +26,8 @@ internal data class MissionItem(
     val latitudeDeg: Double,
     val longitudeDeg: Double,
     val altitudeM: Double,
-    val autocontinue: Boolean
+    val autocontinue: Boolean,
+    val frame: Int = 6
 ) {
     /** True when this item should be flown nose-forward rather than holding a fixed heading. */
     val noseForward: Boolean get() = param4.isNaN()
@@ -67,6 +68,37 @@ internal data class MissionItem(
 /** MAV_MISSION_RESULT values used when acknowledging an upload. */
 internal fun missionFrameSupported(frame: Int): Boolean =
     frame == 3 || frame == 6 // MAV_FRAME_GLOBAL_RELATIVE_ALT(_INT)
+
+/**
+ * Cross-language mission fingerprint used for MISSION_CURRENT.mission_id.
+ *
+ * CRC32 is over a canonical little-endian logical MISSION_ITEM_INT representation. Optional
+ * float NaNs are canonicalised so different NaN payload bits cannot change plan identity.
+ */
+internal fun missionPlanFingerprint(items: List<MissionItem>): Int {
+    if (items.isEmpty()) return 0
+    val crc = java.util.zip.CRC32()
+    items.forEach { item ->
+        val buffer = java.nio.ByteBuffer.allocate(35).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        fun putCanonicalFloat(value: Float) {
+            buffer.putInt(if (value.isNaN()) 0x7fc00000 else value.toRawBits())
+        }
+        putCanonicalFloat(item.param1)
+        putCanonicalFloat(item.param2)
+        putCanonicalFloat(item.param3)
+        putCanonicalFloat(item.param4)
+        buffer.putInt(kotlin.math.round(item.latitudeDeg * 1e7).toInt())
+        buffer.putInt(kotlin.math.round(item.longitudeDeg * 1e7).toInt())
+        putCanonicalFloat(item.altitudeM.toFloat())
+        buffer.putShort((item.seq and 0xffff).toShort())
+        buffer.putShort((item.command and 0xffff).toShort())
+        buffer.put((item.frame and 0xff).toByte())
+        buffer.put(if (item.autocontinue) 1.toByte() else 0.toByte())
+        buffer.put(MavlinkMissionStore.MISSION_TYPE_MISSION.toByte())
+        crc.update(buffer.array())
+    }
+    return crc.value.toInt()
+}
 
 
 internal object MissionResult {
@@ -148,7 +180,12 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
     @Volatile
     private var state = MissionState.NO_MISSION
 
-    /** Changes whenever the stored plan changes, so a ground station can spot a stale cache. */
+    /**
+     * Deterministic content fingerprint reported as MISSION_CURRENT.mission_id.
+     *
+     * It excludes runtime target ids/current flags and hashes only the stored logical mission
+     * fields, so M3-Cloud can compute the same identity before any upload.
+     */
     @Volatile
     private var planId = 0
 
@@ -185,7 +222,7 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
         uploading = count > 0
         if (count == 0) {
             items.clear()
-            planId++
+            planId = 0
             state = MissionState.NO_MISSION
             currentSeq = -1
         }
@@ -227,7 +264,7 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
         items.addAll(incoming)
         incoming.clear()
         uploading = false
-        planId++
+        planId = missionPlanFingerprint(items)
         currentSeq = -1
         state = if (items.isEmpty()) MissionState.NO_MISSION else MissionState.NOT_STARTED
     }
@@ -244,7 +281,7 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
         items.clear()
         incoming.clear()
         uploading = false
-        planId++
+        planId = 0
         currentSeq = -1
         state = MissionState.NO_MISSION
     }

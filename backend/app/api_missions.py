@@ -97,6 +97,7 @@ async def _runtime_by_aircraft(request: Request) -> dict[str, dict[str, Any]]:
             "state_code": state_code,
             "state": mission_state_name(state_code),
             "current_seq": mission.get("current_seq") if isinstance(mission, dict) else None,
+            "mission_id": mission.get("mission_id") if isinstance(mission, dict) else None,
             "waypoint_reached_seq": (
                 reach.get("waypoint_seq") if isinstance(reach, dict) else None
             ),
@@ -109,13 +110,35 @@ async def _runtime_by_aircraft(request: Request) -> dict[str, dict[str, Any]]:
 async def _mission_payload(
     mission: Mission,
     runtime: dict[str, dict[str, Any]],
+    deployments: list[MissionDeployment] | None = None,
 ) -> dict[str, Any]:
     payload = _base_payload(mission)
-    payload["runtime"] = (
-        runtime.get(mission.aircraft_sn)
+    observed = (
+        dict(runtime.get(mission.aircraft_sn) or {})
         if mission.aircraft_sn
         else None
     )
+
+    if observed is not None:
+        observed_id = observed.get("mission_id")
+        matched = None
+        if isinstance(observed_id, int) and observed_id != 0:
+            for deployment in reversed(deployments or []):
+                package = deployment.package_json or {}
+                wire = package.get("wire") if isinstance(package, dict) else None
+                expected = wire.get("mission_id") if isinstance(wire, dict) else None
+                if expected == observed_id:
+                    matched = deployment
+                    break
+
+        if matched is not None:
+            observed["runtime_plan_identity"] = "VERIFIED"
+            observed["linked_to_persisted_plan"] = True
+            observed["deployment_id"] = str(matched.id)
+            observed["revision_version"] = matched.revision_version
+            observed["plan_sha256"] = matched.plan_sha256
+
+    payload["runtime"] = observed
     return payload
 
 
@@ -165,9 +188,28 @@ async def list_missions(
 
     async with session_factory() as session:
         missions = (await session.scalars(statement)).all()
+        ids = [mission.id for mission in missions]
+        deployments = (
+            await session.scalars(
+                select(MissionDeployment)
+                .where(MissionDeployment.mission_id.in_(ids))
+                .order_by(MissionDeployment.created_at, MissionDeployment.id)
+            )
+        ).all() if ids else []
+
+    by_mission: dict[uuid.UUID, list[MissionDeployment]] = {}
+    for deployment in deployments:
+        by_mission.setdefault(deployment.mission_id, []).append(deployment)
 
     runtime = await _runtime_by_aircraft(request)
-    return [await _mission_payload(mission, runtime) for mission in missions]
+    return [
+        await _mission_payload(
+            mission,
+            runtime,
+            by_mission.get(mission.id, []),
+        )
+        for mission in missions
+    ]
 
 
 @router.get("/{mission_id}")
@@ -182,8 +224,15 @@ async def mission_detail(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Mission not found",
             )
+        deployments = (
+            await session.scalars(
+                select(MissionDeployment)
+                .where(MissionDeployment.mission_id == mission_id)
+                .order_by(MissionDeployment.created_at, MissionDeployment.id)
+            )
+        ).all()
     runtime = await _runtime_by_aircraft(request)
-    return await _mission_payload(mission, runtime)
+    return await _mission_payload(mission, runtime, deployments)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

@@ -688,10 +688,13 @@ export function MissionsView() {
                     <>
                       <span>State <b>{selected.runtime.state}</b></span>
                       <span>Current seq <b>{selected.runtime.current_seq ?? "—"}</b></span>
+                      <span>Mission ID <b>{selected.runtime.mission_id ?? "—"}</b></span>
                       <span>Reached seq <b>{selected.runtime.waypoint_reached_seq ?? "—"}</b></span>
                       <small>
-                        Runtime plan identity is {selected.runtime.runtime_plan_identity}; it is not linked
-                        automatically to this stored mission.
+                        Runtime plan identity is {selected.runtime.runtime_plan_identity}
+                        {selected.runtime.linked_to_persisted_plan
+                          ? ` · sealed v${selected.runtime.revision_version ?? "?"}`
+                          : " · not matched to a sealed handoff"}.
                       </small>
                     </>
                   ) : (

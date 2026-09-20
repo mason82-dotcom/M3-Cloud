@@ -21,6 +21,7 @@ from app.missions.deployment import deployment_sha256
 from app.missions.plans import (
     compatibility,
     compile_mission_item_int,
+    mission_runtime_id,
     normalize_plan,
     plan_sha256,
 )
@@ -181,6 +182,8 @@ def test_plan_validation_rejects_non_contiguous_sequence_and_reports_unsupported
     assert wire["items"][0]["z"] == 50.5
     assert wire["items"][0]["param4"] is None
     assert wire["items"][0]["autocontinue"] == 0
+    assert mission_runtime_id(wire) == mission_runtime_id(wire)
+    assert mission_runtime_id(wire) != 0
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -271,6 +274,7 @@ async def test_ready_mission_seals_immutable_non_executing_handoff(monkeypatch) 
     assert sealed["package"]["wire"]["target_system"] == "RUNTIME"
     assert sealed["package"]["wire"]["items"][0]["frame"] == 6
     assert sealed["package"]["wire"]["items"][0]["x"] == 490000000
+    assert sealed["package"]["wire"]["mission_id"] != 0
     assert sealed["package_sha256"] == deployment_sha256(sealed["package"])
 
     listed = await mission_deployments(mission_id)

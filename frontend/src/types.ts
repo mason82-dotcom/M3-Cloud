@@ -235,6 +235,7 @@ export interface MissionDeployment {
       target_system: "RUNTIME" | string;
       target_component: "RUNTIME" | string;
       null_float_encoding: string;
+      mission_id?: number;
       items: Array<{
         seq: number;
         frame: number;
@@ -288,7 +289,11 @@ export interface MissionRuntime {
   state_code?: number | null;
   state: string;
   current_seq?: number | null;
+  mission_id?: number | null;
   waypoint_reached_seq?: number | null;
+  deployment_id?: string | null;
+  revision_version?: number | null;
+  plan_sha256?: string | null;
   runtime_plan_identity: "UNVERIFIED" | string;
   linked_to_persisted_plan: boolean;
 }

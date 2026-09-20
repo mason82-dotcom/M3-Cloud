@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import struct
+import zlib
 from typing import Any
 
 from pymavlink.dialects.v20 import common as mavlink_common
@@ -217,3 +219,43 @@ def compile_mission_item_int(plan: dict[str, object]) -> dict[str, object]:
         "null_float_encoding": "IEEE754_NAN",
         "items": compiled,
     }
+
+
+
+def mission_runtime_id(wire: dict[str, object]) -> int:
+    """Compute the same uint32 mission_id Lyrebird reports in MISSION_CURRENT."""
+
+    raw_items = wire.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        return 0
+
+    crc = 0
+
+    def f32(value: object) -> bytes:
+        if value is None:
+            bits = 0x7FC00000
+        else:
+            number = float(value)
+            if math.isnan(number):
+                bits = 0x7FC00000
+            else:
+                return struct.pack("<f", number)
+        return struct.pack("<I", bits)
+
+    for item in raw_items:
+        if not isinstance(item, dict):
+            raise ValueError("Wire mission contains non-object item")
+        chunk = bytearray()
+        for key in ("param1", "param2", "param3", "param4"):
+            chunk.extend(f32(item.get(key)))
+        chunk.extend(struct.pack("<i", int(item["x"])))
+        chunk.extend(struct.pack("<i", int(item["y"])))
+        chunk.extend(f32(item["z"]))
+        chunk.extend(struct.pack("<H", int(item["seq"]) & 0xFFFF))
+        chunk.extend(struct.pack("<H", int(item["command"]) & 0xFFFF))
+        chunk.extend(struct.pack("<B", int(item["frame"]) & 0xFF))
+        chunk.extend(struct.pack("<B", int(item["autocontinue"]) & 0xFF))
+        chunk.extend(struct.pack("<B", int(item.get("mission_type", 0)) & 0xFF))
+        crc = zlib.crc32(chunk, crc)
+
+    return crc & 0xFFFFFFFF
