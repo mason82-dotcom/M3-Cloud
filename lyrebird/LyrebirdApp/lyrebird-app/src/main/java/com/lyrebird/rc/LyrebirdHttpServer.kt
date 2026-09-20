@@ -781,6 +781,7 @@ internal class SimpleHttpServer(
                         writer.println("Content-Type: application/json")
                         writer.println("Content-Length: ${body.toByteArray().size}")
                         writer.println("Access-Control-Allow-Origin: *")
+                        writer.println("Connection: close")
                         writer.println()
                         writer.print(body)
                         writer.flush()
