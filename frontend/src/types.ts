@@ -170,6 +170,21 @@ export interface FlightSummary {
 
 export interface FlightDetail extends FlightSummary {
   sources?: string[];
+  media_datasets?: Array<{
+    id: string;
+    platform: string;
+    prefix: string;
+    title?: string | null;
+    present: boolean;
+  }>;
+  processing_jobs?: Array<{
+    id: string;
+    kind: string;
+    status: string;
+    name: string;
+    platform?: string | null;
+    input_prefix: string;
+  }>;
   takeoff_position?: import("geojson").Point | null;
   landing_position?: import("geojson").Point | null;
   path?: import("geojson").LineString | null;

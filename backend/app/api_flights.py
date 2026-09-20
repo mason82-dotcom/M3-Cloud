@@ -8,7 +8,12 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app.database import session_factory
-from app.models import Flight, TelemetrySample
+from app.models import (
+    Flight,
+    MediaDatasetRecord,
+    ProcessingJob,
+    TelemetrySample,
+)
 
 
 router = APIRouter(prefix="/api/v1/flights", tags=["flights"])
@@ -67,6 +72,21 @@ async def flight_detail(flight_id: uuid.UUID) -> dict[str, Any]:
             .order_by(TelemetrySample.source)
         )
 
+        media_datasets = (
+            await session.scalars(
+                select(MediaDatasetRecord)
+                .where(MediaDatasetRecord.flight_id == flight_id)
+                .order_by(MediaDatasetRecord.platform, MediaDatasetRecord.prefix)
+            )
+        ).all()
+        processing_jobs = (
+            await session.scalars(
+                select(ProcessingJob)
+                .where(ProcessingJob.flight_id == flight_id)
+                .order_by(ProcessingJob.created_at.desc())
+            )
+        ).all()
+
         detail = _summary(flight)
         detail.update(
             {
@@ -74,6 +94,27 @@ async def flight_detail(flight_id: uuid.UUID) -> dict[str, Any]:
                 "takeoff_position": await geometry(Flight.takeoff_position),
                 "landing_position": await geometry(Flight.landing_position),
                 "path": await geometry(Flight.path),
+                "media_datasets": [
+                    {
+                        "id": str(dataset.id),
+                        "platform": dataset.platform,
+                        "prefix": dataset.prefix,
+                        "title": dataset.title,
+                        "present": dataset.present,
+                    }
+                    for dataset in media_datasets
+                ],
+                "processing_jobs": [
+                    {
+                        "id": str(job.id),
+                        "kind": job.kind,
+                        "status": job.status,
+                        "name": job.name,
+                        "platform": job.platform,
+                        "input_prefix": job.input_prefix,
+                    }
+                    for job in processing_jobs
+                ],
             }
         )
         return detail

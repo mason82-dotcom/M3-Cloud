@@ -704,6 +704,40 @@ export function FlightHistoryView() {
             <dt>Started</dt><dd>{detail ? startedAt(detail.started_at) : "—"}</dd>
             <dt>Ended</dt><dd>{detail?.ended_at ? startedAt(detail.ended_at) : "—"}</dd>
           </dl>
+
+          <div className="flightRelations">
+            <div>
+              <h3>Media datasets</h3>
+              {detail?.media_datasets?.length ? (
+                detail.media_datasets.map((dataset) => (
+                  <article key={dataset.id}>
+                    <strong>{dataset.title || dataset.prefix}</strong>
+                    <small>
+                      {dataset.platform} · {dataset.present ? "present" : "missing"}
+                    </small>
+                  </article>
+                ))
+              ) : (
+                <small>Keine SD-Datasets zugeordnet.</small>
+              )}
+            </div>
+
+            <div>
+              <h3>Processing</h3>
+              {detail?.processing_jobs?.length ? (
+                detail.processing_jobs.map((job) => (
+                  <article key={job.id}>
+                    <strong>{job.name}</strong>
+                    <small>
+                      {job.kind} · {job.status} · {job.platform ?? "AUTO"}
+                    </small>
+                  </article>
+                ))
+              ) : (
+                <small>Noch keine Processing-Jobs für diesen Flug.</small>
+              )}
+            </div>
+          </div>
         </section>
       </section>
     </div>

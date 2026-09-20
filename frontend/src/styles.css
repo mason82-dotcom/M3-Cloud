@@ -1237,3 +1237,58 @@ button { font: inherit; }
   color: var(--accent);
   font-size: 8px;
 }
+
+
+.flightRelations {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.flightRelations > div {
+  min-width: 0;
+  border: 1px solid #1d2935;
+  border-radius: 7px;
+  background: #0e151e;
+  padding: 9px;
+}
+
+.flightRelations h3 {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.flightRelations article {
+  padding: 6px 0;
+  border-top: 1px solid #1d2935;
+}
+
+.flightRelations article:first-of-type {
+  border-top: 0;
+}
+
+.flightRelations strong,
+.flightRelations small {
+  display: block;
+}
+
+.flightRelations strong {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.flightRelations small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+@media (max-width: 760px) {
+  .flightRelations {
+    grid-template-columns: 1fr;
+  }
+}
