@@ -5,6 +5,7 @@ import type { FeatureCollection, LineString, Point } from "geojson";
 
 import {
   createMission,
+  fetchMissionPreflight,
   fetchMissionRevisions,
   fetchMissions,
   fetchProjects,
@@ -16,6 +17,7 @@ import {
 import type {
   Mission,
   MissionPlanItem,
+  MissionPreflight,
   MissionRevision,
   Project,
   Survey,
@@ -247,6 +249,7 @@ export function MissionsView() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [revisions, setRevisions] = useState<MissionRevision[]>([]);
+  const [preflight, setPreflight] = useState<MissionPreflight | null>(null);
   const [draftItems, setDraftItems] = useState<MissionPlanItem[]>([]);
   const [newName, setNewName] = useState("");
   const [newSurveyId, setNewSurveyId] = useState("");
@@ -294,15 +297,25 @@ export function MissionsView() {
     setDraftItems(selected ? selected.plan.items.map((item) => ({ ...item })) : []);
     if (!selectedId) {
       setRevisions([]);
+      setPreflight(null);
       return;
     }
     let cancelled = false;
-    void fetchMissionRevisions(selectedId)
-      .then((items) => {
-        if (!cancelled) setRevisions(items);
+    void Promise.all([
+      fetchMissionRevisions(selectedId),
+      fetchMissionPreflight(selectedId),
+    ])
+      .then(([items, report]) => {
+        if (!cancelled) {
+          setRevisions(items);
+          setPreflight(report);
+        }
       })
       .catch(() => {
-        if (!cancelled) setRevisions([]);
+        if (!cancelled) {
+          setRevisions([]);
+          setPreflight(null);
+        }
       });
     return () => {
       cancelled = true;
@@ -356,7 +369,12 @@ export function MissionsView() {
         current.map((mission) => mission.id === updated.id ? updated : mission),
       );
       setDraftItems(updated.plan.items);
-      setRevisions(await fetchMissionRevisions(updated.id));
+      const [nextRevisions, nextPreflight] = await Promise.all([
+        fetchMissionRevisions(updated.id),
+        fetchMissionPreflight(updated.id),
+      ]);
+      setRevisions(nextRevisions);
+      setPreflight(nextPreflight);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -580,6 +598,22 @@ export function MissionsView() {
                       </a>
                     ))}
                   </div>
+                </div>
+
+                <div className="missionPreflightBox">
+                  <div>
+                    <strong>Preflight report</strong>
+                    <span className={preflight?.checks_passed ? "preflightPass" : "preflightBlock"}>
+                      {preflight ? (preflight.checks_passed ? "CHECKS PASS" : "BLOCKED") : "UNAVAILABLE"}
+                    </span>
+                  </div>
+                  {preflight?.checks.map((check) => (
+                    <article className={`preflightCheck ${check.level.toLowerCase()}`} key={check.code}>
+                      <b>{check.level}</b>
+                      <span>{check.message}</span>
+                    </article>
+                  ))}
+                  <small>Execution from M3-Cloud remains disabled regardless of this report.</small>
                 </div>
 
                 <div className="missionRuntimeBox">

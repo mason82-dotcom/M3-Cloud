@@ -2247,3 +2247,72 @@ button { font: inherit; }
   font-size: 8px;
   text-decoration: none;
 }
+
+
+.missionPreflightBox {
+  display: grid;
+  gap: 5px;
+  margin: 12px 10px 0;
+  padding: 9px;
+  border: 1px solid #1d2935;
+  border-radius: 7px;
+  background: #0e151e;
+}
+
+.missionPreflightBox > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.missionPreflightBox strong {
+  font-size: 10px;
+}
+
+.missionPreflightBox > div > span {
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.preflightPass {
+  color: var(--good);
+}
+
+.preflightBlock {
+  color: var(--bad);
+}
+
+.preflightCheck {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 6px;
+  border-top: 1px solid #1d2935;
+  padding-top: 5px;
+  font-size: 8px;
+}
+
+.preflightCheck b {
+  color: var(--muted);
+}
+
+.preflightCheck.pass b {
+  color: var(--good);
+}
+
+.preflightCheck.warn b {
+  color: var(--warn);
+}
+
+.preflightCheck.block b {
+  color: var(--bad);
+}
+
+.preflightCheck.info b {
+  color: var(--info);
+}
+
+.preflightCheck span,
+.missionPreflightBox small {
+  color: var(--muted);
+  line-height: 1.4;
+}

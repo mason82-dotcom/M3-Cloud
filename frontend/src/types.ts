@@ -203,6 +203,25 @@ export interface MissionRevision {
   created_at: string;
 }
 
+export interface MissionPreflightCheck {
+  code: string;
+  level: "PASS" | "WARN" | "BLOCK" | "INFO" | string;
+  message: string;
+  details: Record<string, unknown>;
+}
+
+export interface MissionPreflight {
+  mission_id: string;
+  aircraft_sn?: string | null;
+  checks_passed: boolean;
+  blocking_count: number;
+  warning_count: number;
+  execution_enabled: boolean;
+  runtime_plan_identity: string;
+  checks: MissionPreflightCheck[];
+  note: string;
+}
+
 export interface MissionRuntime {
   available: boolean;
   source?: string;

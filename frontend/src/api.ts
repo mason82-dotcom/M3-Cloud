@@ -11,6 +11,7 @@ import type {
   MediaPositionCollection,
   Mission,
   MissionPlanItem,
+  MissionPreflight,
   MissionRevision,
   ProcessingJob,
   ProcessingMapInfo,
@@ -171,6 +172,18 @@ export async function fetchMissions(input: {
     throw new Error(`Missions request failed: ${response.status}`);
   }
   return response.json() as Promise<Mission[]>;
+}
+
+export async function fetchMissionPreflight(
+  missionId: string,
+): Promise<MissionPreflight> {
+  const response = await fetch(
+    `/api/v1/missions/${encodeURIComponent(missionId)}/preflight`,
+  );
+  if (!response.ok) {
+    throw new Error(`Mission preflight request failed: ${response.status}`);
+  }
+  return response.json() as Promise<MissionPreflight>;
 }
 
 export async function fetchMissionRevisions(

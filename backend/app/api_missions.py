@@ -19,6 +19,7 @@ from app.missions.plans import (
     normalize_plan,
     plan_sha256,
 )
+from app.missions.preflight import evaluate_preflight
 from app.models import Mission, MissionRevision, Survey
 
 
@@ -376,3 +377,26 @@ async def download_mission_revision(
             "Content-Length": str(len(payload)),
         },
     )
+
+
+@router.get("/{mission_id}/preflight")
+async def mission_preflight(
+    mission_id: uuid.UUID,
+    request: Request,
+) -> dict[str, Any]:
+    async with session_factory() as session:
+        mission = await session.get(Mission, mission_id)
+        if mission is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission not found",
+            )
+
+    vehicle = None
+    if mission.aircraft_sn:
+        vehicles = await _registry(request).list_vehicles()
+        vehicle = next(
+            (item for item in vehicles if item.sn == mission.aircraft_sn),
+            None,
+        )
+    return evaluate_preflight(mission, vehicle)
