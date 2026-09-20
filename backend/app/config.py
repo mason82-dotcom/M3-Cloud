@@ -93,6 +93,10 @@ class Settings(BaseSettings):
         default=1.5,
         validation_alias="M3CLOUD_LYREBIRD_TIMEOUT_SECONDS",
     )
+    lyrebird_telemetry_port: int = Field(
+        default=8081,
+        validation_alias="M3CLOUD_LYREBIRD_TELEMETRY_PORT",
+    )
 
 
 @lru_cache

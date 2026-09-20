@@ -1,72 +1,102 @@
 from __future__ import annotations
-
 import asyncio
+import json
+import math
 import time
 from typing import Any
-
 import httpx
-
 from app.config import settings
 from app.vehicles.base import VehicleSnapshot
-
 
 def _configured_hosts() -> list[str]:
     return [item.strip() for item in settings.lyrebird_hosts.split(",") if item.strip()]
 
-
-def _number(value: Any) -> int | float | None:
-    if isinstance(value, bool):
+def _finite(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return value if isinstance(value, (int, float)) else None
+    number = float(value)
+    return number if math.isfinite(number) else None
 
+def _object(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
-def normalize_config(host: str, config: dict[str, Any]) -> VehicleSnapshot:
-    """Normalize Lyrebird's documented GET /config snapshot.
+def normalize_telemetry(raw: dict[str, Any], now_ms: int | None = None) -> dict[str, Any]:
+    """Map Lyrebird TCP JSON to neutral M3-Cloud fields without inventing RTK/altitude data."""
+    location = _object(raw.get("location"))
+    attitude = _object(raw.get("attitude"))
+    speed = _object(raw.get("speed"))
+    phone = _object(raw.get("phoneLocation"))
+    gimbal = _object(raw.get("gimbalAttitude"))
+    north = _finite(speed.get("x") if "x" in speed else speed.get("north"))
+    east = _finite(speed.get("y") if "y" in speed else speed.get("east"))
+    horizontal_speed = math.hypot(north, east) if north is not None and east is not None else None
+    return {
+        "last_seen_ms": now_ms or int(time.time() * 1000),
+        "source": "lyrebird_tcp",
+        "latitude": _finite(location.get("latitude")),
+        "longitude": _finite(location.get("longitude")),
+        "relative_altitude_m": _finite(raw.get("altitude")),
+        "horizontal_speed_mps": horizontal_speed,
+        "vertical_speed_mps": _finite(speed.get("z") if "z" in speed else speed.get("up")),
+        "heading_deg": _finite(raw.get("heading")),
+        "gps_satellites": raw.get("satelliteCount") if isinstance(raw.get("satelliteCount"), int) else None,
+        "battery": {
+            "capacity_percent": raw.get("batteryLevel") if isinstance(raw.get("batteryLevel"), int) else None,
+            "remain_flight_time_s": raw.get("remainingFlightTime") if isinstance(raw.get("remainingFlightTime"), int) else None,
+        },
+        "attitude": {"yaw_deg": _finite(attitude.get("yaw")), "roll_deg": _finite(attitude.get("roll")), "pitch_deg": _finite(attitude.get("pitch"))},
+        "gimbal": {"yaw_deg": _finite(gimbal.get("yaw")), "roll_deg": _finite(gimbal.get("roll")), "pitch_deg": _finite(gimbal.get("pitch"))},
+        "flight_mode": raw.get("flightMode"),
+        "home_set": raw.get("homeSet"),
+        "distance_to_home_m": _finite(raw.get("distanceToHome")),
+        "camera": {"recording": raw.get("isRecording"), "zoom_ratio": _finite(raw.get("zoomRatio"))},
+        "controller": {
+            "latitude": _finite(phone.get("latitude")), "longitude": _finite(phone.get("longitude")),
+            "heading_deg": _finite(phone.get("heading")),
+            "battery_percent": phone.get("battery") if isinstance(phone.get("battery"), int) else None,
+            "wifi_rssi_dbm": phone.get("wifiRssi") if isinstance(phone.get("wifiRssi"), int) else None,
+        },
+        "safety": {
+            "ready_to_takeoff": raw.get("readyToTakeoff"),
+            "takeoff_block_reason": raw.get("takeoffBlockReason"),
+            "manual_override": raw.get("isManualOverrideActive"),
+        },
+    }
 
-    /config is intentionally used for discovery/identity only. Flight state remains on
-    Lyrebird's TCP/MAVLink telemetry channels and is not guessed from configuration fields.
-    """
-    name = str(config.get("droneName") or config.get("name") or host)
-    model = str(config.get("aircraftModel") or config.get("productName") or "LYREBIRD_AIRCRAFT")
-    serial = str(config.get("aircraftSerialNumber") or config.get("serialNumber") or host)
-    now = int(time.time() * 1000)
-    return VehicleSnapshot(
-        id=f"lyrebird:{serial}",
-        sn=serial,
-        name=name,
-        model=model,
-        source="lyrebird",
-        online=True,
-        updated_at_ms=now,
-        telemetry=None,
-    )
-
+def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any] | None = None) -> VehicleSnapshot:
+    name = str(config.get("droneName") or host)
+    return VehicleSnapshot(id=f"lyrebird:{host}", sn=f"lyrebird@{host}", name=name, model="LYREBIRD_AIRCRAFT", source="lyrebird", online=True, updated_at_ms=int(time.time() * 1000), telemetry=telemetry)
 
 class LyrebirdVehicleProvider:
-    """Read Lyrebird identity through its existing public HTTP surface.
-
-    Hosts are explicit configuration for the server deployment. We deliberately do not run
-    Lyrebird's UDP subnet discovery inside the web API process: container broadcast behaviour
-    is deployment-specific, while the canonical Lyrebird discovery implementation remains in
-    GroundStation/Python.
-    """
-
     source = "lyrebird"
-
     def __init__(self, client: httpx.AsyncClient | None = None):
         self._client = client
 
+    async def _read_telemetry(self, host: str) -> dict[str, Any] | None:
+        writer = None
+        try:
+            reader, writer = await asyncio.wait_for(asyncio.open_connection(host, settings.lyrebird_telemetry_port), timeout=settings.lyrebird_timeout_seconds)
+            line = await asyncio.wait_for(reader.readline(), timeout=settings.lyrebird_timeout_seconds)
+            raw = json.loads(line.decode("utf-8"))
+            return normalize_telemetry(raw) if isinstance(raw, dict) else None
+        except (OSError, asyncio.TimeoutError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        finally:
+            if writer is not None:
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except OSError:
+                    pass
+
     async def _probe(self, client: httpx.AsyncClient, host: str) -> VehicleSnapshot | None:
         try:
-            response = await client.get(
-                f"http://{host}:{settings.lyrebird_http_port}/config",
-                timeout=settings.lyrebird_timeout_seconds,
-            )
+            response = await client.get(f"http://{host}:{settings.lyrebird_http_port}/config", timeout=settings.lyrebird_timeout_seconds)
             response.raise_for_status()
             config = response.json()
             if not isinstance(config, dict):
                 return None
-            return normalize_config(host, config)
+            return normalize_config(host, config, await self._read_telemetry(host))
         except (httpx.HTTPError, ValueError):
             return None
 
