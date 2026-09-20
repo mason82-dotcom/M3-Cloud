@@ -39,7 +39,12 @@ internal data class MavlinkSnapshot(
     val altitudeAslM: Double = 0.0,
     /** KeyAltitude: relative to take-off/home reference; despite the legacy name, not terrain AGL. */
     val altitudeAglM: Double = 0.0,
+    /** Source of latitude/longitude after position resolution. */
     val positionSource: String = "FLIGHT_CONTROLLER",
+    /** Raw DJI flight-controller position before any RTK-fused horizontal substitution. */
+    val flightControllerLatitudeDeg: Double = 0.0,
+    val flightControllerLongitudeDeg: Double = 0.0,
+    val flightControllerAltitudeM: Double? = null,
 
     // Velocity in the NED frame, metres per second. Down is positive.
     val velocityNorthMps: Double = 0.0,
