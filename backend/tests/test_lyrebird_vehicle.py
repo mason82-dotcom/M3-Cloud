@@ -62,6 +62,8 @@ def test_camera_capability_probe_provides_explicit_m3m_identity():
             "visionAssist": {
                 "componentIndex": "VISION_ASSIST",
                 "available": True,
+                "streamAvailable": True,
+                "motorsOn": True,
                 "availableCameraIndices": ["LEFT_OR_MAIN", "VISION_ASSIST"],
                 "streamEnabled": True,
                 "enabled": True,
@@ -82,6 +84,8 @@ def test_camera_capability_probe_provides_explicit_m3m_identity():
     assert "MS_NIR_CAMERA" in vehicle.telemetry["payload"]["camera"]["capture_stored_sources"]
     assert vehicle.telemetry["payload"]["vision_assist"]["component_index"] == "VISION_ASSIST"
     assert vehicle.telemetry["payload"]["vision_assist"]["available"] is True
+    assert vehicle.telemetry["payload"]["vision_assist"]["stream_available"] is True
+    assert vehicle.telemetry["payload"]["vision_assist"]["motors_on"] is True
     assert vehicle.telemetry["payload"]["vision_assist"]["direction"] == "FRONT"
     assert "AUTO" in vehicle.telemetry["payload"]["vision_assist"]["direction_range"]
 
