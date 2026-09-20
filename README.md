@@ -317,6 +317,9 @@ Configure the timezone that was active on the aircraft/controller when the media
 M3CLOUD_MEDIA_FILENAME_TIMEZONE=Europe/Berlin
 M3CLOUD_MEDIA_AUTO_MATCH_FLIGHTS=true
 M3CLOUD_MEDIA_AUTO_MATCH_MARGIN_SECONDS=300
+M3CLOUD_MEDIA_AUTO_MATCH_MAX_DISTANCE_M=100
+M3CLOUD_MEDIA_AUTO_MATCH_MIN_GPS_FRACTION=0.8
+M3CLOUD_MEDIA_AUTO_MATCH_MAX_GPS_SAMPLES=64
 ```
 
 Automatic assignment is performed only when exactly one flight contains the complete dataset
@@ -355,3 +358,36 @@ DJI RelativeAltitude     -> relative to takeoff point
 Existing catalog entries are backfilled automatically on the next media scan via the metadata
 schema version. Processing jobs freeze the normalized metadata together with size/hash/capture
 time so later rescans cannot silently change the processing input manifest.
+
+
+### Flight ↔ dataset validation
+
+Automatic media-to-flight assignment is deliberately conservative and runs in two stages:
+
+1. The complete dataset capture-time interval must fit inside the flight interval plus
+   `M3CLOUD_MEDIA_AUTO_MATCH_MARGIN_SECONDS`.
+2. If the media contains GPS metadata, sampled image positions are validated against the
+   persisted PostGIS flight track. By default at least 80% of the sampled image positions
+   must be within 100 m of the track.
+
+GPS never rescues a time-incompatible flight; it only confirms or rejects time candidates.
+The maximum number of image GPS positions used per validation is bounded by
+`M3CLOUD_MEDIA_AUTO_MATCH_MAX_GPS_SAMPLES` to keep rescans deterministic and inexpensive.
+
+Match states:
+
+```text
+MATCHED_TIME_GPS   exactly one time candidate also passes GPS validation
+MATCHED_TIME_ONLY  exactly one time candidate; dataset has no image GPS
+AMBIGUOUS_TIME     more than one time candidate and no image GPS
+AMBIGUOUS_GPS      more than one time candidate also passes GPS validation
+GPS_REJECTED       time candidate(s) exist, but GPS disagrees with all tracked flights
+GPS_UNVERIFIED     dataset has GPS, but candidate flight has no persisted track positions
+NO_MATCH           no flight contains the dataset capture window
+NO_CAPTURE_TIME    dataset has no usable capture time
+MANUAL             operator-selected association; automatic matching will not replace it
+```
+
+The dataset API also exposes `flight_match_details`, including the configured distance
+threshold, GPS sampling coverage, per-candidate track-point count, fraction of image positions
+inside the threshold, median distance, maximum distance, and pass/reject status.
