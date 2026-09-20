@@ -21,7 +21,11 @@ from app.api_missions import (
 from app.api_projects import ProjectCreate, SurveyCreate, create_project, create_survey
 from app.database import session_factory
 from app.missions.deployment import deployment_sha256
-from app.missions.uploader import MissionUploadError, MissionUploadResult
+from app.missions.uploader import (
+    MissionUploadError,
+    MissionUploadResult,
+    recover_interrupted_uploads,
+)
 from app.missions.plans import (
     compatibility,
     compile_mission_item_int,
@@ -592,3 +596,80 @@ async def test_mission_upload_endpoint_blocks_active_runtime(monkeypatch) -> Non
         assert deployment is not None
         assert deployment.upload_status == "SEALED"
         assert deployment.upload_attempts == 0
+
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_recover_interrupted_mission_upload(monkeypatch) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(MissionDeployment))
+        await session.execute(delete(Mission))
+        await session.commit()
+
+    vehicle = VehicleSnapshot(
+        id="vehicle:M3E-RECOVER",
+        sn="M3E-RECOVER",
+        name="M3E",
+        model="M3E",
+        source="lyrebird",
+        online=True,
+        sources=("lyrebird",),
+        telemetry={
+            "mission": {"state": 2, "current_seq": 0, "mission_id": 0},
+            "aircraft_state": {
+                "failsafe": False,
+                "positioning": {
+                    "fix": "FIXED",
+                    "rtk": {"fix": "FIXED"},
+                },
+            },
+            "safety": {
+                "ready_to_takeoff": True,
+                "manual_override": False,
+            },
+            "battery": {"capacity_percent": 80},
+        },
+    )
+    monkeypatch.setattr(
+        "app.api_missions._registry",
+        lambda request: _DeploymentRegistry(vehicle),
+    )
+
+    created = await create_mission(
+        MissionCreate(
+            name="Interrupted upload",
+            aircraft_sn="M3E-RECOVER",
+            preferred_executor="DJI_NATIVE",
+            items=[
+                MissionItemInput(
+                    command=16,
+                    latitude_deg=49.0,
+                    longitude_deg=8.0,
+                    altitude_m=50.0,
+                )
+            ],
+        )
+    )
+    mission_id = __import__("uuid").UUID(created["id"])
+    sealed = await create_mission_deployment(mission_id, object())
+    deployment_id = __import__("uuid").UUID(sealed["id"])
+
+    async with session_factory() as session:
+        deployment = await session.get(MissionDeployment, deployment_id)
+        assert deployment is not None
+        deployment.upload_status = "UPLOADING"
+        deployment.upload_attempts = 1
+        deployment.upload_details = {}
+        await session.commit()
+
+    assert await recover_interrupted_uploads(session_factory) == 1
+    assert await recover_interrupted_uploads(session_factory) == 0
+
+    async with session_factory() as session:
+        recovered = await session.get(MissionDeployment, deployment_id)
+        assert recovered is not None
+        assert recovered.upload_status == "UPLOAD_INTERRUPTED"
+        assert recovered.upload_attempts == 1
+        assert recovered.upload_details["execution_started"] is False
+        assert recovered.upload_details["safe_to_retry_same_sealed_package"] is True
+        assert "backend restarted" in recovered.upload_error
