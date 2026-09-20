@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -59,3 +59,39 @@ class TelemetrySample(Base):
     position_convergence: Mapped[str | None] = mapped_column(String(32), nullable=True)
     gps_satellites: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rtk_satellites: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+
+class MediaAsset(Base):
+    __tablename__ = "media_assets"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    relative_path: Mapped[str] = mapped_column(String(1024), unique=True, index=True)
+    filename: Mapped[str] = mapped_column(String(512), index=True)
+    extension: Mapped[str] = mapped_column(String(16), index=True)
+
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    mtime_ns: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+
+    platform: Mapped[str] = mapped_column(String(32), default="UNKNOWN", index=True)
+    media_kind: Mapped[str] = mapped_column(String(32), default="UNKNOWN", index=True)
+    capture_group: Mapped[str | None] = mapped_column(String(768), nullable=True, index=True)
+
+    storage_mode: Mapped[str] = mapped_column(String(32), default="EXTERNAL")
+    external_root: Mapped[str] = mapped_column(String(128), default="media-import")
+    present: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    duplicate_of: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("media_assets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

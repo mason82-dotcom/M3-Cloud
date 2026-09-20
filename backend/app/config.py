@@ -110,6 +110,23 @@ class Settings(BaseSettings):
         validation_alias="M3CLOUD_LYREBIRD_MAVLINK_TTL_SECONDS",
     )
 
+    media_import_enabled: bool = Field(
+        default=True,
+        validation_alias="M3CLOUD_MEDIA_IMPORT_ENABLED",
+    )
+    media_import_root: str = Field(
+        default="/media-import",
+        validation_alias="M3CLOUD_MEDIA_IMPORT_ROOT",
+    )
+    media_import_scan_interval_seconds: float = Field(
+        default=15.0,
+        validation_alias="M3CLOUD_MEDIA_IMPORT_SCAN_INTERVAL_SECONDS",
+    )
+    media_import_min_age_seconds: float = Field(
+        default=5.0,
+        validation_alias="M3CLOUD_MEDIA_IMPORT_MIN_AGE_SECONDS",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

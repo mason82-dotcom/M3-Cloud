@@ -4,6 +4,7 @@ from fastapi import FastAPI, Response, status
 
 from app.api_devices import router as devices_router
 from app.api_flights import router as flights_router
+from app.api_media import router as media_router
 from app.config import settings
 from app.database import session_factory
 from app.dji.service import DJIService
@@ -11,6 +12,8 @@ from app.flights.router import FlightTelemetryRouter
 from app.flights.service import FlightRecorder
 from app.health import readiness
 from app.live import LiveTelemetryHub, router as live_router
+from app.media.importer import MediaImporter
+from app.media.watcher import MediaImportWatcher
 from app.api_operations import router as operations_router
 from app.redis_client import redis_client
 from app.vehicles.mavlink import lyrebird_mavlink_collector
@@ -43,9 +46,26 @@ async def lifespan(app: FastAPI):
     app.state.lyrebird_live = lyrebird_live
     app.state.lyrebird_mavlink_collector = lyrebird_mavlink_collector
 
+    media_importer = None
+    media_watcher = None
+    if settings.media_import_enabled:
+        media_importer = MediaImporter(
+            session_factory,
+            root=settings.media_import_root,
+            min_age_seconds=settings.media_import_min_age_seconds,
+        )
+        media_watcher = MediaImportWatcher(
+            media_importer,
+            interval_seconds=settings.media_import_scan_interval_seconds,
+        )
+        app.state.media_importer = media_importer
+        app.state.media_import_watcher = media_watcher
+
     await live_hub.start()
     await lyrebird_mavlink_collector.start()
     await lyrebird_live.start()
+    if media_watcher is not None:
+        await media_watcher.start()
 
     if settings.dji_mqtt_enabled:
         await dji_service.transport.start()
@@ -55,6 +75,8 @@ async def lifespan(app: FastAPI):
     finally:
         if settings.dji_mqtt_enabled:
             await dji_service.transport.stop()
+        if media_watcher is not None:
+            await media_watcher.stop()
         await lyrebird_live.stop()
         await lyrebird_mavlink_collector.stop()
         await live_hub.stop()
@@ -67,6 +89,7 @@ app = FastAPI(
 )
 app.include_router(devices_router)
 app.include_router(flights_router)
+app.include_router(media_router)
 app.include_router(live_router)
 app.include_router(operations_router)
 
