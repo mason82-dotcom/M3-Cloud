@@ -8,6 +8,7 @@ import type {
   MediaDatasetManifest,
   MediaGroup,
   MediaImportStatus,
+  MediaPositionCollection,
   ProcessingJob,
   ProcessingMapInfo,
   ProcessingProfile,
@@ -144,6 +145,23 @@ export async function fetchMediaDatasetManifest(
     throw new Error(`Media dataset manifest failed: ${response.status}`);
   }
   return response.json() as Promise<MediaDatasetManifest>;
+}
+
+export async function fetchMediaPositions(
+  platform?: string,
+  mediaKind?: string,
+  captureGroup?: string,
+): Promise<MediaPositionCollection> {
+  const params = new URLSearchParams({ limit: "50000" });
+  if (platform) params.set("platform", platform);
+  if (mediaKind) params.set("media_kind", mediaKind);
+  if (captureGroup) params.set("capture_group", captureGroup);
+
+  const response = await fetch(`/api/v1/media/positions?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Media positions request failed: ${response.status}`);
+  }
+  return response.json() as Promise<MediaPositionCollection>;
 }
 
 export async function fetchMediaGroups(

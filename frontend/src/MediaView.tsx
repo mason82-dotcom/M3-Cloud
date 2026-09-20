@@ -9,6 +9,7 @@ import {
   fetchMediaDatasets,
   fetchMediaGroups,
   fetchMediaImportStatus,
+  fetchMediaPositions,
   mediaDatasetManifestDownloadUrl,
   scanMediaImport,
 } from "./api";
@@ -18,8 +19,10 @@ import type {
   MediaDatasetManifest,
   MediaGroup,
   MediaImportStatus,
+  MediaPositionCollection,
   FlightSummary,
 } from "./types";
+import { MediaCaptureMap } from "./MediaCaptureMap";
 
 function bytes(value: number): string {
   if (!Number.isFinite(value) || value < 0) return "—";
@@ -44,6 +47,10 @@ export function MediaView() {
   const [groups, setGroups] = useState<MediaGroup[]>([]);
   const [flights, setFlights] = useState<FlightSummary[]>([]);
   const [status, setStatus] = useState<MediaImportStatus | null>(null);
+  const [positions, setPositions] = useState<MediaPositionCollection>({
+    type: "FeatureCollection",
+    features: [],
+  });
   const [platform, setPlatform] = useState("");
   const [mediaKind, setMediaKind] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -55,23 +62,36 @@ export function MediaView() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextAssets, nextDatasets, nextGroups, nextStatus, nextFlights] = await Promise.all([
+      const [
+        nextAssets,
+        nextDatasets,
+        nextGroups,
+        nextStatus,
+        nextFlights,
+        nextPositions,
+      ] = await Promise.all([
         fetchMedia(platform || undefined, mediaKind || undefined),
         fetchMediaDatasets(platform || undefined),
         fetchMediaGroups(platform || undefined),
         fetchMediaImportStatus(),
         fetchFlights(undefined, 500),
+        fetchMediaPositions(
+          platform || undefined,
+          mediaKind || undefined,
+          selectedGroup || undefined,
+        ),
       ]);
       setAssets(nextAssets);
       setDatasets(nextDatasets);
       setGroups(nextGroups);
       setStatus(nextStatus);
       setFlights(nextFlights);
+      setPositions(nextPositions);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
-  }, [mediaKind, platform]);
+  }, [mediaKind, platform, selectedGroup]);
 
   useEffect(() => {
     void refresh();
@@ -317,6 +337,20 @@ export function MediaView() {
           </div>
         </section>
       ) : null}
+
+      <section className="panel mediaGeoQa">
+        <div className="panelHead">
+          <div>
+            <h2>Capture positions</h2>
+            <small>EXIF GPS / DJI XMP geospatial QA before processing</small>
+          </div>
+          <span>{positions.features.length} geotagged</span>
+        </div>
+        <MediaCaptureMap
+          data={positions}
+          onSelect={(assetId) => setSelectedAssetId(assetId)}
+        />
+      </section>
 
       <section className="panel mediaCatalog">
         <div className="panelHead">

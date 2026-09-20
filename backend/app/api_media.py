@@ -291,6 +291,71 @@ async def auto_match_dataset_flight(
         }
 
 
+@router.get("/positions")
+async def media_positions(
+    platform: str | None = None,
+    media_kind: str | None = None,
+    capture_group: str | None = None,
+    limit: int = Query(default=20_000, ge=1, le=50_000),
+) -> dict[str, object]:
+    statement = (
+        select(MediaAsset)
+        .where(
+            MediaAsset.present.is_(True),
+            MediaAsset.duplicate_of.is_(None),
+            MediaAsset.gps_latitude.is_not(None),
+            MediaAsset.gps_longitude.is_not(None),
+        )
+        .order_by(MediaAsset.capture_time_utc, MediaAsset.relative_path)
+        .limit(limit)
+    )
+    if platform:
+        statement = statement.where(MediaAsset.platform == platform.upper())
+    if media_kind:
+        statement = statement.where(MediaAsset.media_kind == media_kind.upper())
+    if capture_group:
+        statement = statement.where(MediaAsset.capture_group == capture_group)
+
+    async with session_factory() as session:
+        assets = (await session.scalars(statement)).all()
+
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [
+                        asset.gps_longitude,
+                        asset.gps_latitude,
+                    ],
+                },
+                "properties": {
+                    "id": str(asset.id),
+                    "filename": asset.filename,
+                    "relative_path": asset.relative_path,
+                    "platform": asset.platform,
+                    "media_kind": asset.media_kind,
+                    "capture_group": asset.capture_group,
+                    "capture_time_utc": (
+                        asset.capture_time_utc.isoformat()
+                        if asset.capture_time_utc
+                        else None
+                    ),
+                    "capture_time_source": asset.capture_time_source,
+                    "gps_altitude_m": asset.gps_altitude_m,
+                    "gps_altitude_ref": asset.gps_altitude_ref,
+                    "dji_absolute_altitude_m": asset.dji_absolute_altitude_m,
+                    "dji_relative_altitude_m": asset.dji_relative_altitude_m,
+                    "metadata_status": asset.metadata_status,
+                },
+            }
+            for asset in assets
+        ],
+    }
+
+
 @router.get("/groups")
 async def media_groups(
     platform: str | None = None,

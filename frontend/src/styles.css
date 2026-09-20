@@ -1519,3 +1519,19 @@ button { font: inherit; }
     grid-template-columns: 1fr;
   }
 }
+
+
+.mediaGeoQa {
+  overflow: hidden;
+  min-height: 360px;
+}
+
+.mediaCaptureMapShell {
+  position: relative;
+  height: 330px;
+}
+
+.mediaCaptureMap {
+  position: absolute;
+  inset: 0;
+}

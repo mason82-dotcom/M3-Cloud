@@ -286,6 +286,27 @@ export interface MediaAsset {
   last_seen_at: string;
 }
 
+export interface MediaPositionProperties {
+  id: string;
+  filename: string;
+  relative_path: string;
+  platform: string;
+  media_kind: string;
+  capture_group?: string | null;
+  capture_time_utc?: string | null;
+  capture_time_source?: string | null;
+  gps_altitude_m?: number | null;
+  gps_altitude_ref?: string | null;
+  dji_absolute_altitude_m?: number | null;
+  dji_relative_altitude_m?: number | null;
+  metadata_status?: string | null;
+}
+
+export type MediaPositionCollection = import("geojson").FeatureCollection<
+  import("geojson").Point,
+  MediaPositionProperties
+>;
+
 export interface MediaGroup {
   capture_group: string;
   platform: string;
