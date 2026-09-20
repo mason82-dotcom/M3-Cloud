@@ -1,7 +1,7 @@
 import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.mjs';
 
 const API='/api/v1';
-const state={vehicles:[],map:null,markers:new Map(),selectedVehicleId:null};
+const state={vehicles:[],map:null,markers:new Map(),selectedVehicleId:null,activeView:'operations'};
 const $=(s)=>document.querySelector(s);
 const texts={
  fleet:['Fleet','Aircraft, Payloads, RTK und Verbindungsstatus.'],
@@ -22,7 +22,7 @@ function initMap(){
 function n(v,d='—'){return v===null||v===undefined?d:v}
 function normalizeVehicle(v){
  const t=v.telemetry||{}; const p=t.payload||{}; const b=t.battery||{};
- return {raw:v,id:v.id||v.sn||v.device_sn||'unknown',name:v.name||v.callsign||v.model||'Aircraft',model:v.model||v.product||p.platform||'DJI',source:v.source||'unknown',online:v.online!==false,lat:Number(v.lat??v.latitude??t.latitude),lng:Number(v.lng??v.longitude??t.longitude),alt:v.alt??v.altitude??t.relative_altitude_m,amsl:t.amsl_altitude_m,rtk:v.rtk||v.rtk_status||t.rtk?.fix||'—',battery:v.battery??v.battery_percent??b.capacity_percent,sats:v.satellites??v.gps_satellites??t.gps_satellites,payload:p,lrf:t.lrf||{},camera:t.camera||{}}
+ return {raw:v,telemetry:t,id:v.id||v.sn||v.device_sn||'unknown',name:v.name||v.callsign||v.model||'Aircraft',model:v.model||v.product||p.platform||'DJI',source:v.source||'unknown',online:v.online!==false,lat:Number(v.lat??v.latitude??t.latitude),lng:Number(v.lng??v.longitude??t.longitude),alt:v.alt??v.altitude??t.relative_altitude_m,amsl:t.amsl_altitude_m,rtk:v.rtk||v.rtk_status||t.rtk?.fix||'—',battery:v.battery??v.battery_percent??b.capacity_percent,sats:v.satellites??v.gps_satellites??t.gps_satellites,payload:p,lrf:t.lrf||{},camera:t.camera||{}}
 }
 function esc(v){return String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function payloadCards(v){
@@ -39,6 +39,25 @@ function renderPayload(vs){
  if(!v){$('#payloadPlatform').textContent='UNKNOWN';$('#payloadSubtitle').textContent='Aircraft auswählen';$('#payloadBody').className='empty';$('#payloadBody').textContent='Ein Aircraft in der Fleet auswählen, um Payload-Daten anzuzeigen.';return}
  $('#payloadPlatform').textContent=v.payload?.platform||v.model||'UNKNOWN';$('#payloadSubtitle').textContent=v.name+' · '+v.source;$('#payloadBody').className='payloadBody';$('#payloadBody').innerHTML=payloadCards(v);
 }
+function metric(label,value,unit=''){return `<div class="liveMetric"><span>${esc(label)}</span><strong>${esc(value)}${value!==null&&value!==undefined&&value!=='—'?esc(unit):''}</strong></div>`}
+function renderLive(vs){
+ let v=vs.find(x=>x.id===state.selectedVehicleId); if(!v&&vs.length)v=vs[0];
+ if(!v){$('#liveContent').innerHTML='<div class="empty">Noch keine Live-Telemetrie.</div>';return}
+ const t=v.telemetry||{}, c=t.controller||{}, a=t.attitude||{}, g=t.gimbal||{}, r=t.rtk||{}, s=t.safety||{}, h=t.home||{}, p=v.payload||{}, platform=String(p.platform||v.model||'UNKNOWN').toUpperCase();
+ const payload=platform==='M3T'?metric('Thermal',p.thermal?'available':'—')+metric('LRF',v.lrf.distance_m,' m'):
+  platform==='M3M'?metric('Multispectral',p.multispectral?'available':'—')+metric('Sources',(p.camera?.capture_stored_sources||[]).length):
+  platform==='M3E'?metric('Mapping','M3E')+metric('Zoom',t.camera?.zoom_focal_length_mm,' mm'):
+  metric('Payload','UNKNOWN');
+ $('#liveContent').innerHTML=`<div class="liveHead"><div><h2>${esc(v.name)}</h2><p>${esc(v.model)} · ${esc(v.source)}</p></div><span class="status ${v.online?'good':'bad'}">${v.online?'ONLINE':'OFFLINE'}</span></div>
+ <div class="liveGrid">
+  <section class="panel liveSection"><div class="panelHead"><div><h2>Aircraft</h2><small>Position / motion</small></div></div><div class="liveMetrics">${metric('Latitude',Number.isFinite(v.lat)?v.lat.toFixed(7):'—')}${metric('Longitude',Number.isFinite(v.lng)?v.lng.toFixed(7):'—')}${metric('Relative altitude',v.alt,' m')}${metric('AMSL altitude',v.amsl,' m')}${metric('Heading',t.heading_deg,'°')}${metric('Battery',v.battery,'%')}</div></section>
+  <section class="panel liveSection"><div class="panelHead"><div><h2>GNSS / RTK</h2><small>Fix and reference state</small></div></div><div class="liveMetrics">${metric('RTK',r.fix||v.rtk)}${metric('GNSS fix type',t.gnss_fix_type)}${metric('Satellites',v.sats)}${metric('Home set',t.home_set===true?'yes':t.home_set===false?'no':'—')}${metric('Home lat',h.latitude)}${metric('Home lon',h.longitude)}</div></section>
+  <section class="panel liveSection"><div class="panelHead"><div><h2>Controller / AirLink</h2><small>RC Pro / ground side</small></div></div><div class="liveMetrics">${metric('AirLink RSSI',c.airlink_rssi_raw)}${metric('Wi-Fi RSSI',c.wifi_rssi_dbm,' dBm')}${metric('Controller battery',c.battery_percent,'%')}${metric('Controller lat',c.latitude)}${metric('Controller lon',c.longitude)}${metric('Controller heading',c.heading_deg,'°')}</div></section>
+  <section class="panel liveSection"><div class="panelHead"><div><h2>Attitude / Gimbal</h2><small>Aircraft and payload orientation</small></div></div><div class="liveMetrics">${metric('Aircraft roll',a.roll_deg,'°')}${metric('Aircraft pitch',a.pitch_deg,'°')}${metric('Aircraft yaw',a.yaw_deg,'°')}${metric('Gimbal roll',g.roll_deg??g.joint_roll_deg,'°')}${metric('Gimbal pitch',g.pitch_deg??g.joint_pitch_deg,'°')}${metric('Gimbal yaw',g.yaw_deg??g.joint_yaw_deg,'°')}</div></section>
+  <section class="panel liveSection payloadLive"><div class="panelHead"><div><h2>${esc(platform)} Payload</h2><small>Model-specific sensors</small></div></div><div class="liveMetrics">${payload}${metric('Camera mode',p.camera?.camera_mode)}${metric('Live source',p.camera?.live_view_source)}${metric('Recording',t.camera?.recording===true?'yes':t.camera?.recording===false?'no':'—')}</div></section>
+  <section class="panel liveSection"><div class="panelHead"><div><h2>Safety</h2><small>Operational state</small></div></div><div class="liveMetrics">${metric('Ready to take off',s.ready_to_takeoff===true?'yes':s.ready_to_takeoff===false?'no':'—')}${metric('Manual override',s.manual_override===true?'active':s.manual_override===false?'no':'—')}${metric('Block reason',s.takeoff_block_reason||'—')}${metric('Data source',t.source||v.source)}</div></section>
+ </div>`;
+}
 function render(){
  const vs=state.vehicles.map(normalizeVehicle);
  $('#aircraftCount').textContent=vs.length; $('#onlineCount').textContent=vs.filter(v=>v.online).length;
@@ -47,6 +66,7 @@ function render(){
  $('#fleetList').innerHTML=vs.length?vs.map(v=>`<article class="fleetItem ${v.id===state.selectedVehicleId?'selected':''}" data-vehicle-id="${esc(v.id)}"><div class="row"><div><strong>${v.name}</strong><small>${v.model} · ${v.source}</small></div><span class="badge ${String(v.rtk).toUpperCase().includes('FIX')?'fix':''}">${n(v.rtk)}</span></div><div class="telemetry"><span>Battery<b>${n(v.battery)}${v.battery!=null?'%':''}</b></span><span>Altitude<b>${n(v.alt)}${v.alt!=null?' m':''}</b></span><span>Satellites<b>${n(v.sats)}</b></span></div></article>`).join(''):'<div class="empty">Noch keine Aircraft-Telemetrie vom Backend.</div>';
  document.querySelectorAll('.fleetItem[data-vehicle-id]').forEach(el=>el.addEventListener('click',()=>{state.selectedVehicleId=el.dataset.vehicleId;render()}));
  renderPayload(vs);
+ renderLive(vs);
  updateMarkers(vs);
 }
 function updateMarkers(vs){
@@ -64,6 +84,6 @@ async function refresh(){
  try{const data=await getJson(API+'/vehicles');state.vehicles=Array.isArray(data)?data:(data.items||data.vehicles||[])}catch(e){state.vehicles=[]}
  render();
 }
-document.querySelectorAll('.navItem').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.navItem').forEach(x=>x.classList.remove('active'));b.classList.add('active');const v=b.dataset.view;if(v==='operations'){$('#operations').classList.add('active');$('#genericView').classList.remove('active');$('#viewTitle').textContent='Operations';$('#viewSubtitle').textContent='Fleet, RTK und Missionen im Überblick';setTimeout(()=>state.map?.resize(),0)}else{$('#operations').classList.remove('active');$('#genericView').classList.add('active');$('#genericTitle').textContent=texts[v][0];$('#genericText').textContent=texts[v][1];$('#viewTitle').textContent=texts[v][0];$('#viewSubtitle').textContent=texts[v][1]}}));
+document.querySelectorAll('.navItem').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.navItem').forEach(x=>x.classList.remove('active'));b.classList.add('active');const v=b.dataset.view;state.activeView=v;$('#operations').classList.remove('active');$('#liveView').classList.remove('active');$('#genericView').classList.remove('active');if(v==='operations'){$('#operations').classList.add('active');$('#viewTitle').textContent='Operations';$('#viewSubtitle').textContent='Fleet, RTK und Missionen im Überblick';setTimeout(()=>state.map?.resize(),0)}else if(v==='live'){$('#liveView').classList.add('active');$('#viewTitle').textContent='Live';$('#viewSubtitle').textContent='Aircraft, RTK, Controller, Gimbal und Payload in Echtzeit';render()}else{$('#genericView').classList.add('active');$('#genericTitle').textContent=texts[v][0];$('#genericText').textContent=texts[v][1];$('#viewTitle').textContent=texts[v][0];$('#viewSubtitle').textContent=texts[v][1]}}));
 $('#refreshBtn').addEventListener('click',refresh);
 initMap(); refresh(); setInterval(refresh,5000);
