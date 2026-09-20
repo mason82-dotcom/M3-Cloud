@@ -189,6 +189,20 @@ export interface MissionPlanItem {
   autocontinue: boolean;
 }
 
+export interface MissionRevision {
+  mission_id: string;
+  version: number;
+  plan_sha256: string;
+  item_count: number;
+  plan: {
+    schema_version: number;
+    protocol: string;
+    items: MissionPlanItem[];
+  };
+  compatibility: Mission["compatibility"];
+  created_at: string;
+}
+
 export interface MissionRuntime {
   available: boolean;
   source?: string;

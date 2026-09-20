@@ -84,6 +84,21 @@ class Mission(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class MissionRevision(Base):
+    __tablename__ = "mission_revisions"
+
+    mission_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("missions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    plan_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    item_count: Mapped[int] = mapped_column(Integer)
+    plan_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class Flight(Base):
     __tablename__ = "flights"
 

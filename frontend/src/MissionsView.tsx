@@ -5,15 +5,18 @@ import type { FeatureCollection, LineString, Point } from "geojson";
 
 import {
   createMission,
+  fetchMissionRevisions,
   fetchMissions,
   fetchProjects,
   fetchProjectSurveys,
   fetchVehicles,
   updateMission,
+  missionRevisionDownloadUrl,
 } from "./api";
 import type {
   Mission,
   MissionPlanItem,
+  MissionRevision,
   Project,
   Survey,
   Vehicle,
@@ -243,6 +246,7 @@ export function MissionsView() {
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [revisions, setRevisions] = useState<MissionRevision[]>([]);
   const [draftItems, setDraftItems] = useState<MissionPlanItem[]>([]);
   const [newName, setNewName] = useState("");
   const [newSurveyId, setNewSurveyId] = useState("");
@@ -288,6 +292,21 @@ export function MissionsView() {
 
   useEffect(() => {
     setDraftItems(selected ? selected.plan.items.map((item) => ({ ...item })) : []);
+    if (!selectedId) {
+      setRevisions([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchMissionRevisions(selectedId)
+      .then((items) => {
+        if (!cancelled) setRevisions(items);
+      })
+      .catch(() => {
+        if (!cancelled) setRevisions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedId, selected?.plan_version]);
 
   const surveyProject = useMemo(
@@ -337,6 +356,7 @@ export function MissionsView() {
         current.map((mission) => mission.id === updated.id ? updated : mission),
       );
       setDraftItems(updated.plan.items);
+      setRevisions(await fetchMissionRevisions(updated.id));
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -547,6 +567,20 @@ export function MissionsView() {
                   <dt>M3-Cloud execute</dt><dd>disabled</dd>
                   <dt>DJI-native execution</dt><dd>not asserted</dd>
                 </dl>
+
+                <div className="missionRevisionBox">
+                  <strong>Immutable revisions</strong>
+                  <div>
+                    {revisions.map((revision) => (
+                      <a
+                        href={missionRevisionDownloadUrl(selected.id, revision.version)}
+                        key={revision.version}
+                      >
+                        v{revision.version} · {revision.plan_sha256.slice(0, 8)}
+                      </a>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="missionRuntimeBox">
                   <strong>Observed aircraft runtime</strong>

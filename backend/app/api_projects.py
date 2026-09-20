@@ -19,6 +19,7 @@ from app.models import (
     MediaAsset,
     MediaDatasetRecord,
     Mission,
+    MissionRevision,
     ProcessingJob,
     ProcessingJobAsset,
     ProcessingResult,
@@ -857,6 +858,22 @@ async def _survey_manifest_payload(
                 "item_count": mission.item_count,
                 "plan_sha256": mission.plan_sha256,
                 "plan": mission.plan_json,
+                "revisions": [
+                    {
+                        "version": revision.version,
+                        "plan_sha256": revision.plan_sha256,
+                        "item_count": revision.item_count,
+                        "plan": revision.plan_json,
+                        "created_at": revision.created_at.isoformat(),
+                    }
+                    for revision in (
+                        await session.scalars(
+                            select(MissionRevision)
+                            .where(MissionRevision.mission_id == mission.id)
+                            .order_by(MissionRevision.version)
+                        )
+                    ).all()
+                ],
                 "created_at": mission.created_at.isoformat(),
                 "updated_at": mission.updated_at.isoformat(),
             }

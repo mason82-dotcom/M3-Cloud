@@ -9,6 +9,8 @@ from app.api_missions import (
     MissionItemInput,
     MissionUpdate,
     create_mission,
+    mission_revision,
+    mission_revisions,
     update_mission,
 )
 from app.api_projects import ProjectCreate, SurveyCreate, create_project, create_survey
@@ -78,6 +80,16 @@ async def test_mission_plan_is_persistent_hashed_and_non_executable() -> None:
     )
     assert updated["plan_version"] == 2
     assert updated["plan_sha256"] != created["plan_sha256"]
+
+    revisions = await mission_revisions(mission_id)
+    assert [revision["version"] for revision in revisions] == [1, 2]
+    assert revisions[0]["plan_sha256"] == created["plan_sha256"]
+    assert revisions[1]["plan_sha256"] == updated["plan_sha256"]
+    assert revisions[0]["plan"]["items"][0]["altitude_m"] == 60.0
+    assert revisions[1]["plan"]["items"][0]["altitude_m"] == 70.0
+
+    first = await mission_revision(mission_id, 1)
+    assert first["plan_sha256"] == created["plan_sha256"]
 
     async with session_factory() as session:
         stored = await session.get(Mission, mission_id)

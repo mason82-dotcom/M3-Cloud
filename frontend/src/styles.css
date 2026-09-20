@@ -2216,3 +2216,34 @@ button { font: inherit; }
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+.missionRevisionBox {
+  display: grid;
+  gap: 6px;
+  margin: 12px 10px 0;
+  padding: 9px;
+  border: 1px solid #1d2935;
+  border-radius: 7px;
+  background: #0e151e;
+}
+
+.missionRevisionBox strong {
+  font-size: 10px;
+}
+
+.missionRevisionBox > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.missionRevisionBox a {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel2);
+  color: var(--info);
+  padding: 3px 5px;
+  font-size: 8px;
+  text-decoration: none;
+}

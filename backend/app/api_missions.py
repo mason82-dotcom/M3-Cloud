@@ -4,7 +4,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+import json
+
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -16,7 +19,7 @@ from app.missions.plans import (
     normalize_plan,
     plan_sha256,
 )
-from app.models import Mission, Survey
+from app.models import Mission, MissionRevision, Survey
 
 
 router = APIRouter(prefix="/api/v1/missions", tags=["missions"])
@@ -216,6 +219,17 @@ async def create_mission(body: MissionCreate) -> dict[str, Any]:
                     detail="Mission name already exists in survey",
                 )
         session.add(mission)
+        await session.flush()
+        session.add(
+            MissionRevision(
+                mission_id=mission.id,
+                version=mission.plan_version,
+                plan_sha256=mission.plan_sha256,
+                item_count=mission.item_count,
+                plan_json=mission.plan_json,
+                created_at=now,
+            )
+        )
         await session.commit()
         await session.refresh(mission)
         return _base_payload(mission)
@@ -254,6 +268,16 @@ async def update_mission(
             mission.item_count = len(body.items)
             mission.plan_version += 1
             mission.status = "READY" if body.items else "DRAFT"
+            session.add(
+                MissionRevision(
+                    mission_id=mission.id,
+                    version=mission.plan_version,
+                    plan_sha256=mission.plan_sha256,
+                    item_count=mission.item_count,
+                    plan_json=mission.plan_json,
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
 
         if body.status is not None:
             if body.status == "READY" and mission.item_count == 0:
@@ -281,3 +305,74 @@ async def update_mission(
         await session.commit()
         await session.refresh(mission)
         return _base_payload(mission)
+
+
+def _revision_payload(revision: MissionRevision) -> dict[str, Any]:
+    return {
+        "mission_id": str(revision.mission_id),
+        "version": revision.version,
+        "plan_sha256": revision.plan_sha256,
+        "item_count": revision.item_count,
+        "plan": revision.plan_json,
+        "compatibility": compatibility(revision.plan_json or {}),
+        "created_at": revision.created_at.isoformat(),
+    }
+
+
+@router.get("/{mission_id}/revisions")
+async def mission_revisions(
+    mission_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    async with session_factory() as session:
+        if await session.get(Mission, mission_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission not found",
+            )
+        revisions = (
+            await session.scalars(
+                select(MissionRevision)
+                .where(MissionRevision.mission_id == mission_id)
+                .order_by(MissionRevision.version)
+            )
+        ).all()
+        return [_revision_payload(revision) for revision in revisions]
+
+
+@router.get("/{mission_id}/revisions/{version}")
+async def mission_revision(
+    mission_id: uuid.UUID,
+    version: int,
+) -> dict[str, Any]:
+    async with session_factory() as session:
+        revision = await session.get(MissionRevision, (mission_id, version))
+        if revision is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission revision not found",
+            )
+        return _revision_payload(revision)
+
+
+@router.get("/{mission_id}/revisions/{version}/download")
+async def download_mission_revision(
+    mission_id: uuid.UUID,
+    version: int,
+) -> Response:
+    revision = await mission_revision(mission_id, version)
+    payload = json.dumps(
+        revision,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="m3-mission-{mission_id}-v{version}.json"'
+            ),
+            "Content-Length": str(len(payload)),
+        },
+    )

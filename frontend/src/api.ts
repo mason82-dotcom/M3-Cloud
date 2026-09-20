@@ -11,6 +11,7 @@ import type {
   MediaPositionCollection,
   Mission,
   MissionPlanItem,
+  MissionRevision,
   ProcessingJob,
   ProcessingMapInfo,
   ProcessingProfile,
@@ -170,6 +171,25 @@ export async function fetchMissions(input: {
     throw new Error(`Missions request failed: ${response.status}`);
   }
   return response.json() as Promise<Mission[]>;
+}
+
+export async function fetchMissionRevisions(
+  missionId: string,
+): Promise<MissionRevision[]> {
+  const response = await fetch(
+    `/api/v1/missions/${encodeURIComponent(missionId)}/revisions`,
+  );
+  if (!response.ok) {
+    throw new Error(`Mission revisions request failed: ${response.status}`);
+  }
+  return response.json() as Promise<MissionRevision[]>;
+}
+
+export function missionRevisionDownloadUrl(
+  missionId: string,
+  version: number,
+): string {
+  return `/api/v1/missions/${encodeURIComponent(missionId)}/revisions/${version}/download`;
 }
 
 export async function createMission(input: {
