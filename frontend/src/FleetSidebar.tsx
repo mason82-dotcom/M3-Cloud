@@ -8,8 +8,8 @@ interface FleetSidebarProps {
   onSelect: (sn: string) => void;
 }
 
-function value(value: number | undefined, suffix = ""): string {
-  return value === undefined ? "—" : `${value.toFixed(1)}${suffix}`;
+function value(value: number | null | undefined, suffix = ""): string {
+  return value == null ? "—" : `${value.toFixed(1)}${suffix}`;
 }
 
 export function FleetSidebar({
@@ -71,7 +71,7 @@ export function FleetSidebar({
                   </div>
                   <div>
                     <span>BAT</span>
-                    <b>{battery === undefined ? "—" : `${battery}%`}</b>
+                    <b>{battery == null ? "—" : `${battery}%`}</b>
                   </div>
                   <div>
                     <span>POS</span>
