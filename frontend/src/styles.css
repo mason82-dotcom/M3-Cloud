@@ -472,3 +472,251 @@ button { font: inherit; }
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+.mediaView {
+  display: grid;
+  gap: 10px;
+}
+
+.mediaStatus {
+  min-height: auto;
+}
+
+.mediaStatus .panelHead button,
+.mediaFilters button,
+.mediaFilters select {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 6px 9px;
+}
+
+.mediaStatus .panelHead button,
+.mediaFilters button {
+  cursor: pointer;
+}
+
+.mediaStatus .panelHead button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.mediaStatusGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(100px, 1fr));
+  gap: 7px;
+  padding: 10px;
+}
+
+.mediaStatusGrid span {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #1d2935;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.mediaStatusGrid b {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+
+.mediaWarning {
+  margin: 0 10px 10px;
+  border: 1px solid #6b5733;
+  border-radius: 7px;
+  background: #2c2416;
+  color: #e7c277;
+  padding: 7px 9px;
+  font-size: 10px;
+}
+
+.mediaSummary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.mediaPlatform {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.mediaPlatform.active {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.mediaPlatform span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.mediaPlatform strong {
+  font-size: 18px;
+}
+
+.mediaPlatform.m3e { border-left: 3px solid var(--info); }
+.mediaPlatform.m3t { border-left: 3px solid var(--warn); }
+.mediaPlatform.m3m { border-left: 3px solid var(--good); }
+
+.mediaCatalog {
+  min-height: 520px;
+  overflow: hidden;
+}
+
+.mediaFilters {
+  display: flex;
+  gap: 6px;
+}
+
+.mediaCatalogGrid {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-height: 470px;
+}
+
+.mediaGroups {
+  overflow: auto;
+  border-right: 1px solid var(--line);
+  padding: 8px;
+}
+
+.mediaGroup {
+  width: 100%;
+  margin-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0e151e;
+  color: var(--text);
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mediaGroup.selected {
+  border-color: var(--accent);
+}
+
+.mediaGroup strong,
+.mediaGroup small {
+  display: block;
+}
+
+.mediaGroup strong {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.mediaGroup small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.mediaTableWrap {
+  min-width: 0;
+  overflow: auto;
+}
+
+.mediaTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+
+.mediaTable th,
+.mediaTable td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #1d2935;
+  text-align: left;
+  vertical-align: top;
+}
+
+.mediaTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #111821;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.mediaTable td strong,
+.mediaTable td small {
+  display: block;
+}
+
+.mediaTable td small {
+  max-width: 520px;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mediaState {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 5px;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.mediaState.present {
+  color: var(--good);
+  background: rgb(85 213 138 / 10%);
+}
+
+.mediaState.missing {
+  color: var(--bad);
+  background: rgb(239 114 114 / 10%);
+}
+
+@media (max-width: 1100px) {
+  .mediaStatusGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .mediaCatalogGrid {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .mediaSummary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .mediaStatusGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .mediaCatalogGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .mediaGroups {
+    max-height: 220px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}

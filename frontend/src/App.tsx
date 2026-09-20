@@ -4,6 +4,7 @@ import { fetchSystemHealth, fetchVehicles } from "./api";
 import { FlightHistoryView } from "./FlightHistory";
 import { useLiveEvents } from "./live";
 import { MapView } from "./MapView";
+import { MediaView } from "./MediaView";
 import type {
   ComponentHealth,
   LiveEvent,
@@ -610,6 +611,12 @@ export default function App() {
           </section>
         ) : null}
 
+        {activeView === "media" ? (
+          <section className="view active">
+            <MediaView />
+          </section>
+        ) : null}
+
         {activeView === "system" ? (
           <section className="view active">
             <div className="systemGrid">
@@ -623,7 +630,7 @@ export default function App() {
           </section>
         ) : null}
 
-        {!["operations", "live", "flights", "system"].includes(activeView) ? (
+        {!["operations", "live", "flights", "media", "system"].includes(activeView) ? (
           <section className="view active">
             <div className="placeholder">
               <h2>{nav[1]}</h2>

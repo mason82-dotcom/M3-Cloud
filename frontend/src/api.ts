@@ -2,6 +2,9 @@ import type {
   FlightDetail,
   FlightReplay,
   FlightSummary,
+  MediaAsset,
+  MediaGroup,
+  MediaImportStatus,
   SystemHealth,
   Vehicle,
 } from "./types";
@@ -52,6 +55,50 @@ export async function fetchFlightSamples(
     throw new Error(`Flight samples request failed: ${response.status}`);
   }
   return response.json() as Promise<FlightReplay>;
+}
+
+export async function fetchMedia(
+  platform?: string,
+  mediaKind?: string,
+): Promise<MediaAsset[]> {
+  const params = new URLSearchParams({ limit: "5000" });
+  if (platform) params.set("platform", platform);
+  if (mediaKind) params.set("media_kind", mediaKind);
+
+  const response = await fetch(`/api/v1/media?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Media request failed: ${response.status}`);
+  }
+  return response.json() as Promise<MediaAsset[]>;
+}
+
+export async function fetchMediaGroups(
+  platform?: string,
+): Promise<MediaGroup[]> {
+  const params = new URLSearchParams({ limit: "5000" });
+  if (platform) params.set("platform", platform);
+
+  const response = await fetch(`/api/v1/media/groups?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Media groups request failed: ${response.status}`);
+  }
+  return response.json() as Promise<MediaGroup[]>;
+}
+
+export async function fetchMediaImportStatus(): Promise<MediaImportStatus> {
+  const response = await fetch("/api/v1/media/import/status");
+  if (!response.ok) {
+    throw new Error(`Media import status failed: ${response.status}`);
+  }
+  return response.json() as Promise<MediaImportStatus>;
+}
+
+export async function scanMediaImport(): Promise<Record<string, unknown>> {
+  const response = await fetch("/api/v1/media/import/scan", { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`Media import scan failed: ${response.status}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
 }
 
 export async function fetchSystemHealth(): Promise<SystemHealth> {

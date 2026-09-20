@@ -1,0 +1,228 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import {
+  fetchMedia,
+  fetchMediaGroups,
+  fetchMediaImportStatus,
+  scanMediaImport,
+} from "./api";
+import type {
+  MediaAsset,
+  MediaGroup,
+  MediaImportStatus,
+} from "./types";
+
+function bytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = value;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function platformClass(platform: string): string {
+  const value = platform.toLowerCase();
+  return ["m3e", "m3t", "m3m"].includes(value) ? value : "unknown";
+}
+
+export function MediaView() {
+  const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [groups, setGroups] = useState<MediaGroup[]>([]);
+  const [status, setStatus] = useState<MediaImportStatus | null>(null);
+  const [platform, setPlatform] = useState("");
+  const [mediaKind, setMediaKind] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [nextAssets, nextGroups, nextStatus] = await Promise.all([
+        fetchMedia(platform || undefined, mediaKind || undefined),
+        fetchMediaGroups(platform || undefined),
+        fetchMediaImportStatus(),
+      ]);
+      setAssets(nextAssets);
+      setGroups(nextGroups);
+      setStatus(nextStatus);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, [mediaKind, platform]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const runScan = useCallback(async () => {
+    setScanning(true);
+    try {
+      await scanMediaImport();
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setScanning(false);
+    }
+  }, [refresh]);
+
+  const visibleAssets = useMemo(
+    () =>
+      selectedGroup
+        ? assets.filter((asset) => asset.capture_group === selectedGroup)
+        : assets,
+    [assets, selectedGroup],
+  );
+
+  const totalBytes = assets.reduce((sum, asset) => sum + asset.size_bytes, 0);
+  const duplicateCount = assets.filter((asset) => asset.duplicate_of).length;
+  const platformCounts = Object.fromEntries(
+    ["M3E", "M3T", "M3M", "UNKNOWN"].map((name) => [
+      name,
+      assets.filter((asset) => asset.platform === name).length,
+    ]),
+  );
+
+  return (
+    <div className="mediaView">
+      <section className="mediaStatus panel">
+        <div className="panelHead">
+          <div>
+            <h2>External media import</h2>
+            <small>Read-only watch folder</small>
+          </div>
+          <button
+            disabled={scanning || status?.enabled === false}
+            onClick={() => void runScan()}
+            type="button"
+          >
+            {scanning || status?.scan_running ? "Scanning…" : "Scan now"}
+          </button>
+        </div>
+
+        <div className="mediaStatusGrid">
+          <span>Root<b>{status?.root ?? "—"}</b></span>
+          <span>Mount<b>{status?.exists && status?.readable ? "READY" : "UNAVAILABLE"}</b></span>
+          <span>Catalog<b>{assets.length} files</b></span>
+          <span>Size<b>{bytes(totalBytes)}</b></span>
+          <span>Duplicates<b>{duplicateCount}</b></span>
+          <span>Last scan<b>{status?.last_scan?.finished_at ? new Date(status.last_scan.finished_at).toLocaleString() : "—"}</b></span>
+        </div>
+        {status?.last_error ? (
+          <div className="mediaWarning">{status.last_error}</div>
+        ) : null}
+        {error ? <div className="mediaWarning">{error}</div> : null}
+      </section>
+
+      <div className="mediaSummary">
+        {["M3E", "M3T", "M3M", "UNKNOWN"].map((name) => (
+          <button
+            className={platform === name ? `mediaPlatform active ${platformClass(name)}` : `mediaPlatform ${platformClass(name)}`}
+            key={name}
+            onClick={() => {
+              setPlatform(platform === name ? "" : name);
+              setSelectedGroup(null);
+            }}
+            type="button"
+          >
+            <span>{name}</span>
+            <strong>{platformCounts[name] ?? 0}</strong>
+          </button>
+        ))}
+      </div>
+
+      <section className="panel mediaCatalog">
+        <div className="panelHead">
+          <div>
+            <h2>Media catalog</h2>
+            <small>Original filenames and capture groups are preserved</small>
+          </div>
+          <div className="mediaFilters">
+            <select
+              aria-label="Media kind"
+              value={mediaKind}
+              onChange={(event) => {
+                setMediaKind(event.target.value);
+                setSelectedGroup(null);
+              }}
+            >
+              <option value="">All types</option>
+              <option value="RGB">RGB</option>
+              <option value="WIDE">Wide</option>
+              <option value="ZOOM">Zoom</option>
+              <option value="THERMAL">Thermal</option>
+              <option value="MS_GREEN">MS Green</option>
+              <option value="MS_RED">MS Red</option>
+              <option value="MS_RED_EDGE">MS Red Edge</option>
+              <option value="MS_NIR">MS NIR</option>
+            </select>
+            {selectedGroup ? (
+              <button onClick={() => setSelectedGroup(null)} type="button">
+                Clear group
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mediaCatalogGrid">
+          <aside className="mediaGroups">
+            {groups.length === 0 ? (
+              <div className="empty">Noch keine Capture-Gruppen erkannt.</div>
+            ) : groups.map((group) => (
+              <button
+                className={group.capture_group === selectedGroup ? "mediaGroup selected" : "mediaGroup"}
+                key={`${group.platform}:${group.capture_group}`}
+                onClick={() => setSelectedGroup(group.capture_group)}
+                type="button"
+              >
+                <strong>{group.capture_group.split("/").pop()}</strong>
+                <small>{group.platform} · {group.asset_count} files · {bytes(group.size_bytes)}</small>
+              </button>
+            ))}
+          </aside>
+
+          <div className="mediaTableWrap">
+            <table className="mediaTable">
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Platform</th>
+                  <th>Type</th>
+                  <th>Size</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleAssets.map((asset) => (
+                  <tr key={asset.id}>
+                    <td>
+                      <strong>{asset.filename}</strong>
+                      <small title={asset.relative_path}>{asset.relative_path}</small>
+                    </td>
+                    <td>{asset.platform}</td>
+                    <td>{asset.media_kind}</td>
+                    <td>{bytes(asset.size_bytes)}</td>
+                    <td>
+                      <span className={asset.present ? "mediaState present" : "mediaState missing"}>
+                        {asset.present ? "present" : "missing"}
+                      </span>
+                      {asset.duplicate_of ? <small>duplicate</small> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {visibleAssets.length === 0 ? (
+              <div className="empty">Keine Medien für diesen Filter.</div>
+            ) : null}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}

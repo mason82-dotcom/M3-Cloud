@@ -204,6 +204,54 @@ export interface FlightReplay {
   samples: FlightSample[];
 }
 
+export interface MediaAsset {
+  id: string;
+  relative_path: string;
+  filename: string;
+  extension: string;
+  size_bytes: number;
+  mtime_ns: number;
+  sha256: string;
+  platform: string;
+  media_kind: string;
+  capture_group?: string | null;
+  storage_mode: string;
+  external_root: string;
+  present: boolean;
+  duplicate_of?: string | null;
+  discovered_at: string;
+  last_seen_at: string;
+}
+
+export interface MediaGroup {
+  capture_group: string;
+  platform: string;
+  asset_count: number;
+  size_bytes: number;
+}
+
+export interface MediaImportStatus {
+  enabled: boolean;
+  status: string;
+  root?: string;
+  exists?: boolean;
+  readable?: boolean;
+  min_age_seconds?: number;
+  scan_running?: boolean;
+  last_error?: string | null;
+  last_scan?: {
+    scanned: number;
+    added: number;
+    updated: number;
+    unchanged: number;
+    duplicates: number;
+    skipped_unstable: number;
+    marked_missing: number;
+    started_at: string;
+    finished_at: string;
+  } | null;
+}
+
 export interface ComponentHealth {
   ok?: boolean;
   status?: string;
