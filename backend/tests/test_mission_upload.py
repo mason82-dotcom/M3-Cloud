@@ -88,7 +88,10 @@ class FakeCollector:
             )
         )
         for seq in sorted(self.stored):
-            item = self.stored[seq]
+            item = dict(self.stored[seq])
+            for key in ("param1", "param2", "param3", "param4"):
+                if item.get(key) is None:
+                    item[key] = float("nan")
             self._queue(
                 SimpleNamespace(
                     get_type=lambda: "MISSION_ITEM_INT",
@@ -166,7 +169,7 @@ async def test_upload_only_completes_request_int_handshake(monkeypatch) -> None:
         preferred_executor="DJI_NATIVE",
     )
 
-    assert collector.sent == [
+    assert collector.sent[:3] == [
         ("count", "10.0.0.2", 2),
         ("item", "10.0.0.2", 0),
         ("item", "10.0.0.2", 1),
@@ -228,3 +231,30 @@ async def test_transport_failure_is_normalized(monkeypatch) -> None:
         )
 
     assert exc.value.code == "TRANSPORT_UNAVAILABLE"
+
+
+
+class CorruptReadbackCollector(FakeCollector):
+    def send_mission_request_list(self, host):
+        if 1 in self.stored:
+            self.stored[1] = {**self.stored[1], "z": 99.0}
+        super().send_mission_request_list(host)
+
+
+@pytest.mark.asyncio
+async def test_readback_fingerprint_mismatch_is_not_clean_success(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.missions.uploader.settings.mission_upload_timeout_seconds",
+        1.0,
+    )
+    uploader = MissionUploader(CorruptReadbackCollector(2), resolver=resolver)
+
+    with pytest.raises(MissionUploadError) as exc:
+        await uploader.upload(
+            package(),
+            aircraft_sn="M3E-001",
+            preferred_executor="DJI_NATIVE",
+        )
+
+    assert exc.value.code == "READBACK_FINGERPRINT_MISMATCH"
+    assert exc.value.details["upload_acknowledged"] is True
