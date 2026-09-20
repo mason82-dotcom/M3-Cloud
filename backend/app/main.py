@@ -5,6 +5,7 @@ from fastapi import FastAPI, Response, status
 from app.api_devices import router as devices_router
 from app.api_flights import router as flights_router
 from app.api_media import router as media_router
+from app.api_processing import router as processing_router
 from app.config import settings
 from app.database import session_factory
 from app.dji.service import DJIService
@@ -14,6 +15,7 @@ from app.health import readiness
 from app.live import LiveTelemetryHub, router as live_router
 from app.media.importer import MediaImporter
 from app.media.watcher import MediaImportWatcher
+from app.processing.service import ProcessingManager
 from app.api_operations import router as operations_router
 from app.redis_client import redis_client
 from app.vehicles.mavlink import lyrebird_mavlink_collector
@@ -46,6 +48,19 @@ async def lifespan(app: FastAPI):
     app.state.lyrebird_live = lyrebird_live
     app.state.lyrebird_mavlink_collector = lyrebird_mavlink_collector
 
+    processing_manager = ProcessingManager(
+        session_factory,
+        media_root=settings.media_import_root,
+        webodm_enabled=settings.webodm_enabled,
+        webodm_url=settings.webodm_url,
+        webodm_token=settings.webodm_token,
+        webodm_username=settings.webodm_username,
+        webodm_password=settings.webodm_password,
+        webodm_timeout_seconds=settings.webodm_timeout_seconds,
+        poll_interval_seconds=settings.processing_poll_interval_seconds,
+    )
+    app.state.processing_manager = processing_manager
+
     media_importer = None
     media_watcher = None
     if settings.media_import_enabled:
@@ -62,6 +77,7 @@ async def lifespan(app: FastAPI):
         app.state.media_import_watcher = media_watcher
 
     await live_hub.start()
+    await processing_manager.start()
     await lyrebird_mavlink_collector.start()
     await lyrebird_live.start()
     if media_watcher is not None:
@@ -77,6 +93,7 @@ async def lifespan(app: FastAPI):
             await dji_service.transport.stop()
         if media_watcher is not None:
             await media_watcher.stop()
+        await processing_manager.stop()
         await lyrebird_live.stop()
         await lyrebird_mavlink_collector.stop()
         await live_hub.stop()
@@ -90,6 +107,7 @@ app = FastAPI(
 app.include_router(devices_router)
 app.include_router(flights_router)
 app.include_router(media_router)
+app.include_router(processing_router)
 app.include_router(live_router)
 app.include_router(operations_router)
 

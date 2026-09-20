@@ -127,6 +127,35 @@ class Settings(BaseSettings):
         validation_alias="M3CLOUD_MEDIA_IMPORT_MIN_AGE_SECONDS",
     )
 
+    webodm_enabled: bool = Field(
+        default=False,
+        validation_alias="M3CLOUD_WEBODM_ENABLED",
+    )
+    webodm_url: str = Field(
+        default="",
+        validation_alias="M3CLOUD_WEBODM_URL",
+    )
+    webodm_token: str = Field(
+        default="",
+        validation_alias="M3CLOUD_WEBODM_TOKEN",
+    )
+    webodm_username: str = Field(
+        default="",
+        validation_alias="M3CLOUD_WEBODM_USERNAME",
+    )
+    webodm_password: str = Field(
+        default="",
+        validation_alias="M3CLOUD_WEBODM_PASSWORD",
+    )
+    webodm_timeout_seconds: float = Field(
+        default=300.0,
+        validation_alias="M3CLOUD_WEBODM_TIMEOUT_SECONDS",
+    )
+    processing_poll_interval_seconds: float = Field(
+        default=5.0,
+        validation_alias="M3CLOUD_PROCESSING_POLL_INTERVAL_SECONDS",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -95,3 +95,52 @@ class MediaAsset(Base):
 
     discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+
+class ProcessingJob(Base):
+    __tablename__ = "processing_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    input_prefix: Mapped[str] = mapped_column(String(1024), index=True)
+    platform: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    media_kinds: Mapped[list[str]] = mapped_column(JSON, default=list)
+    options: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+
+    image_count: Mapped[int] = mapped_column(Integer, default=0)
+    uploaded_count: Mapped[int] = mapped_column(Integer, default=0)
+    progress: Mapped[float] = mapped_column(Float, default=0.0)
+
+    remote_project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    remote_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    remote_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    available_assets: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProcessingJobAsset(Base):
+    __tablename__ = "processing_job_assets"
+
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("processing_jobs.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    media_asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("media_assets.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    ordinal: Mapped[int] = mapped_column(Integer)
