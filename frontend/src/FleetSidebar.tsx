@@ -39,7 +39,8 @@ export function FleetSidebar({
           devices.map((device) => {
             const state = telemetry[device.sn];
             const selected = device.sn === selectedSn;
-            const positioning = state?.aircraft_state?.positioning;\n            const convergence = positioning?.fix ?? state?.position_state?.convergence ?? "UNKNOWN";
+            const positioning = state?.aircraft_state?.positioning;
+            const convergence = positioning?.fix ?? state?.position_state?.convergence ?? "UNKNOWN";
             const battery = state?.battery?.capacity_percent;
 
             return (
