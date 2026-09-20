@@ -146,7 +146,7 @@ object LyrebirdFlightLogger {
      * Unlike the coarse five-second telemetry records, survey captures retain millisecond epoch
      * time because image/position correlation depends on sub-second ordering.
      */
-    fun logSurveyCapture(record: SurveyCaptureRecord) {
+    internal fun logSurveyCapture(record: SurveyCaptureRecord) {
         if (!sessionActive) return
         runCatching {
             val obj = JSONObject()
@@ -166,7 +166,7 @@ object LyrebirdFlightLogger {
      * The pointer is process-local, but [latestSurveyArtifact] also attempts a current-day
      * recovery scan so the endpoint remains useful after an app restart.
      */
-    fun registerSurveyReport(files: SurveyReportFiles) {
+    internal fun registerSurveyReport(files: SurveyReportFiles) {
         latestSurveyCsv = files.csv
         latestSurveySummary = files.summaryJson
     }
