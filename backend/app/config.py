@@ -73,6 +73,10 @@ class Settings(BaseSettings):
         default=86400,
         validation_alias="M3CLOUD_DJI_STATE_CACHE_TTL_SECONDS",
     )
+    live_redis_channel: str = Field(
+        default="m3:live",
+        validation_alias="M3CLOUD_LIVE_REDIS_CHANNEL",
+    )
 
 
 @lru_cache

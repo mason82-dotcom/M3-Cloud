@@ -257,6 +257,18 @@ class TelemetryStore:
             json.dumps(normalized),
             ex=settings.dji_telemetry_ttl_seconds,
         )
+
+        await self.redis.publish(
+            settings.live_redis_channel,
+            json.dumps(
+                {
+                    "type": "telemetry",
+                    "device_sn": source_sn,
+                    "timestamp": normalized["received_at_ms"],
+                    "state": normalized,
+                }
+            ),
+        )
         return normalized
 
     async def get(self, sn: str) -> dict[str, Any] | None:

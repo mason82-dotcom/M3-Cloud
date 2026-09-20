@@ -6,13 +6,21 @@ from app.api_devices import router as devices_router
 from app.config import settings
 from app.dji.service import DJIService
 from app.health import readiness
+from app.live import LiveTelemetryHub, router as live_router
 from app.redis_client import redis_client
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     dji_service = DJIService.create(redis_client)
+    live_hub = LiveTelemetryHub(
+        redis_client,
+        channel=settings.live_redis_channel,
+    )
     app.state.dji_service = dji_service
+    app.state.live_hub = live_hub
+
+    await live_hub.start()
 
     if settings.dji_mqtt_enabled:
         await dji_service.transport.start()
@@ -22,6 +30,7 @@ async def lifespan(app: FastAPI):
     finally:
         if settings.dji_mqtt_enabled:
             await dji_service.transport.stop()
+        await live_hub.stop()
 
 
 app = FastAPI(
@@ -30,6 +39,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(devices_router)
+app.include_router(live_router)
 
 
 @app.get("/")

@@ -1,4 +1,10 @@
-from app.dji.telemetry import deep_merge, normalize_telemetry
+import json
+
+import pytest
+
+from app.dji.protocol import PropertyMessage
+from app.dji.telemetry import TelemetryStore, deep_merge, normalize_telemetry
+from app.dji.topics import TopicKind
 
 
 def test_deep_merge_preserves_partial_state() -> None:
@@ -120,3 +126,55 @@ def test_camera_and_battery_normalization() -> None:
     assert state["battery"]["remain_flight_time_s"] == 540
     assert state["cameras"][0]["payload_index"] == "67-0-0"
     assert state["cameras"][0]["ir_metering_point"]["temperature"] == 51.2
+
+
+
+class FakeRedis:
+    def __init__(self):
+        self.values = {}
+        self.published = []
+
+    async def set(self, key, value, ex=None):
+        del ex
+        self.values[key] = value
+        return True
+
+    async def mget(self, *keys):
+        return [self.values.get(key) for key in keys]
+
+    async def publish(self, channel, payload):
+        self.published.append((channel, payload))
+        return 1
+
+
+@pytest.mark.asyncio
+async def test_telemetry_update_publishes_live_event() -> None:
+    redis = FakeRedis()
+    store = TelemetryStore(redis)
+
+    state = await store.update(
+        source_sn="M3E123",
+        kind=TopicKind.OSD,
+        message=PropertyMessage(
+            tid="t",
+            bid="b",
+            timestamp=1000,
+            gateway="RC123",
+            from_sn="M3E123",
+            data={
+                "latitude": 49.1,
+                "longitude": 8.5,
+                "elevation": 12.0,
+            },
+        ),
+    )
+
+    assert state["source_sn"] == "M3E123"
+    assert len(redis.published) == 1
+
+    channel, raw = redis.published[0]
+    event = json.loads(raw)
+    assert channel == "m3:live"
+    assert event["type"] == "telemetry"
+    assert event["device_sn"] == "M3E123"
+    assert event["state"]["relative_altitude_m"] == 12.0
