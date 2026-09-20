@@ -1,7 +1,7 @@
 import math
 from types import SimpleNamespace
 from app.vehicles.lyrebird import merge_dicts, merge_transport_telemetry
-from app.vehicles.mavlink import normalize_mavlink_message, decode_lyrebird_frame, _mavlink2_frames
+from app.vehicles.mavlink import normalize_mavlink_message, decode_lyrebird_frame, decode_autosensing_status, decode_autosensing_target, _mavlink2_frames, AUTOSENSING_STATUS_STRUCT, AUTOSENSING_TARGET_STRUCT
 
 class Msg(SimpleNamespace):
     def get_type(self): return self.kind
@@ -54,3 +54,18 @@ def test_merge_does_not_mutate_inputs():
     merged=merge_transport_telemetry(mav,tcp)
     merged["lrf"]["target"]["latitude"]=0
     assert tcp["lrf"]["target"]["latitude"]==49.1
+
+def test_autosensing_layout_matches_lyrebird_dialect():
+    status=decode_autosensing_status(__import__("struct").pack(AUTOSENSING_STATUS_STRUCT,0,7,0.25,1,2,b"edge"))
+    assert status["frame_id"]==7 and status["active"] is True and status["count"]==2 and status["source"]=="edge"
+    target=decode_autosensing_target(__import__("struct").pack(AUTOSENSING_TARGET_STRUCT,0,7,0.1,0.2,0.3,0.4,0.9,0,2,b"PERSON"))
+    assert target["frame_id"]==7 and target["target"]["type"]=="PERSON"
+    assert len(target["target"]["rect"])==4
+
+def test_standard_mission_and_vfr_messages_are_normalized():
+    hud=normalize_mavlink_message(Msg(kind="VFR_HUD",alt=42.5,climb=1.25))
+    assert hud=={"relative_altitude_m":42.5,"vertical_speed_mps":-1.25}
+    current=normalize_mavlink_message(Msg(kind="MISSION_CURRENT",seq=4,mission_state=3))
+    assert current["mission"]=={"current_seq":4,"state":3}
+    reached=normalize_mavlink_message(Msg(kind="MISSION_ITEM_REACHED",seq=4))
+    assert reached["reach"]=={"waypoint_reached":True,"waypoint_seq":4}

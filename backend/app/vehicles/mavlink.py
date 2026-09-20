@@ -26,6 +26,14 @@ LYREBIRD_CONFIG_ID = 42101
 LYREBIRD_CONFIG_STRUCT = "<HHB20s16s12s"
 LYREBIRD_CONFIG_SIZE = 53
 LYREBIRD_CONFIG_CRC_EXTRA = 201
+AUTOSENSING_STATUS_ID = 42102
+AUTOSENSING_STATUS_STRUCT = "<IIfBB16s"
+AUTOSENSING_STATUS_SIZE = 30
+AUTOSENSING_STATUS_CRC_EXTRA = 254
+AUTOSENSING_TARGET_ID = 42103
+AUTOSENSING_TARGET_STRUCT = "<IIfffffBB16s"
+AUTOSENSING_TARGET_SIZE = 46
+AUTOSENSING_TARGET_CRC_EXTRA = 83
 
 LB_FLAG_MANUAL_OVERRIDE = 1
 LB_FLAG_READY_TO_TAKEOFF = 2
@@ -62,6 +70,21 @@ def _mavlink2_frames(data: bytes):
         yield data[offset:offset + size]
         offset += size
 
+def decode_autosensing_target(payload: bytes) -> dict[str, Any]:
+    values = struct.unpack(AUTOSENSING_TARGET_STRUCT, payload.ljust(AUTOSENSING_TARGET_SIZE, b"\x00"))
+    (_boot, frame_id, left, top, right, bottom, confidence, index, count, kind) = values
+    target: dict[str, Any] = {"index": index, "type": _trim(kind), "rect": [left, top, right, bottom]}
+    if not math.isnan(confidence):
+        target["confidence"] = confidence
+    return {"frame_id": frame_id, "count": count, "target": target}
+
+def decode_autosensing_status(payload: bytes) -> dict[str, Any]:
+    _boot, frame_id, threshold, active, count, source = struct.unpack(
+        AUTOSENSING_STATUS_STRUCT, payload.ljust(AUTOSENSING_STATUS_SIZE, b"\x00")
+    )
+    return {"frame_id": frame_id, "count": count, "active": bool(active),
+            "source": _trim(source), "confidence_threshold": threshold}
+
 def decode_lyrebird_frame(frame: bytes) -> dict[str, Any]:
     if len(frame) < 12 or frame[0] != MAVLINK2_MAGIC:
         return {}
@@ -78,6 +101,12 @@ def decode_lyrebird_frame(frame: bytes) -> dict[str, Any]:
             "http_port": http_port, "telemetry_port": telemetry_port,
             "video_mode": _trim(video), "has_thermal": bool(flags & LB_CONFIG_FLAG_HAS_THERMAL),
         }}}
+    if message_id == AUTOSENSING_STATUS_ID:
+        if not _checksum_ok(frame, AUTOSENSING_STATUS_CRC_EXTRA): return {}
+        return {"_autosensing_status": decode_autosensing_status(payload)}
+    if message_id == AUTOSENSING_TARGET_ID:
+        if not _checksum_ok(frame, AUTOSENSING_TARGET_CRC_EXTRA): return {}
+        return {"_autosensing_target": decode_autosensing_target(payload)}
     if message_id != LYREBIRD_STATUS_ID or not _checksum_ok(frame, LYREBIRD_STATUS_CRC_EXTRA):
         return {}
     values = struct.unpack(LYREBIRD_STATUS_STRUCT, payload.ljust(LYREBIRD_STATUS_SIZE, b"\x00"))
@@ -147,6 +176,15 @@ def normalize_mavlink_message(msg: Any) -> dict[str, Any]:
                 "yaw_deg": math.degrees(msg.yaw),
             }
         }
+    if kind == "SYS_STATUS":
+        remaining = int(msg.battery_remaining)
+        return {"battery": {"capacity_percent": None if remaining < 0 else remaining}}
+    if kind == "VFR_HUD":
+        return {"relative_altitude_m": float(msg.alt), "vertical_speed_mps": -float(msg.climb)}
+    if kind == "MISSION_CURRENT":
+        return {"mission": {"current_seq": int(msg.seq), "state": int(getattr(msg, "mission_state", 0))}}
+    if kind == "MISSION_ITEM_REACHED":
+        return {"reach": {"waypoint_reached": True, "waypoint_seq": int(msg.seq)}}
     if kind == "BATTERY_STATUS":
         return {
             "battery": {
@@ -208,6 +246,8 @@ class LyrebirdMavlinkCollector:
         self._system_by_host: dict[str, int] = {}
         self._host_by_system: dict[int, str] = {}
         self._duplicate_system: dict[str, int] = {}
+        self._detection_frame: dict[str, int] = {}
+        self._detection_targets: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self._heartbeat_task: asyncio.Task[None] | None = None
 
     def set_publisher(self, publisher: Callable[[str, dict[str, Any]], Awaitable[None]] | None) -> None:
@@ -297,6 +337,27 @@ class LyrebirdMavlinkCollector:
         for frame in _mavlink2_frames(data):
             if frame[5] != bound: continue
             patch = decode_lyrebird_frame(frame)
+            target = patch.pop("_autosensing_target", None)
+            if target is not None:
+                frame_id = int(target["frame_id"])
+                if self._detection_frame.get(host) != frame_id:
+                    self._detection_frame[host] = frame_id
+                    self._detection_targets[host] = []
+                self._detection_targets[host].append(target["target"])
+                continue
+            status = patch.pop("_autosensing_status", None)
+            if status is not None:
+                frame_id = int(status["frame_id"])
+                gathered = self._detection_targets.get(host, []) if self._detection_frame.get(host) == frame_id else []
+                patch["autosensing"] = {
+                    "active": status["active"],
+                    "source": status["source"],
+                    "confidence_threshold": status["confidence_threshold"],
+                    "frame_id": frame_id,
+                    "target_count": status["count"],
+                    "targets": list(gathered[: int(status["count"])]),
+                }
+                self._detection_targets[host] = []
             if patch: _deep_merge(self._state[host], patch); changed = True
         for msg in messages:
             system_id, _ = self._identity(msg)
