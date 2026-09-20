@@ -261,7 +261,7 @@ export interface MissionDeployment {
       note: string;
     };
   };
-  upload_status: "SEALED" | "UPLOADING" | "UPLOADED" | "UPLOAD_UNVERIFIED" | "FAILED" | string;
+  upload_status: "SEALED" | "UPLOADING" | "UPLOADED" | "UPLOAD_UNVERIFIED" | "UPLOAD_INTERRUPTED" | "FAILED" | string;
   upload_attempts: number;
   last_upload_at?: string | null;
   uploaded_at?: string | null;
