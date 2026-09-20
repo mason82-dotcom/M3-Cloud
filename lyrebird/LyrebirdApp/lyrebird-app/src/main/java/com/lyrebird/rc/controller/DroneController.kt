@@ -8,6 +8,7 @@ import com.lyrebird.rc.models.BasicAircraftControlVM
 import com.lyrebird.rc.models.VirtualStickVM
 import dji.v5.common.callback.CommonCallbacks
 import dji.v5.common.error.IDJIError
+import dji.v5.manager.KeyManager
 import dji.v5.manager.aircraft.virtualstick.Stick
 import dji.sdk.keyvalue.value.common.EmptyMsg
 import dji.sdk.keyvalue.value.flightcontroller.FlightCoordinateSystem
@@ -21,6 +22,7 @@ import dji.sdk.keyvalue.key.DJIKey
 import dji.sdk.keyvalue.key.FlightControllerKey
 import dji.sdk.keyvalue.key.RemoteControllerKey
 import dji.sdk.keyvalue.value.airlink.FrequencyBand
+import dji.sdk.keyvalue.value.remotecontroller.BatteryInfo
 import dji.sdk.keyvalue.value.remotecontroller.ControlMode
 import dji.sdk.keyvalue.value.remotecontroller.PairingState
 import dji.v5.et.action
@@ -1895,23 +1897,82 @@ object DroneController {
         ToastUtils.showToast("Distance limit ${if (enabled) "enabled" else "disabled"}")
     }
 
-    // --- RC stick mode (ControlMode: JP / USA / CH / CUSTOM) ---
+    // --- RC / AirLink telemetry -------------------------------------------------------------
     private val controlModeKey: DJIKey<ControlMode> = RemoteControllerKey.KeyControlMode.create()
+    private val pairingStatusKey: DJIKey<PairingState> = RemoteControllerKey.KeyPairingStatus.create()
+    private val remoteControllerConnectionKey: DJIKey<Boolean> =
+        RemoteControllerKey.KeyConnection.create()
+    private val remoteControllerBatteryKey: DJIKey<BatteryInfo> =
+        RemoteControllerKey.KeyBatteryInfo.create()
 
-    fun getRcControlMode(): String = controlModeKey.get(ControlMode.UNKNOWN).name.lowercase()
+    private val frequencyBandKey: DJIKey<FrequencyBand> = AirLinkKey.KeyFrequencyBand.create()
+    private val airLinkConnectionKey: DJIKey<Boolean> = AirLinkKey.KeyConnection.create()
+    private val airLinkSignalQualityKey: DJIKey<Int> = AirLinkKey.KeySignalQuality.create()
+    private val airLinkDynamicDataRateKey: DJIKey<Double> = AirLinkKey.KeyDynamicDataRate.create()
+
+    @Volatile
+    private var cachedRcControlMode: ControlMode = ControlMode.UNKNOWN
+
+    @Volatile
+    private var rcControlModeReadStarted = false
+
+    /**
+     * MSDK 5.18 documents KeyControlMode as a special case: the first read must use async
+     * KeyManager.getValue(). Cache that result and only expose the synchronous value afterwards.
+     */
+    @Synchronized
+    private fun ensureRcControlModeLoaded() {
+        if (rcControlModeReadStarted) return
+        rcControlModeReadStarted = true
+        KeyManager.getInstance().getValue(
+            controlModeKey,
+            object : CommonCallbacks.CompletionCallbackWithParam<ControlMode> {
+                override fun onSuccess(mode: ControlMode?) {
+                    cachedRcControlMode = mode ?: ControlMode.UNKNOWN
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    rcControlModeReadStarted = false
+                    Log.w("DroneController", "Initial RC control-mode read failed: ${error.description()}")
+                }
+            }
+        )
+    }
+
+    fun getRcControlMode(): String {
+        ensureRcControlModeLoaded()
+        return cachedRcControlMode.name.lowercase()
+    }
 
     fun setRcControlMode(value: String): Boolean {
         val mode = runCatching { ControlMode.valueOf(value.uppercase()) }.getOrNull()
             ?: return false
         if (mode == ControlMode.UNKNOWN) return false
         controlModeKey.set(mode)
+        cachedRcControlMode = mode
         ToastUtils.showToast("RC control mode set to ${mode.name}")
         return true
     }
 
-    // --- RC pairing state + start/stop pairing actions ---
-    private val pairingStatusKey: DJIKey<PairingState> = RemoteControllerKey.KeyPairingStatus.create()
-    private val remoteControllerConnectionKey: DJIKey<Boolean> = RemoteControllerKey.KeyConnection.create()
+    fun getRcConnected(): Boolean = remoteControllerConnectionKey.get(false)
+
+    fun getRcBatteryPercent(): Int {
+        if (!getRcConnected()) return -1
+        val info = remoteControllerBatteryKey.get(BatteryInfo())
+        return if (info.enabled) info.batteryPercent.coerceIn(0, 100) else -1
+    }
+
+    fun getAirLinkConnected(): Boolean = airLinkConnectionKey.get(false)
+
+    fun getAirLinkSignalQualityPercent(): Int {
+        if (!getAirLinkConnected()) return -1
+        return airLinkSignalQualityKey.get(-1).takeIf { it in 0..100 } ?: -1
+    }
+
+    fun getAirLinkDynamicDataRateMbps(): Double {
+        if (!getAirLinkConnected()) return -1.0
+        return airLinkDynamicDataRateKey.get(-1.0).takeIf { it.isFinite() && it >= 0.0 } ?: -1.0
+    }
 
     fun getRcPairingStatus(): String {
         val pairingState = pairingStatusKey.get(PairingState.UNKNOWN)
@@ -1919,7 +1980,7 @@ object DroneController {
             pairingState == PairingState.PAIRED -> "paired"
             pairingState == PairingState.PAIRING -> "pairing"
             pairingState == PairingState.UNPAIRED -> "unpaired"
-            pairingState == PairingState.UNKNOWN && remoteControllerConnectionKey.get(false) -> "paired"
+            pairingState == PairingState.UNKNOWN && getRcConnected() -> "paired"
             else -> pairingState.name.lowercase()
         }
     }
@@ -1934,12 +1995,14 @@ object DroneController {
         ToastUtils.showToast("RC pairing stopped")
     }
 
-    // --- HD transmission frequency band (read-only info) ---
-    private val frequencyBandKey: DJIKey<FrequencyBand> = AirLinkKey.KeyFrequencyBand.create()
-
+    /**
+     * Preserve the actual DJI band identity. BAND_MULTI is explicitly multi-band, not "5 GHz".
+     */
     fun getHdFrequencyBand(): String = when (frequencyBandKey.get(FrequencyBand.UNKNOWN)) {
-        FrequencyBand.BAND_2_DOT_4G, FrequencyBand.BAND_1_DOT_4G -> "2.4g"
-        FrequencyBand.BAND_MULTI -> "5g"
+        FrequencyBand.BAND_2_DOT_4G -> "2.4g"
+        FrequencyBand.BAND_5_DOT_8G -> "5.8g"
+        FrequencyBand.BAND_1_DOT_4G -> "1.4g"
+        FrequencyBand.BAND_MULTI -> "multi"
         else -> "unknown"
     }
 }

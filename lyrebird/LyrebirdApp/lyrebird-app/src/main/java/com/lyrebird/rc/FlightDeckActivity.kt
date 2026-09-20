@@ -1651,8 +1651,13 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             append("\"maxFlightHeight\":${DroneController.getMaxFlightHeight()},")
             append("\"maxFlightDistance\":${DroneController.getMaxFlightDistance()},")
             append("\"distanceLimitEnabled\":${DroneController.getDistanceLimitEnabled()},")
+            append("\"rcConnected\":${DroneController.getRcConnected()},")
             append("\"rcControlMode\":\"${DroneController.getRcControlMode()}\",")
+            append("\"rcBatteryPercent\":${DroneController.getRcBatteryPercent()},")
             append("\"rcPairingStatus\":\"${DroneController.getRcPairingStatus()}\",")
+            append("\"airLinkConnected\":${DroneController.getAirLinkConnected()},")
+            append("\"airLinkQualityPercent\":${DroneController.getAirLinkSignalQualityPercent()},")
+            append("\"airLinkDownlinkMbps\":${DroneController.getAirLinkDynamicDataRateMbps()},")
             append("\"hdFrequencyBand\":\"${DroneController.getHdFrequencyBand()}\",")
             // Read-only: which aircraft the SDK actually detected and which control profile
             // (speed limits, PID gains, gimbal/payload wiring) was selected for it, so an
@@ -1683,7 +1688,14 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             append("\"detectionsEnabled\":\"detection\",")
             append("\"detectionSource\":\"detection\",")
             append("\"edgeConfidenceThreshold\":\"detection\",")
-            append("\"rcControlMode\":\"rc\"")
+            append("\"rcConnected\":\"rc\",")
+            append("\"rcControlMode\":\"rc\",")
+            append("\"rcBatteryPercent\":\"rc\",")
+            append("\"rcPairingStatus\":\"rc\",")
+            append("\"airLinkConnected\":\"rc\",")
+            append("\"airLinkQualityPercent\":\"rc\",")
+            append("\"airLinkDownlinkMbps\":\"rc\",")
+            append("\"hdFrequencyBand\":\"rc\"")
             append("}")
             append("}")
         }
@@ -5829,6 +5841,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         val goHomeInfo = goHomeAssessmentProcessor.value
         val lrfTarget = lrfTargetLocation
         val rtk = rtkTelemetryMonitor.snapshot()
+        val rcSticks = virtualStickVM.stickValue.value
         val position = PositionResolver.resolve(
             flightControllerLatitudeDeg = location.latitude,
             flightControllerLongitudeDeg = location.longitude,
@@ -5876,6 +5889,18 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             batteryFullChargeCapacityMah = batteryFullChargeCapacityKey.get(-1),
             batteryCellVoltagesMv = getBatteryCellVoltages(),
             remainingFlightTimeS = goHomeAssessmentProcessor.value.remainingFlightTime,
+
+            rcConnected = DroneController.getRcConnected(),
+            rcControlMode = DroneController.getRcControlMode(),
+            rcBatteryPercent = DroneController.getRcBatteryPercent(),
+            rcStickLeftHorizontal = rcSticks?.leftHorizontal ?: 0,
+            rcStickLeftVertical = rcSticks?.leftVertical ?: 0,
+            rcStickRightHorizontal = rcSticks?.rightHorizontal ?: 0,
+            rcStickRightVertical = rcSticks?.rightVertical ?: 0,
+            airLinkConnected = DroneController.getAirLinkConnected(),
+            airLinkQualityPercent = DroneController.getAirLinkSignalQualityPercent(),
+            airLinkDownlinkMbps = DroneController.getAirLinkDynamicDataRateMbps(),
+            airLinkBand = DroneController.getHdFrequencyBand(),
             homeLatitudeDeg = homeLocation.latitude,
             homeLongitudeDeg = homeLocation.longitude,
             // DJI exposes the take-off sea-level altitude directly; do not reconstruct it from

@@ -387,6 +387,9 @@ internal class MavlinkTelemetryEndpoint(
             Stream(MavlinkMsgId.GPS_RAW_INT, POSITION_INTERVAL_MS) {
                 MavlinkMessages.gpsRawInt(it, unixTimeUsec())
             },
+            Stream(MavlinkMsgId.RC_CHANNELS, POSITION_INTERVAL_MS) {
+                MavlinkMessages.rcChannels(it, timeBootMs())
+            },
             Stream(MavlinkMsgId.GLOBAL_POSITION_INT, POSITION_INTERVAL_MS) {
                 MavlinkMessages.globalPositionInt(it, timeBootMs())
             },
@@ -1151,6 +1154,15 @@ internal class MavlinkTelemetryEndpoint(
             sendOnce(
                 MavlinkMsgId.ALTITUDE,
                 MavlinkMessages.altitude(snapshot, unixTimeUsec())
+            )
+            Mav.RESULT_ACCEPTED
+        }
+
+        messageId == MavlinkMsgId.RC_CHANNELS -> {
+            val snapshot = runCatching { snapshotProvider() }.getOrDefault(MavlinkSnapshot())
+            sendOnce(
+                MavlinkMsgId.RC_CHANNELS,
+                MavlinkMessages.rcChannels(snapshot, timeBootMs())
             )
             Mav.RESULT_ACCEPTED
         }

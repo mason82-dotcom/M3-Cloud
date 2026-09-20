@@ -85,6 +85,20 @@ internal data class MavlinkSnapshot(
     /** Seconds of flight remaining, or 0 meaning "no estimate provided" per BATTERY_STATUS. */
     val remainingFlightTimeS: Int = 0,
 
+    // -- Remote controller and DJI AirLink --------------------------------------------------
+    val rcConnected: Boolean = false,
+    val rcControlMode: String = "unknown",
+    val rcBatteryPercent: Int = -1,
+    /** Physical RC stick positions from DJI, each nominally -660..+660. */
+    val rcStickLeftHorizontal: Int = 0,
+    val rcStickLeftVertical: Int = 0,
+    val rcStickRightHorizontal: Int = 0,
+    val rcStickRightVertical: Int = 0,
+    val airLinkConnected: Boolean = false,
+    val airLinkQualityPercent: Int = -1,
+    val airLinkDownlinkMbps: Double = -1.0,
+    val airLinkBand: String = "unknown",
+
     val homeLatitudeDeg: Double = 0.0,
     val homeLongitudeDeg: Double = 0.0,
     val homeAltitudeAslM: Double = 0.0,

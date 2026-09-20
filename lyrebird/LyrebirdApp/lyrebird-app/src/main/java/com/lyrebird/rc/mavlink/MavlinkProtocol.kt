@@ -44,6 +44,8 @@ internal object MavlinkMsgId {
     const val SYS_STATUS = 1
     const val SET_MODE = 11
     const val GPS_RAW_INT = 24
+    /** Physical remote-controller channels received from DJI's RC. */
+    const val RC_CHANNELS = 65
     const val ATTITUDE = 30
     const val GLOBAL_POSITION_INT = 33
     const val VFR_HUD = 74
@@ -380,6 +382,7 @@ internal object Mav {
     const val SENSOR_YAW_POSITION = 4096
     const val SENSOR_Z_ALTITUDE_CONTROL = 8192
     const val SENSOR_XY_POSITION_CONTROL = 16384
+    const val SENSOR_RC_RECEIVER = 65536
     const val SENSOR_BATTERY = 33554432
 
     const val CAP_MISSION_INT = 4L

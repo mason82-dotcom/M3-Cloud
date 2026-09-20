@@ -19,6 +19,7 @@ internal object MavlinkCrc {
         MavlinkMsgId.HEARTBEAT to 50,
         MavlinkMsgId.SYS_STATUS to 124,
         MavlinkMsgId.GPS_RAW_INT to 24,
+        MavlinkMsgId.RC_CHANNELS to 118,
         MavlinkMsgId.ATTITUDE to 39,
         MavlinkMsgId.GLOBAL_POSITION_INT to 104,
         MavlinkMsgId.VFR_HUD to 20,

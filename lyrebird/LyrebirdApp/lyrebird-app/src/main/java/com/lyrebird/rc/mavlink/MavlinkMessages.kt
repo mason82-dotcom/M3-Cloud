@@ -113,7 +113,8 @@ internal object MavlinkMessages {
         val sensors = Mav.SENSOR_3D_GYRO or Mav.SENSOR_3D_ACCEL or Mav.SENSOR_3D_MAG or
             Mav.SENSOR_ABSOLUTE_PRESSURE or Mav.SENSOR_ATTITUDE_STABILIZATION or
             Mav.SENSOR_YAW_POSITION or Mav.SENSOR_Z_ALTITUDE_CONTROL or
-            Mav.SENSOR_XY_POSITION_CONTROL or Mav.SENSOR_BATTERY or Mav.SENSOR_GPS
+            Mav.SENSOR_XY_POSITION_CONTROL or Mav.SENSOR_RC_RECEIVER or
+            Mav.SENSOR_BATTERY or Mav.SENSOR_GPS
 
         var health = sensors
         if (!snapshot.flightControllerConnected) {
@@ -126,6 +127,7 @@ internal object MavlinkMessages {
         }
         if (!snapshot.compassHealthy) health = health and Mav.SENSOR_3D_MAG.inv()
         if (gpsFixType(snapshot) < GPS_FIX_TYPE_3D) health = health and Mav.SENSOR_GPS.inv()
+        if (!snapshot.rcConnected) health = health and Mav.SENSOR_RC_RECEIVER.inv()
         if (!snapshot.batteryConnected) health = health and Mav.SENSOR_BATTERY.inv()
 
         return PayloadWriter()
@@ -161,6 +163,63 @@ internal object MavlinkMessages {
             .u8(gpsFixType(snapshot))
             .u8(satellitesVisible(snapshot.satelliteCount))
             .build()
+    }
+
+    /**
+     * RC_CHANNELS (65): four physical DJI stick axes, not semantic roll/pitch/yaw channels.
+     *
+     * DJI exposes stick travel as approximately -660..+660. MAVLink RC_CHANNELS expects PPM-like
+     * 1000..2000 us, so each physical axis is mapped linearly. Keeping the physical ordering avoids
+     * lying about axis semantics when the RC is switched between USA/JP/CH/CUSTOM control modes.
+     *
+     * rssi carries DJI AirLink quality scaled from 0..100 percent to MAVLink's device-dependent
+     * 0..254 range. It is explicitly not Android Wi-Fi RSSI.
+     */
+    fun rcChannels(snapshot: MavlinkSnapshot, timeBootMs: Long): ByteArray {
+        val connected = snapshot.rcConnected
+        val channels = if (connected) {
+            intArrayOf(
+                rcStickToPwm(snapshot.rcStickLeftHorizontal),
+                rcStickToPwm(snapshot.rcStickLeftVertical),
+                rcStickToPwm(snapshot.rcStickRightHorizontal),
+                rcStickToPwm(snapshot.rcStickRightVertical)
+            )
+        } else {
+            intArrayOf(
+                MavlinkSnapshot.UINT16_UNKNOWN,
+                MavlinkSnapshot.UINT16_UNKNOWN,
+                MavlinkSnapshot.UINT16_UNKNOWN,
+                MavlinkSnapshot.UINT16_UNKNOWN
+            )
+        }
+
+        val writer = PayloadWriter().u32(timeBootMs)
+        repeat(RC_CHANNEL_COUNT_MAX) { index ->
+            writer.u16(
+                if (index < channels.size) channels[index]
+                else MavlinkSnapshot.UINT16_UNKNOWN
+            )
+        }
+        return writer
+            .u8(if (connected) channels.size else 0)
+            .u8(airLinkQualityToMavRssi(snapshot))
+            .build()
+    }
+
+    internal fun rcStickToPwm(raw: Int): Int {
+        val clamped = raw.coerceIn(RC_STICK_MIN, RC_STICK_MAX)
+        return (RC_PWM_CENTER + clamped * RC_PWM_HALF_SPAN.toDouble() / RC_STICK_MAX)
+            .roundToInt()
+            .coerceIn(RC_PWM_MIN, RC_PWM_MAX)
+    }
+
+    private fun airLinkQualityToMavRssi(snapshot: MavlinkSnapshot): Int {
+        if (!snapshot.airLinkConnected || snapshot.airLinkQualityPercent !in 0..100) {
+            return U8_MAX
+        }
+        return (snapshot.airLinkQualityPercent * MAV_RSSI_MAX / 100.0)
+            .roundToInt()
+            .coerceIn(0, MAV_RSSI_MAX)
     }
 
     /** time_boot_ms(u32), roll(f), pitch(f), yaw(f), rollspeed(f), pitchspeed(f), yawspeed(f) */
@@ -1054,6 +1113,14 @@ internal object MavlinkMessages {
     private const val GPS_FIX_3D_SATELLITES = 6
     private const val GPS_STABILIZED_SATELLITES = 5
     private const val COG_MIN_SPEED_MPS = 0.1
+    private const val RC_CHANNEL_COUNT_MAX = 18
+    private const val RC_STICK_MIN = -660
+    private const val RC_STICK_MAX = 660
+    private const val RC_PWM_MIN = 1000
+    private const val RC_PWM_CENTER = 1500
+    private const val RC_PWM_MAX = 2000
+    private const val RC_PWM_HALF_SPAN = 500
+    private const val MAV_RSSI_MAX = 254
     private const val PERCENT_MAX = 100
     private const val U8_MAX = 255
     private const val VOLTAGE_CELLS = 10
