@@ -1761,9 +1761,12 @@ object DroneController {
     @Volatile private var cachedRTHAltitude: Int = -1
     @Volatile private var requestedRTHAltitude: Int = -1
     @Volatile private var cachedMaxFlightHeight: Int = -1
+    @Volatile private var requestedMaxFlightHeight: Int = -1
     @Volatile private var cachedMaxFlightDistance: Int = -1
+    @Volatile private var requestedMaxFlightDistance: Int = -1
     // Nullable internally so "aircraft reported false" is not conflated with "no value received".
     @Volatile private var cachedDistanceLimitEnabled: Boolean? = null
+    @Volatile private var requestedDistanceLimitEnabled: Boolean? = null
     @Volatile private var rthAltitudeReadStatus = FlightLimitReadStatus.NOT_REPORTED
     @Volatile private var maxFlightHeightReadStatus = FlightLimitReadStatus.NOT_REPORTED
     @Volatile private var maxFlightDistanceReadStatus = FlightLimitReadStatus.NOT_REPORTED
@@ -1806,6 +1809,7 @@ object DroneController {
             if (newValue != null) {
                 cachedMaxFlightHeight = newValue
                 maxFlightHeightReadStatus = FlightLimitReadStatus.CONFIRMED
+                if (requestedMaxFlightHeight == newValue) requestedMaxFlightHeight = -1
             } else {
                 maxFlightHeightReadStatus =
                     if (cachedMaxFlightHeight >= 0) FlightLimitReadStatus.STALE
@@ -1816,6 +1820,7 @@ object DroneController {
             if (newValue != null) {
                 cachedMaxFlightDistance = newValue
                 maxFlightDistanceReadStatus = FlightLimitReadStatus.CONFIRMED
+                if (requestedMaxFlightDistance == newValue) requestedMaxFlightDistance = -1
             } else {
                 maxFlightDistanceReadStatus =
                     if (cachedMaxFlightDistance >= 0) FlightLimitReadStatus.STALE
@@ -1826,6 +1831,7 @@ object DroneController {
             if (newValue != null) {
                 cachedDistanceLimitEnabled = newValue
                 distanceLimitEnabledReadStatus = FlightLimitReadStatus.CONFIRMED
+                if (requestedDistanceLimitEnabled == newValue) requestedDistanceLimitEnabled = null
             } else {
                 distanceLimitEnabledReadStatus =
                     if (cachedDistanceLimitEnabled != null) FlightLimitReadStatus.STALE
@@ -1865,6 +1871,7 @@ object DroneController {
                 if (value != null) {
                     cachedMaxFlightHeight = value
                     maxFlightHeightReadStatus = FlightLimitReadStatus.CONFIRMED
+                    if (requestedMaxFlightHeight == value) requestedMaxFlightHeight = -1
                 }
             },
             { error ->
@@ -1879,6 +1886,7 @@ object DroneController {
                 if (value != null) {
                     cachedMaxFlightDistance = value
                     maxFlightDistanceReadStatus = FlightLimitReadStatus.CONFIRMED
+                    if (requestedMaxFlightDistance == value) requestedMaxFlightDistance = -1
                 }
             },
             { error ->
@@ -1893,6 +1901,7 @@ object DroneController {
                 if (value != null) {
                     cachedDistanceLimitEnabled = value
                     distanceLimitEnabledReadStatus = FlightLimitReadStatus.CONFIRMED
+                    if (requestedDistanceLimitEnabled == value) requestedDistanceLimitEnabled = null
                 }
             },
             { error ->
@@ -1912,7 +1921,11 @@ object DroneController {
     @Synchronized
     private fun refreshFlightLimitsIfNeeded() {
         val needsRefresh =
-            rthAltitudeReadStatus != FlightLimitReadStatus.CONFIRMED ||
+            requestedRTHAltitude >= 0 ||
+                requestedMaxFlightHeight >= 0 ||
+                requestedMaxFlightDistance >= 0 ||
+                requestedDistanceLimitEnabled != null ||
+                rthAltitudeReadStatus != FlightLimitReadStatus.CONFIRMED ||
                 maxFlightHeightReadStatus != FlightLimitReadStatus.CONFIRMED ||
                 maxFlightDistanceReadStatus != FlightLimitReadStatus.CONFIRMED ||
                 distanceLimitEnabledReadStatus != FlightLimitReadStatus.CONFIRMED
@@ -1992,14 +2005,63 @@ object DroneController {
         return cachedMaxFlightHeight
     }
 
+    fun getEffectiveMaxFlightHeight(): Int {
+        setupFlightLimitListeners()
+        return requestedMaxFlightHeight.takeIf { it >= 0 } ?: cachedMaxFlightHeight
+    }
+
     fun getMaxFlightHeightStatus(): String {
         setupFlightLimitListeners()
-        return maxFlightHeightReadStatus.wireValue
+        return if (
+            requestedMaxFlightHeight >= 0 &&
+            requestedMaxFlightHeight != cachedMaxFlightHeight
+        ) {
+            "pending"
+        } else {
+            maxFlightHeightReadStatus.wireValue
+        }
     }
 
     fun setMaxFlightHeight(height: Int) {
-        maxFlightHeightKey.set(height)
-        ToastUtils.showToast("Max flight height set to $height m")
+        setupFlightLimitListeners()
+        requestedMaxFlightHeight = height
+        maxFlightHeightKey.set(
+            height,
+            {
+                // A successful set means DJI accepted the request; verify the value with a live
+                // read before clearing "pending", because the aircraft may clamp a limit.
+                maxFlightHeightKey.get(
+                    { value ->
+                        if (value != null) {
+                            cachedMaxFlightHeight = value
+                            maxFlightHeightReadStatus = FlightLimitReadStatus.CONFIRMED
+                            if (value == height) {
+                                requestedMaxFlightHeight = -1
+                                ToastUtils.showToast("Max flight height confirmed at $value m")
+                            } else {
+                                requestedMaxFlightHeight = -1
+                                Log.w(
+                                    "DroneController",
+                                    "Max flight height requested=$height but aircraft reports=$value"
+                                )
+                                ToastUtils.showToast("Aircraft reports max height $value m")
+                            }
+                        }
+                    },
+                    { error ->
+                        Log.w(
+                            "DroneController",
+                            "Max flight height write accepted but readback failed: ${error.description()}"
+                        )
+                    }
+                )
+            },
+            { error ->
+                requestedMaxFlightHeight = -1
+                Log.w("DroneController", "Max flight height change refused: ${error.description()}")
+                ToastUtils.showToast("Max flight height change refused")
+            }
+        )
     }
 
     fun getMaxFlightDistance(): Int {
@@ -2007,14 +2069,61 @@ object DroneController {
         return cachedMaxFlightDistance
     }
 
+    fun getEffectiveMaxFlightDistance(): Int {
+        setupFlightLimitListeners()
+        return requestedMaxFlightDistance.takeIf { it >= 0 } ?: cachedMaxFlightDistance
+    }
+
     fun getMaxFlightDistanceStatus(): String {
         setupFlightLimitListeners()
-        return maxFlightDistanceReadStatus.wireValue
+        return if (
+            requestedMaxFlightDistance >= 0 &&
+            requestedMaxFlightDistance != cachedMaxFlightDistance
+        ) {
+            "pending"
+        } else {
+            maxFlightDistanceReadStatus.wireValue
+        }
     }
 
     fun setMaxFlightDistance(distance: Int) {
-        maxFlightDistanceKey.set(distance)
-        ToastUtils.showToast("Max flight distance set to $distance m")
+        setupFlightLimitListeners()
+        requestedMaxFlightDistance = distance
+        maxFlightDistanceKey.set(
+            distance,
+            {
+                maxFlightDistanceKey.get(
+                    { value ->
+                        if (value != null) {
+                            cachedMaxFlightDistance = value
+                            maxFlightDistanceReadStatus = FlightLimitReadStatus.CONFIRMED
+                            if (value == distance) {
+                                requestedMaxFlightDistance = -1
+                                ToastUtils.showToast("Max flight distance confirmed at $value m")
+                            } else {
+                                requestedMaxFlightDistance = -1
+                                Log.w(
+                                    "DroneController",
+                                    "Max flight distance requested=$distance but aircraft reports=$value"
+                                )
+                                ToastUtils.showToast("Aircraft reports max distance $value m")
+                            }
+                        }
+                    },
+                    { error ->
+                        Log.w(
+                            "DroneController",
+                            "Max flight distance write accepted but readback failed: ${error.description()}"
+                        )
+                    }
+                )
+            },
+            { error ->
+                requestedMaxFlightDistance = -1
+                Log.w("DroneController", "Max flight distance change refused: ${error.description()}")
+                ToastUtils.showToast("Max flight distance change refused")
+            }
+        )
     }
 
     fun getDistanceLimitEnabled(): Boolean {
@@ -2022,14 +2131,62 @@ object DroneController {
         return cachedDistanceLimitEnabled ?: false
     }
 
+    fun getEffectiveDistanceLimitEnabled(): Boolean {
+        setupFlightLimitListeners()
+        return requestedDistanceLimitEnabled ?: cachedDistanceLimitEnabled ?: false
+    }
+
     fun getDistanceLimitEnabledStatus(): String {
         setupFlightLimitListeners()
-        return distanceLimitEnabledReadStatus.wireValue
+        val requested = requestedDistanceLimitEnabled
+        return if (requested != null && requested != cachedDistanceLimitEnabled) {
+            "pending"
+        } else {
+            distanceLimitEnabledReadStatus.wireValue
+        }
     }
 
     fun setDistanceLimitEnabled(enabled: Boolean) {
-        distanceLimitEnabledKey.set(enabled)
-        ToastUtils.showToast("Distance limit ${if (enabled) "enabled" else "disabled"}")
+        setupFlightLimitListeners()
+        requestedDistanceLimitEnabled = enabled
+        distanceLimitEnabledKey.set(
+            enabled,
+            {
+                distanceLimitEnabledKey.get(
+                    { value ->
+                        if (value != null) {
+                            cachedDistanceLimitEnabled = value
+                            distanceLimitEnabledReadStatus = FlightLimitReadStatus.CONFIRMED
+                            requestedDistanceLimitEnabled = null
+                            if (value == enabled) {
+                                ToastUtils.showToast(
+                                    "Distance limit confirmed ${if (value) "enabled" else "disabled"}"
+                                )
+                            } else {
+                                Log.w(
+                                    "DroneController",
+                                    "Distance limit requested=$enabled but aircraft reports=$value"
+                                )
+                                ToastUtils.showToast(
+                                    "Aircraft reports distance limit ${if (value) "enabled" else "disabled"}"
+                                )
+                            }
+                        }
+                    },
+                    { error ->
+                        Log.w(
+                            "DroneController",
+                            "Distance-limit write accepted but readback failed: ${error.description()}"
+                        )
+                    }
+                )
+            },
+            { error ->
+                requestedDistanceLimitEnabled = null
+                Log.w("DroneController", "Distance-limit change refused: ${error.description()}")
+                ToastUtils.showToast("Distance-limit change refused")
+            }
+        )
     }
 
     // --- RC / AirLink telemetry -------------------------------------------------------------
