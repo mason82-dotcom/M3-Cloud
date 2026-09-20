@@ -76,6 +76,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
+import com.lyrebird.rc.controller.CameraCaptureConfigurator
 import com.lyrebird.rc.controller.ControlAuthority
 import com.lyrebird.rc.controller.DroneController
 import com.lyrebird.rc.edge.EdgeDetectionController
@@ -7142,34 +7143,79 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             )
 
             running = true
-            if (surveyCaptures.isNotEmpty()) {
-                surveyCaptureRecords.clear()
-                lastSurveyMediaEventElapsedMs = SystemClock.elapsedRealtime()
-                surveyMediaTrackingActive = true
-            } else {
-                surveyMediaTrackingActive = false
+
+            fun launchNativeMission() {
+                if (!running) return
+
+                if (surveyCaptures.isNotEmpty()) {
+                    surveyCaptureRecords.clear()
+                    lastSurveyMediaEventElapsedMs = SystemClock.elapsedRealtime()
+                    surveyMediaTrackingActive = true
+                } else {
+                    surveyMediaTrackingActive = false
+                }
+
+                // Distinct from NAVIGATING: DJI's own wayline engine is flying this, not the app's
+                // virtual-stick loop, and the status badge showing MANUAL for a mission that is
+                // flying perfectly fine was ambient RC stick noise being read as a takeover.
+                DroneController.markMissionActive()
+                listener?.onItemStarted(0)
+                DroneController.navigateWaylineMissionNative(
+                    waypointModels,
+                    missionConfig,
+                    speed,
+                    onProgress = { waypointIndex -> listener?.onItemStarted(waypointIndex) },
+                    onFinished = { success ->
+                        running = false
+                        if (surveyMediaTrackingActive) {
+                            finalizeSurveyMedia(
+                                if (success) "mission_finished" else "mission_failed"
+                            )
+                        }
+                        DroneController.clearMissionActiveIfStillSet()
+                        listener?.onMissionFinished(success)
+                    },
+                    extraActionGroups = surveyActionGroups
+                )
             }
-            // Distinct from NAVIGATING: DJI's own wayline engine is flying this, not the app's
-            // virtual-stick loop, and the status badge showing MANUAL for a mission that is
-            // flying perfectly fine was ambient RC stick noise being read as a takeover — see the
-            // MISSION exclusion in VirtualStickVM.tryUpdateVirtualStickByRc().
-            DroneController.markMissionActive()
-            listener?.onItemStarted(0)
-            DroneController.navigateWaylineMissionNative(
-                waypointModels,
-                missionConfig,
-                speed,
-                onProgress = { waypointIndex -> listener?.onItemStarted(waypointIndex) },
-                onFinished = { success ->
-                    running = false
-                    if (surveyMediaTrackingActive) {
-                        finalizeSurveyMedia(if (success) "mission_finished" else "mission_failed")
+
+            if (surveyCaptures.isNotEmpty()) {
+                val capabilities = Payload.cameraCapabilities()
+                val surveyProfile =
+                    CameraCaptureConfigurator.defaultSurveyProfile(capabilities)
+
+                if (surveyProfile != null) {
+                    // M3E, M3T and M3M are configured separately before the KMZ is pushed.
+                    // M3M uses the documented RGB+multispectral source set; M3E/M3T use their
+                    // wide mapping source. A profile/readback mismatch aborts before take-off.
+                    CameraCaptureConfigurator.preparePhoto(surveyProfile) { prepared ->
+                        if (!running) return@preparePhoto
+                        if (!prepared.success) {
+                            Log.e(
+                                TAG,
+                                "Native survey camera preparation failed: ${prepared.detail}"
+                            )
+                            running = false
+                            surveyMediaTrackingActive = false
+                            DroneController.clearMissionActiveIfStillSet()
+                            listener?.onMissionFinished(false)
+                        } else {
+                            Log.i(
+                                TAG,
+                                "Native survey camera ready: ${surveyProfile.name} " +
+                                    "(${prepared.detail})"
+                            )
+                            launchNativeMission()
+                        }
                     }
-                    DroneController.clearMissionActiveIfStillSet()
-                    listener?.onMissionFinished(success)
-                },
-                extraActionGroups = surveyActionGroups
-            )
+                } else {
+                    // Legacy/non-M3 payloads retain their existing DJI-native wayline behavior.
+                    launchNativeMission()
+                }
+            } else {
+                launchNativeMission()
+            }
+
             return CommandResult(MavlinkCommandOutcome.ACCEPTED)
         }
 
