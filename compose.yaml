@@ -1,0 +1,3 @@
+# M3-Cloud service stack
+# Services will be enabled as their implementations are added.
+services: {}
