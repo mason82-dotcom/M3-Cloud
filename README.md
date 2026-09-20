@@ -138,3 +138,48 @@ M3M default groups such as `*_D.JPG`, `*_MS_G.TIF`, `*_MS_R.TIF`,
 `*_MS_RE.TIF`, and `*_MS_NIR.TIF` are kept together. For M3E/M3T, using the
 `M3E/`, `M3T/`, or `M3M/` top-level folder is recommended so platform identity is
 explicit even when a filename alone is ambiguous.
+
+
+## WebODM processing workflow
+
+M3-Cloud can process imported M3E/M3T RGB imagery with an external WebODM instance.
+The originals remain read-only in the media import folder and are streamed byte-for-byte
+to WebODM when a job is started.
+
+Configure WebODM in `.env`:
+
+```dotenv
+M3CLOUD_WEBODM_ENABLED=true
+M3CLOUD_WEBODM_URL=http://webodm-host:8000
+
+# Use either an existing JWT token...
+M3CLOUD_WEBODM_TOKEN=
+
+# ...or credentials used to obtain one.
+M3CLOUD_WEBODM_USERNAME=
+M3CLOUD_WEBODM_PASSWORD=
+
+M3CLOUD_WEBODM_TIMEOUT_SECONDS=300
+M3CLOUD_PROCESSING_POLL_INTERVAL_SECONDS=5
+```
+
+The Processing view discovers eligible RGB/Wide datasets directly from the media catalog.
+A processing job freezes the selected media asset IDs before upload, so later watch-folder
+changes do not silently change an already queued job.
+
+Selected WebODM results are archived in the `m3-results` MinIO bucket. In addition to the
+original result object, `orthophoto.mbtiles` is published as XYZ raster tiles under:
+
+```text
+webodm/<job-uuid>/orthophoto/tiles/<z>/<x>/<y>.<format>
+```
+
+M3-Cloud converts the MBTiles TMS Y coordinate to XYZ during publication and exposes:
+
+```text
+GET /api/v1/processing/jobs/<UUID>/map
+GET /api/v1/processing/jobs/<UUID>/map/tiles/<z>/<x>/<y>
+```
+
+The React Processing view can open the published orthophoto directly on MapLibre. The original
+`orthophoto.mbtiles` remains archived in MinIO and is not modified.
