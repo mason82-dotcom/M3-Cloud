@@ -21,6 +21,10 @@ internal enum class CameraCaptureProfile(
     val platform: CameraPlatform,
     val storedSources: List<CameraVideoStreamSourceType>
 ) {
+    val storedSourceNames: Set<String>
+        get() = storedSources.mapTo(linkedSetOf()) { it.name }
+
+
     M3E_MAPPING(
         CameraPlatform.M3E,
         listOf(CameraVideoStreamSourceType.WIDE_CAMERA)
