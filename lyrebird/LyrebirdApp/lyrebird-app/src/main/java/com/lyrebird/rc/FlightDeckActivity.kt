@@ -4234,6 +4234,11 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     }
 
     private fun setupRthModeOverrideListener() {
+        // Refresh once here as well: setupAircraftIdleMonitor() can run before the aircraft has
+        // finished publishing its initial mode, and KeyManager listeners do not guarantee a
+        // synthetic callback with the already-current value.
+        getFlightMode().takeIf { it != FlightMode.UNKNOWN }?.let { cachedFlightMode = it }
+
         // Detect RTH triggered from the RC controller (not from our server HTTP request).
         // When the server triggers RTH it calls startReturnToHome() which sets droneStatus
         // to RETURNING_HOME BEFORE the DJI SDK switches to GO_HOME flight mode.
@@ -5594,6 +5599,21 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private fun getFlightMode(): FlightMode = flightModeKey.get(FlightMode.UNKNOWN)
 
     /**
+     * MAVLink snapshots must not remain UNKNOWN just because the startup cache was populated
+     * before the aircraft finished publishing KeyFlightMode. A successful synchronous read
+     * refreshes the listener-backed cache; an UNKNOWN read keeps the last listener value so a
+     * transient key miss does not erase a real mode. Genuine transitions to UNKNOWN are still
+     * applied by setupRthModeOverrideListener().
+     */
+    private fun getStableFlightMode(): FlightMode {
+        val current = getFlightMode()
+        if (current != FlightMode.UNKNOWN) {
+            cachedFlightMode = current
+        }
+        return cachedFlightMode
+    }
+
+    /**
      * Whether the aircraft is ready to take off / arm.
      *
      * Mirrors the DJI system-status banner: ready when it reads "Ready to Go (GPS)",
@@ -5924,7 +5944,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             homeSet = isHomeSet(),
             // Use the listener-backed value: it is stable across snapshot ticks and avoids a
             // transient synchronous key miss collapsing HEARTBEAT.custom_mode to UNKNOWN.
-            flightMode = cachedFlightMode.name,
+            flightMode = getStableFlightMode().name,
             // KeyAreMotorsOn is the direct motor state. isFlying is kept as a fallback because
             // some DJI products briefly fail to publish the motor key during state transitions.
             motorsRunning = areMotorsOnKey.get(false) || isFlyingKey.get(false),
