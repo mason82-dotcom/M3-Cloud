@@ -382,6 +382,15 @@ export interface ThermogramHandoff {
   capture_groups: ThermogramHandoffGroup[];
 }
 
+export interface ExternalResultStatus {
+  job_id: string;
+  drop_path: string;
+  mounted: boolean;
+  job_folder_exists: boolean;
+  file_count: number;
+  files: string[];
+}
+
 export interface ProcessingResult {
   id: string;
   job_id: string;

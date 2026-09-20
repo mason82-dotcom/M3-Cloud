@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createThermogramJob,
   createWebODMJob,
+  fetchExternalResultStatus,
   fetchMediaDatasets,
   fetchProcessingMap,
   fetchProcessingMaps,
@@ -11,6 +12,7 @@ import {
   fetchProcessingJobs,
   fetchProcessingProfiles,
   fetchThermogramHandoff,
+  importExternalResults,
   processingResultDownloadUrl,
   thermogramHandoffDownloadUrl,
   updateExternalProcessingJob,
@@ -18,6 +20,7 @@ import {
 import type {
   MediaDataset,
   ProcessingJob,
+  ExternalResultStatus,
   ProcessingProfile,
   ProcessingResult,
   ThermogramHandoff,
@@ -75,6 +78,7 @@ export function ProcessingView() {
   const [thermogramName, setThermogramName] = useState("");
   const [thermogramSubmitting, setThermogramSubmitting] = useState(false);
   const [handoffs, setHandoffs] = useState<Record<string, ThermogramHandoff>>({});
+  const [externalResults, setExternalResults] = useState<Record<string, ExternalResultStatus>>({});
   const [results, setResults] = useState<Record<string, ProcessingResult[]>>({});
   const [mapInfo, setMapInfo] = useState<Awaited<ReturnType<typeof fetchProcessingMap>>>(null);
   const [maps, setMaps] = useState<Awaited<ReturnType<typeof fetchProcessingMaps>>>([]);
@@ -537,6 +541,49 @@ export function ProcessingView() {
                       Mark completed
                     </button>
                   ) : null}
+                  {["COMPLETED_EXTERNAL", "RESULT_IMPORT_FAILED"].includes(job.status) ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          void fetchExternalResultStatus(job.id)
+                            .then((value) =>
+                              setExternalResults((current) => ({ ...current, [job.id]: value })),
+                            )
+                            .catch((reason: unknown) =>
+                              setError(reason instanceof Error ? reason.message : String(reason)),
+                            );
+                        }}
+                        type="button"
+                      >
+                        Result folder
+                      </button>
+                      <button
+                        onClick={() => {
+                          void importExternalResults(job.id)
+                            .then((values) => {
+                              setResults((current) => ({ ...current, [job.id]: values }));
+                              return refresh();
+                            })
+                            .catch((reason: unknown) =>
+                              setError(reason instanceof Error ? reason.message : String(reason)),
+                            );
+                        }}
+                        type="button"
+                      >
+                        Import results
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {externalResults[job.id] ? (
+                <div className="thermogramPath">
+                  <span>Result drop folder</span>
+                  <code>{externalResults[job.id].drop_path}</code>
+                  <small>
+                    {externalResults[job.id].file_count} files detected
+                  </small>
                 </div>
               ) : null}
 

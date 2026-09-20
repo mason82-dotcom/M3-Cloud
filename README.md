@@ -257,3 +257,32 @@ POST /api/v1/processing/jobs/<UUID>/external-status
 External job states are tracked as `WAITING_EXTERNAL`, `RUNNING_EXTERNAL`,
 `COMPLETED_EXTERNAL`, or `FAILED_EXTERNAL`. The handoff JSON contains the exact original
 relative paths, SHA-256 hashes and capture groups selected for the job.
+
+
+#### Thermogram result return
+
+External Thermogram exports can be returned to M3-Cloud through a dedicated read-only
+processing-import mount. Each processing job gets its own drop folder named by the job UUID:
+
+```text
+/processing-import/<job-uuid>/
+```
+
+Configure the host/share paths:
+
+```dotenv
+M3CLOUD_PROCESSING_IMPORT_HOST_PATH=/mnt/m3-processing-import
+M3CLOUD_PROCESSING_IMPORT_HANDOFF_ROOT=\\m3-cloud\processing-import
+```
+
+After Thermogram has finished, copy its exported files into that job folder and mark the job
+`COMPLETED_EXTERNAL`. M3-Cloud snapshots each file, verifies that it did not change during the
+copy, computes SHA-256, uploads it to the `m3-results` bucket, and registers it as a normal
+`ProcessingResult`.
+
+```text
+GET  /api/v1/processing/jobs/<UUID>/external-results/status
+POST /api/v1/processing/jobs/<UUID>/external-results/import
+```
+
+Imported Thermogram outputs use the same result download API and flight/job lineage as WebODM.

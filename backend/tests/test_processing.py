@@ -9,6 +9,7 @@ from app.processing.service import (
     normalize_prefix,
     resolve_asset_path,
     build_thermogram_handoff,
+    external_result_object_key,
     result_object_key,
     select_thermogram_assets,
     selected_result_assets,
@@ -226,3 +227,29 @@ def test_thermogram_handoff_is_m3t_and_preserves_original_paths() -> None:
         "DJI_0001_W.JPG",
         "DJI_0001_T.JPG",
     ]
+
+
+def test_external_result_object_key_is_job_scoped() -> None:
+    job_id = uuid.UUID("33333333-3333-3333-3333-333333333333")
+    assert external_result_object_key(job_id, "reports/result.csv") == (
+        "external/33333333-3333-3333-3333-333333333333/reports/result.csv"
+    )
+    with pytest.raises(ValueError):
+        external_result_object_key(job_id, "../escape.csv")
+
+
+def test_external_result_snapshot_is_stable_and_hashed(tmp_path: Path) -> None:
+    from app.processing.service import ProcessingManager
+
+    source = tmp_path / "result.csv"
+    destination = tmp_path / "snapshot.csv"
+    source.write_bytes(b"temperature,42.1\n")
+
+    size, sha256 = ProcessingManager._snapshot_external_result(
+        source,
+        destination,
+    )
+
+    assert size == len(b"temperature,42.1\n")
+    assert len(sha256) == 64
+    assert destination.read_bytes() == source.read_bytes()

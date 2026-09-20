@@ -1,5 +1,6 @@
 import type {
   FlightDetail,
+  ExternalResultStatus,
   FlightReplay,
   FlightSummary,
   MediaAsset,
@@ -245,6 +246,33 @@ export async function updateExternalProcessingJob(
     throw new Error(body?.detail ?? `External job update failed: ${response.status}`);
   }
   return response.json() as Promise<ProcessingJob>;
+}
+
+export async function fetchExternalResultStatus(
+  jobId: string,
+): Promise<ExternalResultStatus> {
+  const response = await fetch(
+    `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/external-results/status`,
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `External result status failed: ${response.status}`);
+  }
+  return response.json() as Promise<ExternalResultStatus>;
+}
+
+export async function importExternalResults(
+  jobId: string,
+): Promise<ProcessingResult[]> {
+  const response = await fetch(
+    `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/external-results/import`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `External result import failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingResult[]>;
 }
 
 export async function fetchProcessingResults(
