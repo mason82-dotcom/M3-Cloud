@@ -50,3 +50,19 @@ The readiness endpoint reports PostgreSQL, Redis, MinIO and EMQX independently.
 > The default credentials in `.env.example` are development placeholders. Change them before exposing any service beyond a trusted LAN.
 
 Lyrebird remains the aircraft-side integration layer; persistent project, survey, processing and operator services belong in M3-Cloud.
+
+
+## Fleet dashboard
+
+The first browser dashboard is served through the frontend reverse proxy:
+
+```text
+http://localhost:8080
+```
+
+It loads the DJI device registry through `/api/v1/devices`, bootstraps current aircraft
+telemetry through `/api/v1/devices/{sn}/telemetry`, and then follows live Redis-backed
+WebSocket updates from `/ws/live`.
+
+The default map style is MapLibre's public demo style. Set `VITE_MAP_STYLE_URL` at frontend
+build time when using a self-hosted or project-specific style.

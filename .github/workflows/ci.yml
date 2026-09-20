@@ -118,3 +118,27 @@ jobs:
 
       - name: Backend tests
         run: PYTHONPATH=backend python -m pytest -q backend/tests
+
+
+  frontend-build:
+    name: M3-Cloud frontend build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck and build frontend
+        working-directory: frontend
+        run: npm run build

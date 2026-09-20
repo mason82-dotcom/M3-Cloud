@@ -102,6 +102,17 @@ services:
     ports:
       - "8000:8000"
 
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+
 volumes:
   postgres_data:
   redis_data:
