@@ -5,9 +5,12 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 import httpx
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.missions.plans import mission_runtime_id
+from app.models import MissionDeployment
 from app.vehicles.lyrebird import aircraft_serial, merge_identity_config
 
 
@@ -55,6 +58,35 @@ class MissionUploadResult:
 
 
 TargetResolver = Callable[[str, str | None], Awaitable[MissionTarget]]
+
+
+async def recover_interrupted_uploads(
+    sessions: async_sessionmaker[AsyncSession],
+) -> int:
+    """Make crash-interrupted uploads retryable without claiming they failed cleanly."""
+
+    async with sessions() as session:
+        result = await session.execute(
+            update(MissionDeployment)
+            .where(MissionDeployment.upload_status == "UPLOADING")
+            .values(
+                upload_status="UPLOAD_INTERRUPTED",
+                upload_error=(
+                    "UPLOAD_INTERRUPTED: backend restarted before the "
+                    "upload transaction reached a final verified state"
+                ),
+                upload_details={
+                    "code": "UPLOAD_INTERRUPTED",
+                    "execution_started": False,
+                    "safe_to_retry_same_sealed_package": True,
+                },
+            )
+            .returning(MissionDeployment.id)
+        )
+        recovered = len(result.scalars().all())
+        await session.commit()
+        return recovered
+
 
 
 class MissionUploader:
