@@ -3,7 +3,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.processing.service import normalize_prefix, resolve_asset_path
+from app.processing.service import REMOTE_STATUS, normalize_prefix, resolve_asset_path
 from app.processing.webodm import WebODMClient
 
 
@@ -77,3 +77,10 @@ def test_webodm_partial_upload_flow(tmp_path: Path) -> None:
         ("POST", "/api/projects/7/tasks/9/commit/"),
         ("GET", "/api/projects/7/tasks/9/"),
     ]
+
+
+
+def test_webodm_remote_queue_state_is_distinct() -> None:
+    assert REMOTE_STATUS[10] == "QUEUED_REMOTE"
+    assert REMOTE_STATUS[20] == "RUNNING"
+    assert REMOTE_STATUS[40] == "COMPLETED"
