@@ -25,6 +25,16 @@ function normalizeVehicle(v){
  return {raw:v,telemetry:t,aircraft,positioning,rtkState:rtk,id:v.id||v.sn||v.device_sn||'unknown',name:v.name||v.callsign||v.model||'Aircraft',model:v.model||v.product||p.platform||'DJI',source:v.source||'unknown',online:v.online!==false,lat:Number(v.lat??v.latitude??t.latitude),lng:Number(v.lng??v.longitude??t.longitude),alt:v.alt??v.altitude??t.relative_altitude_m,amsl:t.amsl_altitude_m,rtk:positioning.fix||rtk.fix||v.rtk||v.rtk_status||'—',battery:v.battery??v.battery_percent??b.capacity_percent,sats:v.satellites??v.gps_satellites??positioning.gps_satellites??t.gps_satellites,payload:p,lrf:t.lrf||{},camera:t.camera||{}}
 }
 function esc(v){return String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function positioningStatus(v){
+ const fix=String(v.positioning?.fix||v.rtkState?.fix||v.rtk||'UNKNOWN').toUpperCase();
+ const stale=v.positioning?.rtk_stale===true||fix==='STALE';
+ const healthy=v.rtkState?.healthy;
+ if(stale)return {label:'STALE',className:'warn',usable:false};
+ if(fix==='FIXED')return {label:'FIXED',className:healthy===false?'warn':'fix',usable:healthy!==false};
+ if(fix==='FLOAT')return {label:'FLOAT',className:healthy===false?'warn':'float',usable:healthy!==false};
+ if(fix==='SINGLE')return {label:'SINGLE',className:'single',usable:false};
+ return {label:fix==='NONE'?'NONE':'UNKNOWN',className:'',usable:false};
+}
 function payloadCards(v){
  const p=v.payload||{}, cam=p.camera||{}, platform=String(p.platform||v.model||'UNKNOWN').toUpperCase();
  const common=`<div class="payloadCard"><h3>Camera identity</h3><dl><dt>Platform</dt><dd>${esc(platform)}</dd><dt>MSDK CameraType</dt><dd>${esc(cam.camera_type)}</dd><dt>Firmware</dt><dd>${esc(cam.firmware_version)}</dd><dt>Mode</dt><dd>${esc(cam.camera_mode)}</dd><dt>Live source</dt><dd>${esc(cam.live_view_source)}</dd></dl></div>`;
@@ -61,9 +71,9 @@ function renderLive(vs){
 function render(){
  const vs=state.vehicles.map(normalizeVehicle);
  $('#aircraftCount').textContent=vs.length; $('#onlineCount').textContent=vs.filter(v=>v.online).length;
- $('#rtkCount').textContent=vs.filter(v=>String(v.rtk).toUpperCase().includes('FIX')).length; $('#fleetState').textContent=vs.length+' devices';
+ $('#rtkCount').textContent=vs.filter(v=>positioningStatus(v).usable).length; $('#fleetState').textContent=vs.length+' devices';
  $('#aircraftHint').textContent=vs.length?'telemetry active':'keine Telemetrie';
- $('#fleetList').innerHTML=vs.length?vs.map(v=>`<article class="fleetItem ${v.id===state.selectedVehicleId?'selected':''}" data-vehicle-id="${esc(v.id)}"><div class="row"><div><strong>${v.name}</strong><small>${v.model} · ${v.source}</small></div><span class="badge ${String(v.rtk).toUpperCase().includes('FIX')?'fix':''}">${n(v.rtk)}</span></div><div class="telemetry"><span>Battery<b>${n(v.battery)}${v.battery!=null?'%':''}</b></span><span>Altitude<b>${n(v.alt)}${v.alt!=null?' m':''}</b></span><span>Satellites<b>${n(v.sats)}</b></span></div></article>`).join(''):'<div class="empty">Noch keine Aircraft-Telemetrie vom Backend.</div>';
+ $('#fleetList').innerHTML=vs.length?vs.map(v=>{const ps=positioningStatus(v);return `<article class="fleetItem ${v.id===state.selectedVehicleId?'selected':''}" data-vehicle-id="${esc(v.id)}"><div class="row"><div><strong>${v.name}</strong><small>${v.model} · ${v.source}</small></div><span class="badge ${ps.className}">${esc(ps.label)}</span></div><div class="telemetry"><span>Battery<b>${n(v.battery)}${v.battery!=null?'%':''}</b></span><span>Altitude<b>${n(v.alt)}${v.alt!=null?' m':''}</b></span><span>Satellites<b>${n(v.sats)}</b></span></div></article>`}).join(''):'<div class="empty">Noch keine Aircraft-Telemetrie vom Backend.</div>';
  document.querySelectorAll('.fleetItem[data-vehicle-id]').forEach(el=>el.addEventListener('click',()=>{state.selectedVehicleId=el.dataset.vehicleId;render()}));
  renderPayload(vs);
  renderLive(vs);
