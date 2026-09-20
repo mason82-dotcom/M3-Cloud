@@ -78,8 +78,6 @@ class MediaImporter:
     async def scan(self) -> ImportScanResult:
         async with self._scan_lock:
             started = datetime.now(timezone.utc)
-            scan_started_ns = time.time_ns()
-
             try:
                 if not self.root.exists():
                     finished = datetime.now(timezone.utc)
@@ -168,8 +166,6 @@ class MediaImporter:
                 self.last_error = f"{type(exc).__name__}: {exc}"
                 logger.exception("Media import scan failed for %s", self.root)
                 raise
-            finally:
-                del scan_started_ns
 
     def status(self) -> dict[str, object]:
         return {
