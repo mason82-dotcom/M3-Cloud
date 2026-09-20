@@ -374,6 +374,7 @@ class _ApiUploader:
         )
         if self.error is not None:
             raise self.error
+        runtime_id = int(package["wire"]["mission_id"])
         return MissionUploadResult(
             host="10.0.0.2",
             system_id=123,
@@ -383,7 +384,10 @@ class _ApiUploader:
                 item["seq"] for item in package["wire"]["items"]
             ),
             ack_result=0,
-            runtime_mission_id=int(package["wire"]["mission_id"]),
+            runtime_mission_id=runtime_id,
+            readback_verified=True,
+            readback_item_count=len(package["wire"]["items"]),
+            readback_runtime_mission_id=runtime_id,
         )
 
 
