@@ -23,12 +23,17 @@ internal enum class RtkFix {
  */
 internal data class RtkTelemetryState(
     val enabled: Boolean = false,
+    val connected: Boolean = false,
     val healthy: Boolean = false,
     val fix: RtkFix = RtkFix.UNKNOWN,
     val rawFix: RtkFix = RtkFix.UNKNOWN,
     val latitudeDeg: Double? = null,
     val longitudeDeg: Double? = null,
     val altitudeM: Double? = null,
+    val fusedLatitudeDeg: Double? = null,
+    val fusedLongitudeDeg: Double? = null,
+    val fusedAltitudeM: Double? = null,
+    val fusedHeadingDeg: Double? = null,
     val stdLatitudeM: Double? = null,
     val stdLongitudeM: Double? = null,
     val stdAltitudeM: Double? = null,
@@ -54,6 +59,10 @@ internal class RtkTelemetryMonitor(
         val latitudeDeg: Double? = null,
         val longitudeDeg: Double? = null,
         val altitudeM: Double? = null,
+        val fusedLatitudeDeg: Double? = null,
+        val fusedLongitudeDeg: Double? = null,
+        val fusedAltitudeM: Double? = null,
+        val fusedHeadingDeg: Double? = null,
         val stdLatitudeM: Double? = null,
         val stdLongitudeM: Double? = null,
         val stdAltitudeM: Double? = null,
@@ -72,12 +81,17 @@ internal class RtkTelemetryMonitor(
     private val locationListener = RTKLocationInfoListener { info ->
         val location = info.rtkLocation
         val mobile = location?.mobileStationLocation
+        val fused = info.real3DLocation
         synchronized(stateLock) {
             raw = raw.copy(
                 fix = mapFix(location?.positioningSolution),
                 latitudeDeg = mobile?.latitude,
                 longitudeDeg = mobile?.longitude,
                 altitudeM = mobile?.altitude,
+                fusedLatitudeDeg = fused?.latitude,
+                fusedLongitudeDeg = fused?.longitude,
+                fusedAltitudeM = fused?.altitude,
+                fusedHeadingDeg = info.realHeading,
                 stdLatitudeM = location?.stdLatitude,
                 stdLongitudeM = location?.stdLongitude,
                 stdAltitudeM = location?.stdAltitude,
@@ -90,6 +104,7 @@ internal class RtkTelemetryMonitor(
         synchronized(stateLock) {
             raw = raw.copy(
                 enabled = state.isRTKEnabled,
+                connected = state.rtkConnected,
                 healthy = state.rtkHealthy,
                 source = state.rtkReferenceStationSource?.name ?: "UNKNOWN"
             )
@@ -128,12 +143,17 @@ internal class RtkTelemetryMonitor(
         }
         return RtkTelemetryState(
             enabled = current.enabled,
+            connected = current.connected,
             healthy = current.healthy,
             fix = effectiveFix,
             rawFix = current.fix,
             latitudeDeg = current.latitudeDeg,
             longitudeDeg = current.longitudeDeg,
             altitudeM = current.altitudeM,
+            fusedLatitudeDeg = current.fusedLatitudeDeg,
+            fusedLongitudeDeg = current.fusedLongitudeDeg,
+            fusedAltitudeM = current.fusedAltitudeM,
+            fusedHeadingDeg = current.fusedHeadingDeg,
             stdLatitudeM = current.stdLatitudeM,
             stdLongitudeM = current.stdLongitudeM,
             stdAltitudeM = current.stdAltitudeM,
