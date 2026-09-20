@@ -363,6 +363,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         private const val PREF_DETECTION_SOURCE = "detection_source"
         private const val PREF_EDGE_DETECTION_ENABLED = "edge_detection_enabled"
         private const val PREF_VIDEO_SOURCE = "video_source"
+        private const val PREF_CAMERA_LIVE_SOURCE = "camera_live_source"
         private const val PREF_EDGE_MODEL_URI = "edge_model_uri"
         private const val PREF_EDGE_MODEL_NAME = "edge_model_name"
         private const val PREF_EDGE_LABELS_URI = "edge_labels_uri"
@@ -380,6 +381,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             PREF_DETECTIONS_ENABLED,
             PREF_DETECTION_SOURCE,
             PREF_VIDEO_SOURCE,
+            PREF_CAMERA_LIVE_SOURCE,
             PREF_STREAMING_MODE,
             // lb_mav_0_sysid: 0 (the default) derives the id from the serial, so it needs no
             // stored value; an operator-pinned manual id is per-drone and travels with it.
@@ -895,6 +897,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         setupAircraftConnectionListener()
         setupAircraftIdleMonitor()
         setupVideoSourceState()
+        setupCameraLiveSourcePreference()
         setupMockVideoPreview()
         setupPhoneVideoPreview()
         setupMapExpandToggle()
@@ -1646,6 +1649,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             )
             append("\"missionExecutor\":\"${missionExecutor.prefValue}\",")
             append("\"videoSource\":\"${getVideoSourceMode().prefValue}\",")
+            append("\"cameraLiveSource\":\"${jsonEscape(sharedPreferences.getString(PREF_CAMERA_LIVE_SOURCE, "") ?: "")}\",")
             append("\"streamingMode\":\"${getStreamingMode().prefValue}\",")
             append("\"webrtcResolution\":\"${getWebRTCResolutionPreset().prefValue}\",")
             append("\"webrtcFps\":${getWebRTCFps()},")
@@ -1684,6 +1688,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             append("\"detectedAircraft\":\"identity\",")
             append("\"controlProfile\":\"identity\",")
             append("\"videoSource\":\"video\",")
+            append("\"cameraLiveSource\":\"video\",")
             append("\"streamingMode\":\"video\",")
             append("\"webrtcResolution\":\"video\",")
             append("\"webrtcFps\":\"video\",")
