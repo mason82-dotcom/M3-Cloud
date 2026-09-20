@@ -101,3 +101,16 @@ def test_dji_cloud_positioning_preserves_is_fixed_code_without_inventing_mavlink
     assert positioning["rtk"]["connected"] is None
     assert positioning["rtk"]["healthy"] is None
     assert positioning["native"]["dji_is_fixed_code"]==1
+
+
+def test_lyrebird_unknown_mavlink_mode_falls_back_to_native_dji_mode_mapping():
+    telemetry={"flight_mode":"GPS_NORMAL","flight_state":{"mode":"UNKNOWN","custom_mode":0,"system_status":4}}
+    common=normalize_aircraft_state(telemetry,source="lyrebird")["aircraft_state"]
+    assert common["mode"]=="POSITION_HOLD"
+    assert common["native"]["mavlink_custom_mode"]==0
+    assert common["native"]["dji_flight_mode"]=="GPS_NORMAL"
+
+def test_lyrebird_known_mavlink_mode_remains_authoritative_over_dji_mode():
+    telemetry={"flight_mode":"GPS_NORMAL","flight_state":{"mode":"SAFE_RECOVERY","custom_mode":84148224}}
+    common=normalize_aircraft_state(telemetry,source="lyrebird")["aircraft_state"]
+    assert common["mode"]=="SAFE_RECOVERY"
