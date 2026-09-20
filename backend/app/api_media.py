@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 
 from app.database import session_factory
 from app.config import settings
-from app.media.datasets import build_dataset_manifest, build_media_datasets
+from app.media.datasets import build_dataset_manifest, build_media_datasets, dataset_prefix
 from app.media.matching import match_flight_by_capture_window
 from app.media.metadata import asset_metadata_payload
 from app.models import Flight, MediaAsset, MediaDatasetRecord
@@ -200,6 +200,9 @@ async def media_datasets(
                     "flight_match_candidates": (
                         record.flight_match_candidates if record else []
                     ),
+                    "flight_match_details": (
+                        record.flight_match_details if record else {}
+                    ),
                 }
             )
             result.append(item)
@@ -234,6 +237,10 @@ async def assign_dataset_flight(
         dataset.flight_match_candidates = (
             [str(body.flight_id)] if body.flight_id is not None else []
         )
+        dataset.flight_match_details = {
+            "validation": "MANUAL",
+            "flight_id": str(body.flight_id) if body.flight_id else None,
+        }
         dataset.updated_at = datetime.now(timezone.utc)
         await session.commit()
 
@@ -247,6 +254,7 @@ async def assign_dataset_flight(
             "flight_assignment_source": dataset.flight_assignment_source,
             "flight_match_status": dataset.flight_match_status,
             "flight_match_candidates": dataset.flight_match_candidates,
+            "flight_match_details": dataset.flight_match_details,
         }
 
 
@@ -262,17 +270,39 @@ async def auto_match_dataset_flight(
                 detail="Media dataset not found",
             )
 
+        assets = (
+            await session.scalars(
+                select(MediaAsset).where(
+                    MediaAsset.present.is_(True),
+                    MediaAsset.duplicate_of.is_(None),
+                    MediaAsset.platform == dataset.platform,
+                )
+            )
+        ).all()
+        gps_points = [
+            (float(asset.gps_latitude), float(asset.gps_longitude))
+            for asset in assets
+            if dataset_prefix(asset.relative_path) == dataset.prefix
+            and asset.gps_latitude is not None
+            and asset.gps_longitude is not None
+        ]
+
         match = await match_flight_by_capture_window(
             session,
             capture_started_at=dataset.capture_started_at,
             capture_ended_at=dataset.capture_ended_at,
             margin_seconds=settings.media_auto_match_margin_seconds,
+            gps_points=gps_points,
+            max_distance_m=settings.media_auto_match_max_distance_m,
+            min_gps_fraction=settings.media_auto_match_min_gps_fraction,
+            max_gps_samples=settings.media_auto_match_max_gps_samples,
         )
         dataset.flight_assignment_source = "AUTO"
         dataset.flight_match_status = match.status
         dataset.flight_match_candidates = [
             str(candidate_id) for candidate_id in match.candidate_ids
         ]
+        dataset.flight_match_details = match.details
         dataset.flight_id = match.flight_id
         dataset.updated_at = datetime.now(timezone.utc)
         await session.commit()
@@ -288,6 +318,7 @@ async def auto_match_dataset_flight(
             "flight_assignment_source": dataset.flight_assignment_source,
             "flight_match_status": dataset.flight_match_status,
             "flight_match_candidates": dataset.flight_match_candidates,
+            "flight_match_details": dataset.flight_match_details,
         }
 
 

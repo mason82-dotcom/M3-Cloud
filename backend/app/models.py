@@ -172,6 +172,7 @@ class MediaDatasetRecord(Base):
         default="NO_CAPTURE_TIME",
     )
     flight_match_candidates: Mapped[list[str]] = mapped_column(JSON, default=list)
+    flight_match_details: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     present: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

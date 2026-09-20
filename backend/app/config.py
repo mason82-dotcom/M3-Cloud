@@ -138,6 +138,18 @@ class Settings(BaseSettings):
         default=300.0,
         validation_alias="M3CLOUD_MEDIA_AUTO_MATCH_MARGIN_SECONDS",
     )
+    media_auto_match_max_distance_m: float = Field(
+        default=100.0,
+        validation_alias="M3CLOUD_MEDIA_AUTO_MATCH_MAX_DISTANCE_M",
+    )
+    media_auto_match_min_gps_fraction: float = Field(
+        default=0.8,
+        validation_alias="M3CLOUD_MEDIA_AUTO_MATCH_MIN_GPS_FRACTION",
+    )
+    media_auto_match_max_gps_samples: int = Field(
+        default=64,
+        validation_alias="M3CLOUD_MEDIA_AUTO_MATCH_MAX_GPS_SAMPLES",
+    )
     media_import_handoff_root: str = Field(
         default="",
         validation_alias="M3CLOUD_MEDIA_IMPORT_HANDOFF_ROOT",

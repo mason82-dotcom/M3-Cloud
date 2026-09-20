@@ -17,7 +17,7 @@ from app.media.classifier import (
     reconcile_group_platforms,
     supported_image,
 )
-from app.media.datasets import build_media_datasets
+from app.media.datasets import build_media_datasets, dataset_prefix
 from app.media.matching import capture_time_from_filename, match_flight_by_capture_window
 from app.media.metadata import METADATA_VERSION, ExtractedMetadata, extract_media_metadata
 from app.models import MediaAsset, MediaDatasetRecord
@@ -74,6 +74,9 @@ class MediaImporter:
         filename_timezone: str = "UTC",
         auto_match_flights: bool = True,
         auto_match_margin_seconds: float = 300.0,
+        auto_match_max_distance_m: float = 100.0,
+        auto_match_min_gps_fraction: float = 0.8,
+        auto_match_max_gps_samples: int = 64,
     ):
         self.sessions = sessions
         self.root = Path(root)
@@ -81,6 +84,12 @@ class MediaImporter:
         self.filename_timezone = filename_timezone
         self.auto_match_flights = auto_match_flights
         self.auto_match_margin_seconds = max(0.0, auto_match_margin_seconds)
+        self.auto_match_max_distance_m = max(0.0, auto_match_max_distance_m)
+        self.auto_match_min_gps_fraction = max(
+            0.0,
+            min(1.0, auto_match_min_gps_fraction),
+        )
+        self.auto_match_max_gps_samples = max(1, auto_match_max_gps_samples)
         self._scan_lock = asyncio.Lock()
         self.last_result: ImportScanResult | None = None
         self.last_error: str | None = None
@@ -453,6 +462,7 @@ class MediaImporter:
                     flight_assignment_source="AUTO",
                     flight_match_status="NO_CAPTURE_TIME",
                     flight_match_candidates=[],
+                    flight_match_details={},
                     created_at=seen_at,
                     updated_at=seen_at,
                 )
@@ -465,22 +475,42 @@ class MediaImporter:
 
             if record.flight_assignment_source != "MANUAL":
                 if self.auto_match_flights:
+                    dataset_assets = [
+                        asset
+                        for asset in assets
+                        if asset.present
+                        and asset.duplicate_of is None
+                        and asset.platform == platform
+                        and dataset_prefix(asset.relative_path) == prefix
+                    ]
+                    gps_points = [
+                        (float(asset.gps_latitude), float(asset.gps_longitude))
+                        for asset in dataset_assets
+                        if asset.gps_latitude is not None
+                        and asset.gps_longitude is not None
+                    ]
                     match = await match_flight_by_capture_window(
                         session,
                         capture_started_at=capture_started_at,
                         capture_ended_at=capture_ended_at,
                         margin_seconds=self.auto_match_margin_seconds,
+                        gps_points=gps_points,
+                        max_distance_m=self.auto_match_max_distance_m,
+                        min_gps_fraction=self.auto_match_min_gps_fraction,
+                        max_gps_samples=self.auto_match_max_gps_samples,
                     )
                     record.flight_assignment_source = "AUTO"
                     record.flight_match_status = match.status
                     record.flight_match_candidates = [
                         str(candidate_id) for candidate_id in match.candidate_ids
                     ]
+                    record.flight_match_details = match.details
                     record.flight_id = match.flight_id
                 else:
                     record.flight_assignment_source = "AUTO"
                     record.flight_match_status = "DISABLED"
                     record.flight_match_candidates = []
+                    record.flight_match_details = {"validation": "DISABLED"}
                     record.flight_id = None
 
         for key, record in by_key.items():

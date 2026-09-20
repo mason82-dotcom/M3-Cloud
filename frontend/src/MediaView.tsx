@@ -285,6 +285,27 @@ export function MediaView() {
                   </button>
                 ) : null}
               </div>
+              {dataset.flight_match_details?.validation ? (
+                <div className="datasetMatchEvidence">
+                  <span>
+                    {dataset.flight_match_details.validation}
+                    {dataset.flight_match_details.gps_points_available != null
+                      ? ` · GPS ${dataset.flight_match_details.gps_points_sampled ?? 0}/${dataset.flight_match_details.gps_points_available}`
+                      : ""}
+                  </span>
+                  {(dataset.flight_match_details.candidates ?? []).map((candidate) => (
+                    <small key={candidate.flight_id}>
+                      {candidate.aircraft_sn} · {candidate.spatial_status}
+                      {candidate.gps_within_fraction != null
+                        ? ` · ${Math.round(candidate.gps_within_fraction * 100)}% ≤ ${dataset.flight_match_details?.gps_max_distance_m ?? "?"} m`
+                        : ""}
+                      {candidate.median_distance_m != null
+                        ? ` · median ${candidate.median_distance_m.toFixed(1)} m`
+                        : ""}
+                    </small>
+                  ))}
+                </div>
+              ) : null}
               <button
                 className="datasetManifestButton"
                 onClick={() => {

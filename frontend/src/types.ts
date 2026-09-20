@@ -323,6 +323,31 @@ export interface MediaWorkflowReadiness {
   reason: string;
 }
 
+export interface MediaFlightMatchCandidate {
+  flight_id: string;
+  aircraft_sn: string;
+  track_points: number;
+  gps_points_sampled: number;
+  gps_points_within: number;
+  gps_within_fraction?: number | null;
+  median_distance_m?: number | null;
+  max_distance_m?: number | null;
+  spatial_status: string;
+  spatial_pass: boolean;
+}
+
+export interface MediaFlightMatchDetails {
+  strategy?: string;
+  validation?: string;
+  time_margin_seconds?: number;
+  gps_max_distance_m?: number;
+  gps_min_fraction?: number;
+  gps_points_available?: number;
+  gps_points_sampled?: number;
+  candidates?: MediaFlightMatchCandidate[];
+  flight_id?: string | null;
+}
+
 export interface MediaDataset {
   id?: string | null;
   prefix: string;
@@ -335,6 +360,7 @@ export interface MediaDataset {
   flight_assignment_source?: "AUTO" | "MANUAL" | string | null;
   flight_match_status?: string | null;
   flight_match_candidates?: string[];
+  flight_match_details?: MediaFlightMatchDetails;
   asset_count: number;
   size_bytes: number;
   media_kinds: Record<string, number>;

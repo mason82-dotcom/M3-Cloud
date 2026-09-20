@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import math
 import re
+import statistics
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import PurePath
+from typing import Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Flight
+from app.models import Flight, TelemetrySample
 
 
 _DJI_FILENAME_TIME = re.compile(r"(?:^|_)DJI_(?P<stamp>\d{14})(?:_|\.)", re.IGNORECASE)
+_EARTH_RADIUS_M = 6_371_008.8
 
 
 def capture_time_from_filename(
@@ -38,10 +42,130 @@ def capture_time_from_filename(
 
 
 @dataclass(frozen=True)
+class CandidateEvidence:
+    flight_id: str
+    aircraft_sn: str
+    track_points: int
+    gps_points_sampled: int
+    gps_points_within: int
+    gps_within_fraction: float | None
+    median_distance_m: float | None
+    max_distance_m: float | None
+    spatial_status: str
+    spatial_pass: bool
+
+
+@dataclass(frozen=True)
 class FlightMatch:
     status: str
     flight_id: uuid.UUID | None
     candidate_ids: tuple[uuid.UUID, ...]
+    details: dict[str, object]
+
+
+def _sample_evenly[T](items: Sequence[T], maximum: int) -> list[T]:
+    if maximum <= 0 or len(items) <= maximum:
+        return list(items)
+    if maximum == 1:
+        return [items[len(items) // 2]]
+
+    indexes = {
+        round(index * (len(items) - 1) / (maximum - 1))
+        for index in range(maximum)
+    }
+    return [items[index] for index in sorted(indexes)]
+
+
+def _haversine_m(
+    latitude_a: float,
+    longitude_a: float,
+    latitude_b: float,
+    longitude_b: float,
+) -> float:
+    phi_a = math.radians(latitude_a)
+    phi_b = math.radians(latitude_b)
+    d_phi = phi_b - phi_a
+    d_lambda = math.radians(longitude_b - longitude_a)
+    value = (
+        math.sin(d_phi / 2) ** 2
+        + math.cos(phi_a) * math.cos(phi_b) * math.sin(d_lambda / 2) ** 2
+    )
+    return 2 * _EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(value)))
+
+
+def _distance_to_segment_m(
+    latitude: float,
+    longitude: float,
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    """Local tangent-plane distance from a WGS84 point to a short flight segment."""
+
+    latitude_rad = math.radians(latitude)
+    cos_latitude = max(0.01, abs(math.cos(latitude_rad)))
+
+    def local(point: tuple[float, float]) -> tuple[float, float]:
+        point_latitude, point_longitude = point
+        x = math.radians(point_longitude - longitude) * cos_latitude * _EARTH_RADIUS_M
+        y = math.radians(point_latitude - latitude) * _EARTH_RADIUS_M
+        return x, y
+
+    x1, y1 = local(start)
+    x2, y2 = local(end)
+    dx = x2 - x1
+    dy = y2 - y1
+    denominator = dx * dx + dy * dy
+    if denominator == 0:
+        return math.hypot(x1, y1)
+
+    projection = max(0.0, min(1.0, -(x1 * dx + y1 * dy) / denominator))
+    closest_x = x1 + projection * dx
+    closest_y = y1 + projection * dy
+    return math.hypot(closest_x, closest_y)
+
+
+def _distance_to_track_m(
+    point: tuple[float, float],
+    track: Sequence[tuple[float, float]],
+) -> float:
+    latitude, longitude = point
+    if not track:
+        return math.inf
+    if len(track) == 1:
+        return _haversine_m(latitude, longitude, track[0][0], track[0][1])
+
+    return min(
+        _distance_to_segment_m(latitude, longitude, start, end)
+        for start, end in zip(track, track[1:])
+    )
+
+
+async def _flight_track(
+    session: AsyncSession,
+    flight_id: uuid.UUID,
+    *,
+    max_points: int = 1000,
+) -> list[tuple[float, float]]:
+    rows = (
+        await session.execute(
+            select(
+                func.ST_Y(TelemetrySample.position).label("latitude"),
+                func.ST_X(TelemetrySample.position).label("longitude"),
+            )
+            .where(
+                TelemetrySample.flight_id == flight_id,
+                TelemetrySample.position.is_not(None),
+            )
+            .order_by(TelemetrySample.recorded_at, TelemetrySample.id)
+        )
+    ).all()
+
+    points = [
+        (float(latitude), float(longitude))
+        for latitude, longitude in rows
+        if latitude is not None and longitude is not None
+    ]
+    return _sample_evenly(points, max_points)
 
 
 async def match_flight_by_capture_window(
@@ -50,9 +174,25 @@ async def match_flight_by_capture_window(
     capture_started_at: datetime | None,
     capture_ended_at: datetime | None,
     margin_seconds: float,
+    gps_points: Sequence[tuple[float, float]] = (),
+    max_distance_m: float = 100.0,
+    min_gps_fraction: float = 0.8,
+    max_gps_samples: int = 64,
 ) -> FlightMatch:
+    """Match a dataset to a flight using time first and GPS as conservative validation."""
+
+    base_details: dict[str, object] = {
+        "strategy": "TIME_THEN_GPS",
+        "time_margin_seconds": max(0.0, margin_seconds),
+        "gps_max_distance_m": max(0.0, max_distance_m),
+        "gps_min_fraction": max(0.0, min(1.0, min_gps_fraction)),
+        "gps_points_available": len(gps_points),
+        "gps_points_sampled": 0,
+        "candidates": [],
+    }
+
     if capture_started_at is None or capture_ended_at is None:
-        return FlightMatch("NO_CAPTURE_TIME", None, ())
+        return FlightMatch("NO_CAPTURE_TIME", None, (), base_details)
 
     margin = timedelta(seconds=max(0.0, margin_seconds))
     search_start = capture_started_at - margin
@@ -77,8 +217,74 @@ async def match_flight_by_capture_window(
             contained.append(flight)
 
     ids = tuple(flight.id for flight in contained)
-    if len(ids) == 1:
-        return FlightMatch("MATCHED", ids[0], ids)
-    if len(ids) > 1:
-        return FlightMatch("AMBIGUOUS", None, ids)
-    return FlightMatch("NO_MATCH", None, ())
+    if not ids:
+        return FlightMatch("NO_MATCH", None, (), base_details)
+
+    sampled_gps = _sample_evenly(list(gps_points), max(1, max_gps_samples))
+    base_details["gps_points_sampled"] = len(sampled_gps)
+
+    if not sampled_gps:
+        base_details["validation"] = "TIME_ONLY"
+        if len(ids) == 1:
+            return FlightMatch("MATCHED_TIME_ONLY", ids[0], ids, base_details)
+        return FlightMatch("AMBIGUOUS_TIME", None, ids, base_details)
+
+    threshold = max(0.0, max_distance_m)
+    required_fraction = max(0.0, min(1.0, min_gps_fraction))
+    evidence: list[CandidateEvidence] = []
+    passing: list[uuid.UUID] = []
+
+    for flight in contained:
+        track = await _flight_track(session, flight.id)
+        if not track:
+            item = CandidateEvidence(
+                flight_id=str(flight.id),
+                aircraft_sn=flight.aircraft_sn,
+                track_points=0,
+                gps_points_sampled=len(sampled_gps),
+                gps_points_within=0,
+                gps_within_fraction=None,
+                median_distance_m=None,
+                max_distance_m=None,
+                spatial_status="NO_FLIGHT_GPS",
+                spatial_pass=False,
+            )
+            evidence.append(item)
+            continue
+
+        distances = [
+            _distance_to_track_m(point, track)
+            for point in sampled_gps
+        ]
+        within = sum(1 for distance in distances if distance <= threshold)
+        fraction = within / len(distances)
+        spatial_pass = fraction >= required_fraction
+        if spatial_pass:
+            passing.append(flight.id)
+
+        evidence.append(
+            CandidateEvidence(
+                flight_id=str(flight.id),
+                aircraft_sn=flight.aircraft_sn,
+                track_points=len(track),
+                gps_points_sampled=len(distances),
+                gps_points_within=within,
+                gps_within_fraction=round(fraction, 6),
+                median_distance_m=round(statistics.median(distances), 3),
+                max_distance_m=round(max(distances), 3),
+                spatial_status="PASS" if spatial_pass else "REJECT",
+                spatial_pass=spatial_pass,
+            )
+        )
+
+    base_details["validation"] = "TIME_AND_GPS"
+    base_details["candidates"] = [asdict(item) for item in evidence]
+
+    if len(passing) == 1:
+        return FlightMatch("MATCHED_TIME_GPS", passing[0], ids, base_details)
+    if len(passing) > 1:
+        return FlightMatch("AMBIGUOUS_GPS", None, ids, base_details)
+
+    if evidence and all(item.track_points == 0 for item in evidence):
+        return FlightMatch("GPS_UNVERIFIED", None, ids, base_details)
+    return FlightMatch("GPS_REJECTED", None, ids, base_details)

@@ -1535,3 +1535,27 @@ button { font: inherit; }
   position: absolute;
   inset: 0;
 }
+
+
+.datasetMatchEvidence {
+  display: grid;
+  gap: 3px;
+  margin: -2px 0 8px;
+  padding: 7px 8px;
+  border: 1px solid #1d2935;
+  border-radius: 6px;
+  background: #0b1118;
+}
+
+.datasetMatchEvidence span {
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.datasetMatchEvidence small {
+  color: var(--muted);
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
