@@ -1,3 +1,5 @@
+import pytest
+
 from app.vehicles.base import VehicleSnapshot
 from app.vehicles.registry import VehicleRegistry
 
@@ -11,6 +13,7 @@ class Provider:
         return self._vehicles
 
 
+@pytest.mark.asyncio
 async def test_registry_prefers_fresher_vehicle_for_same_sn():
     older = VehicleSnapshot(id="dji:A", sn="A", name="A", model="M3E", source="dji_cloud", online=True, updated_at_ms=10)
     newer = VehicleSnapshot(id="lyrebird:A", sn="A", name="A", model="M3E", source="lyrebird", online=True, updated_at_ms=20)

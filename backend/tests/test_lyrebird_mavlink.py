@@ -1,4 +1,5 @@
 import math
+import struct
 from types import SimpleNamespace
 from app.vehicles.lyrebird import merge_dicts, merge_transport_telemetry
 from app.vehicles.mavlink import normalize_mavlink_message, decode_lyrebird_frame, decode_autosensing_status, decode_autosensing_target, _mavlink2_frames, AUTOSENSING_STATUS_STRUCT, AUTOSENSING_TARGET_STRUCT
