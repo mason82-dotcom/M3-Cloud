@@ -151,6 +151,29 @@ export interface TopologyEvent {
   devices?: unknown[];
 }
 
+export interface FlightSummary {
+  id: string;
+  aircraft_sn: string;
+  gateway_sn?: string | null;
+  dji_track_id?: string | null;
+  status: string;
+  started_at: string;
+  ended_at?: string | null;
+  duration_s?: number | null;
+  distance_m: number;
+  max_relative_altitude_m?: number | null;
+  max_horizontal_speed_mps?: number | null;
+  min_battery_percent?: number | null;
+  rtk_converged_percent?: number | null;
+  end_reason?: string | null;
+}
+
+export interface FlightDetail extends FlightSummary {
+  takeoff_position?: import("geojson").Point | null;
+  landing_position?: import("geojson").Point | null;
+  path?: import("geojson").LineString | null;
+}
+
 export interface ComponentHealth {
   ok?: boolean;
   status?: string;

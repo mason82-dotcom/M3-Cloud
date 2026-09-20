@@ -1,4 +1,9 @@
-import type { SystemHealth, Vehicle } from "./types";
+import type {
+  FlightDetail,
+  FlightSummary,
+  SystemHealth,
+  Vehicle,
+} from "./types";
 
 export async function fetchVehicles(): Promise<Vehicle[]> {
   const response = await fetch("/api/v1/vehicles");
@@ -12,6 +17,28 @@ export async function fetchVehicles(): Promise<Vehicle[]> {
     return envelope.items ?? envelope.vehicles ?? [];
   }
   return [];
+}
+
+export async function fetchFlights(
+  aircraftSn?: string,
+  limit = 100,
+): Promise<FlightSummary[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (aircraftSn) params.set("aircraft_sn", aircraftSn);
+
+  const response = await fetch(`/api/v1/flights?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Flight request failed: ${response.status}`);
+  }
+  return response.json() as Promise<FlightSummary[]>;
+}
+
+export async function fetchFlightDetail(flightId: string): Promise<FlightDetail> {
+  const response = await fetch(`/api/v1/flights/${encodeURIComponent(flightId)}`);
+  if (!response.ok) {
+    throw new Error(`Flight detail request failed: ${response.status}`);
+  }
+  return response.json() as Promise<FlightDetail>;
 }
 
 export async function fetchSystemHealth(): Promise<SystemHealth> {

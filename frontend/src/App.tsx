@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchSystemHealth, fetchVehicles } from "./api";
+import { FlightHistoryView } from "./FlightHistory";
 import { useLiveEvents } from "./live";
 import { MapView } from "./MapView";
 import type {
@@ -16,6 +17,7 @@ type ViewName =
   | "fleet"
   | "missions"
   | "live"
+  | "flights"
   | "media"
   | "processing"
   | "system";
@@ -25,6 +27,7 @@ const NAV: Array<[ViewName, string, string]> = [
   ["fleet", "Fleet", "Aircraft, Payloads, RTK und Verbindungsstatus."],
   ["missions", "Missions", "Waylines, Missionsplanung, Preflight und Ausführungsstatus."],
   ["live", "Live", "Aircraft, RTK, Controller, Gimbal und Payload in Echtzeit"],
+  ["flights", "Flights", "Historische Flüge, PostGIS-Tracks und Flugstatistiken."],
   ["media", "Media", "Fotos, Videos, Thermal- und Multispektraldaten."],
   ["processing", "Processing", "Photogrammetrie, Thermogram und weitere Processing-Pipelines."],
   ["system", "System", "EMQX, PostgreSQL, MinIO, Backend und Integrationen."],
@@ -601,6 +604,12 @@ export default function App() {
           </section>
         ) : null}
 
+        {activeView === "flights" ? (
+          <section className="view active">
+            <FlightHistoryView />
+          </section>
+        ) : null}
+
         {activeView === "system" ? (
           <section className="view active">
             <div className="systemGrid">
@@ -614,7 +623,7 @@ export default function App() {
           </section>
         ) : null}
 
-        {!["operations", "live", "system"].includes(activeView) ? (
+        {!["operations", "live", "flights", "system"].includes(activeView) ? (
           <section className="view active">
             <div className="placeholder">
               <h2>{nav[1]}</h2>
