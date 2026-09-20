@@ -17,7 +17,9 @@ def _dji_cloud_state(result: dict[str, Any]) -> dict[str, Any]:
     position = result.get("position_state") if isinstance(result.get("position_state"), dict) else {}
     quality = position.get("quality")
     convergence = position.get("convergence")
-    rtk_fixed = quality == 10 or convergence == "CONVERGED"
+    # DJI Cloud quality and is_fixed/convergence are kept as DJI-native facts.
+    # They are not MAVLink GPS fix types and therefore do not imply FLOAT/SINGLE.
+    rtk_fixed = quality == 10 and convergence == "CONVERGED"
     return {
         "mode": mode,
         "armed": None,
@@ -35,6 +37,9 @@ def _dji_cloud_state(result: dict[str, Any]) -> dict[str, Any]:
             "gps_satellites": position.get("gps_satellites"),
             "rtk_satellites": position.get("rtk_satellites"),
             "rtk_fixed": rtk_fixed,
+            "fix": "FIXED" if rtk_fixed else "UNKNOWN",
+            "position_source": "DJI_CLOUD",
+            "native": {"dji_quality": quality, "dji_convergence": convergence},
         },
         "native": {
             "dji_mode_code": code,
@@ -51,12 +56,14 @@ def normalize_aircraft_state(telemetry: dict[str, Any] | None, *, source: str) -
     common: dict[str, Any] = {"source": source}
 
     if source == "lyrebird":
+        positioning = result.get("positioning") if isinstance(result.get("positioning"), dict) else {}
         common.update({
             "mode": native.get("mode") or result.get("flight_mode"),
             "armed": native.get("armed"),
             "is_flying": native.get("is_flying"),
             "failsafe": native.get("failsafe"),
             "landed_state": native.get("landed_state"),
+            "positioning": deepcopy(positioning),
         })
         common["native"] = {
             "mavlink_custom_mode": native.get("custom_mode"),

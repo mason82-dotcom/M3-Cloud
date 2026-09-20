@@ -28,3 +28,9 @@ def test_dji_cloud_documented_home_and_rtk_are_exposed_without_flight_inference(
 def test_unknown_dji_cloud_mode_code_remains_unmapped():
     common=normalize_aircraft_state({"mode_code":999},source="dji_cloud")["aircraft_state"]
     assert common["mode"] is None and common["native"]["dji_mode_code"]==999
+
+def test_dji_positioning_does_not_translate_quality_into_mavlink_fix_type():
+    common=normalize_aircraft_state({"position_state":{"convergence":"CONVERGING","quality":10,"gps_satellites":18,"rtk_satellites":20}},source="dji_cloud")["aircraft_state"]
+    assert common["positioning"]["rtk_fixed"] is False
+    assert common["positioning"]["fix"]=="UNKNOWN"
+    assert common["positioning"]["native"]=={"dji_quality":10,"dji_convergence":"CONVERGING"}

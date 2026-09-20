@@ -186,13 +186,25 @@ def normalize_mavlink_message(msg: Any) -> dict[str, Any]:
         }
     if kind == "GPS_RAW_INT":
         fix = int(msg.fix_type)
+        fix_name = {
+            mavlink_common.GPS_FIX_TYPE_NO_GPS: "NONE",
+            mavlink_common.GPS_FIX_TYPE_NO_FIX: "NONE",
+            mavlink_common.GPS_FIX_TYPE_2D_FIX: "SINGLE",
+            mavlink_common.GPS_FIX_TYPE_3D_FIX: "SINGLE",
+            mavlink_common.GPS_FIX_TYPE_DGPS: "SINGLE",
+            mavlink_common.GPS_FIX_TYPE_RTK_FLOAT: "FLOAT",
+            mavlink_common.GPS_FIX_TYPE_RTK_FIXED: "FIXED",
+        }.get(fix, "UNKNOWN")
         return {
             "gps_satellites": None if int(msg.satellites_visible) == 255 else int(msg.satellites_visible),
             "gnss_fix_type": fix,
-            "rtk": {
-                "fix": "FIXED" if fix == 6 else "FLOAT" if fix == 5 else "NONE",
-                "active": fix in (5, 6),
+            "positioning": {
+                "fix": fix_name,
+                "position_source": "RTK_FUSED" if fix in (5, 6) else "FLIGHT_CONTROLLER",
+                "gps_satellites": None if int(msg.satellites_visible) == 255 else int(msg.satellites_visible),
+                "native": {"mavlink_gps_fix_type": fix},
             },
+            "rtk": {"fix": fix_name if fix in (5, 6) else "NONE", "active": fix in (5, 6)},
         }
     if kind == "ATTITUDE":
         return {

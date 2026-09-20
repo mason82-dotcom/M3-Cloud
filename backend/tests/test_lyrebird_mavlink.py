@@ -96,3 +96,13 @@ def test_heartbeat_critical_is_failsafe_and_unknown_mode_stays_unknown():
     assert patch["flight_state"]["mode"]=="UNKNOWN"
     assert patch["flight_state"]["failsafe"] is True
     assert patch["flight_state"]["armed"] is False
+
+def test_gps_raw_int_exposes_neutral_fix_without_losing_mavlink_type():
+    fixed=normalize_mavlink_message(Msg(kind="GPS_RAW_INT",fix_type=6,satellites_visible=27))
+    assert fixed["positioning"]["fix"]=="FIXED"
+    assert fixed["positioning"]["position_source"]=="RTK_FUSED"
+    assert fixed["positioning"]["native"]["mavlink_gps_fix_type"]==6
+    single=normalize_mavlink_message(Msg(kind="GPS_RAW_INT",fix_type=3,satellites_visible=18))
+    assert single["positioning"]["fix"]=="SINGLE"
+    assert single["positioning"]["position_source"]=="FLIGHT_CONTROLLER"
+    assert single["rtk"]["active"] is False
