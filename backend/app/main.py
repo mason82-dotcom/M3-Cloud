@@ -10,6 +10,7 @@ from app.dji.service import DJIService
 from app.flights.service import FlightRecorder
 from app.health import readiness
 from app.live import LiveTelemetryHub, router as live_router
+from app.api_operations import router as operations_router
 from app.redis_client import redis_client
 
 
@@ -51,6 +52,7 @@ app = FastAPI(
 app.include_router(devices_router)
 app.include_router(flights_router)
 app.include_router(live_router)
+app.include_router(operations_router)
 
 
 @app.get("/")
