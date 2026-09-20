@@ -232,6 +232,9 @@ async def test_media_dataset_assignment_survives_rescan(tmp_path: Path) -> None:
         session.add(flight)
         await session.flush()
         dataset.flight_id = flight.id
+        dataset.flight_assignment_source = "MANUAL"
+        dataset.flight_match_status = "MANUAL"
+        dataset.flight_match_candidates = [str(flight.id)]
         await session.commit()
         dataset_id = dataset.id
         flight_id = flight.id
