@@ -152,6 +152,18 @@ export async function fetchProcessingResults(
   return response.json() as Promise<ProcessingResult[]>;
 }
 
+export async function fetchProcessingMaps(
+  jobId: string,
+): Promise<ProcessingMapInfo[]> {
+  const response = await fetch(
+    `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/maps`,
+  );
+  if (!response.ok) {
+    throw new Error(`Processing maps request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingMapInfo[]>;
+}
+
 export async function fetchProcessingMap(
   jobId: string,
 ): Promise<ProcessingMapInfo | null> {

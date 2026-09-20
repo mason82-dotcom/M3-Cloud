@@ -19,6 +19,7 @@ from app.models import (
     ProcessingResult,
 )
 from app.processing.mbtiles import publish_mbtiles
+from app.processing.rastertiles import RASTER_TILE_ARCHIVES, publish_raster_tiles
 from app.processing.tiles3d import THREE_D_TILE_ARCHIVES, publish_3d_tiles
 from app.processing.profiles import get_profile
 from app.storage import create_storage_client
@@ -44,6 +45,8 @@ RESULT_ASSETS = frozenset(
         "orthophoto.mbtiles",
         "dsm.tif",
         "dtm.tif",
+        "dsm_tiles.zip",
+        "dtm_tiles.zip",
         "georeferenced_model.las",
         "georeferenced_model.laz",
         "georeferenced_model.ply",
@@ -511,6 +514,15 @@ class ProcessingManager:
                                 bucket=RESULT_BUCKET,
                                 job_id=job_id,
                                 mbtiles_path=destination,
+                            )
+                        elif asset in RASTER_TILE_ARCHIVES:
+                            details = await asyncio.to_thread(
+                                publish_raster_tiles,
+                                storage,
+                                bucket=RESULT_BUCKET,
+                                job_id=job_id,
+                                asset_name=asset,
+                                archive_path=destination,
                             )
                         elif asset in THREE_D_TILE_ARCHIVES:
                             details = await asyncio.to_thread(

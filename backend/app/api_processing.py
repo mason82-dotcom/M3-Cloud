@@ -370,3 +370,97 @@ async def processing_scene_asset(
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+@router.get("/jobs/{job_id}/maps")
+async def processing_maps(job_id: uuid.UUID) -> list[dict[str, Any]]:
+    async with session_factory() as session:
+        results = (
+            await session.scalars(
+                select(ProcessingResult)
+                .where(ProcessingResult.job_id == job_id)
+                .order_by(ProcessingResult.asset_name)
+            )
+        ).all()
+
+        maps: list[dict[str, Any]] = []
+        for result in results:
+            details = result.details or {}
+            if details.get("map_kind") != "RASTER_XYZ":
+                continue
+
+            layer_type = details.get("layer_type") or result.asset_name
+            maps.append(
+                {
+                    "job_id": str(job_id),
+                    "result_id": str(result.id),
+                    "kind": "RASTER_XYZ",
+                    "layer_type": layer_type,
+                    "tile_url": (
+                        f"/api/v1/processing/jobs/{job_id}/maps/{result.id}/tiles/"
+                        "{z}/{x}/{y}"
+                    ),
+                    "bounds": details.get("bounds"),
+                    "minzoom": details.get("minzoom"),
+                    "maxzoom": details.get("maxzoom"),
+                    "tile_count": details.get("tile_count"),
+                    "attribution": details.get("attribution"),
+                }
+            )
+        return maps
+
+
+@router.get("/jobs/{job_id}/maps/{result_id}/tiles/{z}/{x}/{y}")
+async def processing_result_map_tile(
+    job_id: uuid.UUID,
+    result_id: uuid.UUID,
+    z: int = Path(ge=0, le=30),
+    x: int = Path(ge=0),
+    y: int = Path(ge=0),
+) -> StreamingResponse:
+    async with session_factory() as session:
+        result = await session.get(ProcessingResult, result_id)
+        if result is None or result.job_id != job_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Processing map result not found",
+            )
+
+        details = result.details or {}
+        prefix = details.get("tile_prefix")
+        extension = details.get("tile_extension")
+        content_type = details.get("tile_content_type")
+        if details.get("map_kind") != "RASTER_XYZ" or not all(
+            isinstance(value, str) and value
+            for value in (prefix, extension, content_type)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Processing map tiles are not published",
+            )
+
+        bucket = result.bucket
+        object_key = f"{prefix}/{z}/{x}/{y}.{extension}"
+
+    client = create_storage_client()
+    try:
+        response = client.get_object(Bucket=bucket, Key=object_key)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tile not found",
+        ) from exc
+
+    body = response["Body"]
+
+    def chunks():
+        try:
+            yield from body.iter_chunks(chunk_size=256 * 1024)
+        finally:
+            body.close()
+
+    return StreamingResponse(
+        chunks(),
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

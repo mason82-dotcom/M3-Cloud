@@ -311,6 +311,7 @@ export interface ProcessingMapInfo {
   job_id: string;
   result_id: string;
   kind: "RASTER_XYZ";
+  layer_type?: string | null;
   tile_url: string;
   bounds?: [number, number, number, number] | null;
   minzoom?: number | null;

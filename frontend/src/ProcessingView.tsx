@@ -4,6 +4,7 @@ import {
   createWebODMJob,
   fetchMedia,
   fetchProcessingMap,
+  fetchProcessingMaps,
   fetchProcessingResults,
   fetchProcessingScenes,
   fetchProcessingJobs,
@@ -112,6 +113,7 @@ export function ProcessingView() {
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<Record<string, ProcessingResult[]>>({});
   const [mapInfo, setMapInfo] = useState<Awaited<ReturnType<typeof fetchProcessingMap>>>(null);
+  const [maps, setMaps] = useState<Awaited<ReturnType<typeof fetchProcessingMaps>>>([]);
   const [scenes, setScenes] = useState<Awaited<ReturnType<typeof fetchProcessingScenes>>>([]);
   const [scene, setScene] = useState<Awaited<ReturnType<typeof fetchProcessingScenes>>[number] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -127,12 +129,21 @@ export function ProcessingView() {
 
   const openMap = useCallback(async (jobId: string) => {
     try {
-      const value = await fetchProcessingMap(jobId);
-      if (!value) {
-        setError("Für diesen Job ist noch kein Orthophoto-Kartenlayer veröffentlicht.");
-        return;
+      const values = await fetchProcessingMaps(jobId);
+      if (values.length === 0) {
+        const fallback = await fetchProcessingMap(jobId);
+        if (!fallback) {
+          setError("Für diesen Job ist noch kein Kartenlayer veröffentlicht.");
+          return;
+        }
+        setMaps([fallback]);
+        setMapInfo(fallback);
+      } else {
+        const preferred =
+          values.find((item) => item.layer_type === "ORTHOPHOTO") ?? values[0];
+        setMaps(values);
+        setMapInfo(preferred);
       }
-      setMapInfo(value);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -348,7 +359,7 @@ export function ProcessingView() {
                     M3 results
                   </button>
                   <button onClick={() => void openMap(job.id)} type="button">
-                    Orthophoto map
+                    Map layers
                   </button>
                   <button onClick={() => void open3D(job.id)} type="button">
                     3D viewer
@@ -373,7 +384,12 @@ export function ProcessingView() {
       {mapInfo ? (
         <ProcessingResultMap
           info={mapInfo}
-          onClose={() => setMapInfo(null)}
+          maps={maps}
+          onSelect={setMapInfo}
+          onClose={() => {
+            setMapInfo(null);
+            setMaps([]);
+          }}
         />
       ) : null}
 

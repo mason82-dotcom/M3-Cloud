@@ -81,6 +81,7 @@ def publish_mbtiles(
 
         return {
             "map_kind": "RASTER_XYZ",
+            "layer_type": "ORTHOPHOTO",
             "tile_prefix": prefix,
             "tile_extension": tile_extension,
             "tile_content_type": tile_content_type,

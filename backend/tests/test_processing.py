@@ -118,6 +118,8 @@ def test_webodm_result_selection_skips_monolithic_archive() -> None:
             "orthophoto.tif",
             "dsm.tif",
             "dtm.tif",
+            "dsm_tiles.zip",
+            "dtm_tiles.zip",
             "textured_model.glb",
             "../escape.tif",
         ]
@@ -125,7 +127,9 @@ def test_webodm_result_selection_skips_monolithic_archive() -> None:
 
     assert selected == [
         "dsm.tif",
+        "dsm_tiles.zip",
         "dtm.tif",
+        "dtm_tiles.zip",
         "orthophoto.tif",
         "textured_model.glb",
     ]
