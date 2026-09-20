@@ -230,3 +230,61 @@ async def test_create_survey_from_dataset_infers_kind_and_links_flight() -> None
         assert stored_flight is not None
         assert str(stored_dataset.survey_id) == survey["id"]
         assert str(stored_flight.survey_id) == survey["id"]
+
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_create_survey_from_dataset_rejects_cross_project_reuse() -> None:
+    from fastapi import HTTPException
+
+    async with session_factory() as session:
+        await session.execute(delete(ProcessingJob))
+        await session.execute(delete(MediaDatasetRecord))
+        await session.execute(delete(MediaAsset))
+        await session.execute(delete(Flight))
+        await session.execute(delete(Survey))
+        await session.execute(delete(Project))
+        await session.commit()
+
+    project_a = await create_project(ProjectCreate(name="Project A"))
+    project_b = await create_project(ProjectCreate(name="Project B"))
+    project_a_id = __import__("uuid").UUID(project_a["id"])
+    project_b_id = __import__("uuid").UUID(project_b["id"])
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as session:
+        dataset = MediaDatasetRecord(
+            prefix="M3E/site-a",
+            platform="M3E",
+            flight_id=None,
+            survey_id=None,
+            title=None,
+            capture_started_at=now,
+            capture_ended_at=now,
+            flight_assignment_source="AUTO",
+            flight_match_status="NO_MATCH",
+            flight_match_candidates=[],
+            flight_match_details={},
+            present=True,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(dataset)
+        await session.commit()
+        await session.refresh(dataset)
+        dataset_id = dataset.id
+
+    survey = await create_survey_from_dataset(
+        project_a_id,
+        dataset_id,
+        SurveyFromDatasetCreate(),
+    )
+    assert survey["project_id"] == str(project_a_id)
+
+    with pytest.raises(HTTPException) as exc:
+        await create_survey_from_dataset(
+            project_b_id,
+            dataset_id,
+            SurveyFromDatasetCreate(),
+        )
+    assert exc.value.status_code == 409
