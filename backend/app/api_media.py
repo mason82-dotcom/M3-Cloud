@@ -105,10 +105,17 @@ async def import_status(request: Request) -> dict[str, object]:
             "enabled": False,
             "status": "disabled",
         }
+    current = importer.status()
     return {
         "enabled": True,
-        "status": "ready",
-        **importer.status(),
+        "status": (
+            "scanning"
+            if current["scan_running"]
+            else "ready"
+            if current["exists"] and current["readable"]
+            else "unavailable"
+        ),
+        **current,
     }
 
 
