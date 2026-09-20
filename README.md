@@ -93,3 +93,48 @@ GET /api/v1/flights/<UUID>
 Flight detail includes takeoff/landing positions and a GeoJSON path when at least two valid
 positions were recorded. RTK reporting remains a convergence statistic derived from DJI
 `position_state`; it is not labelled FIX/FLOAT.
+
+
+## External media import
+
+DJI SD-card media can be copied to a host folder and mounted read-only into M3-Cloud.
+The backend catalogs the originals in place; it does not rename, resize, move, or rewrite them.
+
+Example host layout:
+
+```text
+/mnt/m3-media-import/
+├── M3E/
+│   └── project-a/
+├── M3T/
+│   └── inspection-a/
+└── M3M/
+    └── field-a/
+```
+
+Set the host path in `.env`:
+
+```dotenv
+M3CLOUD_MEDIA_IMPORT_ENABLED=true
+M3CLOUD_MEDIA_IMPORT_HOST_PATH=/mnt/m3-media-import
+M3CLOUD_MEDIA_IMPORT_SCAN_INTERVAL_SECONDS=15
+M3CLOUD_MEDIA_IMPORT_MIN_AGE_SECONDS=5
+```
+
+Docker mounts that directory as `/media-import:ro`. The scanner waits for the minimum
+file age and verifies size/mtime around SHA-256 hashing so files still being copied are not
+registered prematurely.
+
+Media endpoints:
+
+```text
+GET  /api/v1/media
+GET  /api/v1/media/groups
+GET  /api/v1/media/import/status
+POST /api/v1/media/import/scan
+```
+
+M3M default groups such as `*_D.JPG`, `*_MS_G.TIF`, `*_MS_R.TIF`,
+`*_MS_RE.TIF`, and `*_MS_NIR.TIF` are kept together. For M3E/M3T, using the
+`M3E/`, `M3T/`, or `M3M/` top-level folder is recommended so platform identity is
+explicit even when a filename alone is ambiguous.
