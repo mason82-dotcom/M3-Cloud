@@ -7,6 +7,7 @@ import dji.sdk.keyvalue.value.camera.CameraVideoStreamSourceType
 import dji.sdk.keyvalue.value.common.ComponentIndexType
 import dji.v5.common.callback.CommonCallbacks
 import dji.v5.common.error.IDJIError
+import dji.v5.et.listen
 import dji.v5.manager.KeyManager
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
@@ -52,6 +53,58 @@ internal object CameraLiveSourceController {
     private const val ATTEMPTS = 2
     private const val RETRY_DELAY_MS = 200L
 
+    @Volatile private var cachedSource: String? = null
+    @Volatile private var cachedReadStatus: String = "not_reported"
+    @Volatile private var trackingStarted: Boolean = false
+
+    private fun updateCachedSource(source: CameraVideoStreamSourceType?) {
+        if (source != null) {
+            cachedSource = source.name
+            cachedReadStatus = "confirmed"
+        } else {
+            cachedReadStatus = if (cachedSource != null) "stale" else "not_reported"
+        }
+    }
+
+    private fun markCachedSourceUnavailable() {
+        cachedReadStatus = if (cachedSource != null) "stale" else "not_reported"
+    }
+
+    @Synchronized
+    private fun ensureTracking() {
+        if (trackingStarted) return
+
+        val sourceKey = key()
+        sourceKey.listen(this) { source ->
+            updateCachedSource(source)
+        }
+        trackingStarted = true
+
+        KeyManager.getInstance().getValue(
+            sourceKey,
+            object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
+                override fun onSuccess(source: CameraVideoStreamSourceType?) {
+                    updateCachedSource(source)
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    markCachedSourceUnavailable()
+                }
+            }
+        )
+    }
+
+    /**
+     * Non-blocking live-source snapshot for frequently polled settings endpoints.
+     *
+     * The value is seeded asynchronously from KeyManager and then maintained by the key listener.
+     * A stale status preserves the last DJI-confirmed source across transient key unavailability.
+     */
+    fun cachedReadback(): CameraLiveSourceReadback {
+        ensureTracking()
+        return CameraLiveSourceReadback(cachedSource, cachedReadStatus)
+    }
+
     private fun key(
         index: ComponentIndexType = ComponentIndexType.LEFT_OR_MAIN
     ): DJIKey<CameraVideoStreamSourceType> =
@@ -88,8 +141,10 @@ internal object CameraLiveSourceController {
             }
 
             if (completed && success.get()) {
+                val current = value.get()
+                if (index == ComponentIndexType.LEFT_OR_MAIN) updateCachedSource(current)
                 return CameraLiveSourceReadback(
-                    source = value.get()?.name,
+                    source = current?.name,
                     readStatus = "OK"
                 )
             }
@@ -102,6 +157,7 @@ internal object CameraLiveSourceController {
                 }
             }
         }
+        if (index == ComponentIndexType.LEFT_OR_MAIN) markCachedSourceUnavailable()
         return CameraLiveSourceReadback(null, "UNAVAILABLE")
     }
 
@@ -109,6 +165,7 @@ internal object CameraLiveSourceController {
         rawSource: String,
         index: ComponentIndexType = ComponentIndexType.LEFT_OR_MAIN
     ): CameraLiveSourceSetResult {
+        if (index == ComponentIndexType.LEFT_OR_MAIN) ensureTracking()
         val requested = rawSource.trim().uppercase()
         val source = CameraVideoStreamSourceType.values()
             .firstOrNull { it.name == requested }
