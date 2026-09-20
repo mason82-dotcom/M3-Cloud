@@ -192,7 +192,7 @@ object Payload {
     private val cameraTypeKey: DJIKey<CameraType> = CameraKey.KeyCameraType.create()
     private fun activeCameraType(): CameraType? = cameraTypeKey.get()
 
-    fun cameraCapabilities(): CameraPlatformCapabilities =
+    internal fun cameraCapabilities(): CameraPlatformCapabilities =
         CameraPlatformCapabilities.fromCameraTypeName(activeCameraType()?.name)
 
     // Fires when the camera writes a new photo to the SD card; carries the new file's index.
@@ -404,7 +404,7 @@ object Payload {
      *
      * Blocking; call from a worker thread. Returns null when the shutter produced nothing.
      */
-    data class CapturedExposure(
+    internal data class CapturedExposure(
         val cameraType: String,
         val platform: CameraPlatform,
         val files: List<MediaFile>
@@ -419,7 +419,7 @@ object Payload {
      * One shutter may create multiple assets (especially M3M RGB + multispectral). Keep the whole
      * exposure intact; legacy callers that need one representative file can call [capturePhoto].
      */
-    fun captureExposure(mediaVM: MediaVM): CapturedExposure? {
+    internal fun captureExposure(mediaVM: MediaVM): CapturedExposure? {
         val capabilities = cameraCapabilities()
         val profile = CameraCaptureConfigurator.defaultDirectProfile(capabilities)
         val files = captureNewMediaFiles(mediaVM, profile)
