@@ -144,6 +144,13 @@ class MediaImporter:
                         if asset.relative_path not in visible_paths:
                             asset.present = False
                             marked_missing += 1
+
+                    self._reconcile_present_duplicates(present_assets)
+                    counters["duplicates"] = sum(
+                        1
+                        for asset in present_assets
+                        if asset.present and asset.duplicate_of is not None
+                    )
                     await session.commit()
 
                 finished = datetime.now(timezone.utc)
@@ -298,6 +305,27 @@ class MediaImporter:
         existing.duplicate_of = duplicate.id if duplicate else None
         existing.last_seen_at = seen_at
         return "duplicates" if duplicate else "updated"
+
+    @staticmethod
+    def _reconcile_present_duplicates(assets: list[MediaAsset]) -> None:
+        """Keep exactly one present canonical asset per digest."""
+
+        by_sha: dict[str, list[MediaAsset]] = {}
+        for asset in assets:
+            if asset.present:
+                by_sha.setdefault(asset.sha256, []).append(asset)
+
+        for members in by_sha.values():
+            members.sort(
+                key=lambda item: (
+                    item.discovered_at,
+                    item.relative_path,
+                )
+            )
+            canonical = members[0]
+            canonical.duplicate_of = None
+            for duplicate in members[1:]:
+                duplicate.duplicate_of = canonical.id
 
     @staticmethod
     def _stable_sha256(
