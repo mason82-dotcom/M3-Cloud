@@ -64,7 +64,7 @@ export default function App() {
         setDevices((current) =>
           current.map((device) =>
             device.sn === event.device_sn
-              ? { ...device, online: true }
+              ? { ...device, online: true, telemetry: event.state }
               : device,
           ),
         );

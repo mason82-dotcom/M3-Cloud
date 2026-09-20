@@ -94,14 +94,21 @@ export interface VehicleTelemetryEvent {
 
 export interface DeviceStatusEvent {
   type: "device_online" | "device_offline";
-  timestamp: number;
+  timestamp?: number;
   device_sn: string;
+  device?: {
+    sn: string;
+    model?: string;
+    online?: boolean;
+    gateway_sn?: string | null;
+    updated_at_ms?: number | null;
+  };
 }
 
 export interface TopologyEvent {
   type: "topology";
-  timestamp: number;
-  gateway_sn: string;
+  timestamp?: number;
+  gateway_sn?: string;
   devices?: unknown[];
 }
 
