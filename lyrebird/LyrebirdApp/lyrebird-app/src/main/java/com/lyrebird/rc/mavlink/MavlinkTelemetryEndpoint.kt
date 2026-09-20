@@ -921,6 +921,27 @@ internal class MavlinkTelemetryEndpoint(
     private fun handleMissionItem(uploaded: MavlinkMissionItem) {
         missionPeerSystem = uploaded.senderSystem
         missionPeerComponent = uploaded.senderComponent
+
+        if (uploaded.missionType != MavlinkMissionStore.MISSION_TYPE_MISSION) {
+            Log.i(
+                TAG,
+                "Rejecting item ${uploaded.item.seq}: unsupported mission type ${uploaded.missionType}"
+            )
+            missions.abortUpload()
+            sendMissionAck(MissionResult.UNSUPPORTED)
+            return
+        }
+
+        if (!missionFrameSupported(uploaded.frame)) {
+            Log.i(
+                TAG,
+                "Rejecting item ${uploaded.item.seq}: unsupported MAV_FRAME ${uploaded.frame}"
+            )
+            missions.abortUpload()
+            sendMissionAck(MissionResult.UNSUPPORTED)
+            return
+        }
+
         val refusal = missions.acceptItem(uploaded.item)
         if (refusal != null) {
             // Naming the reason matters: a ground station can show which item it must change,

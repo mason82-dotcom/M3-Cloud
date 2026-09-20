@@ -65,6 +65,10 @@ internal data class MissionItem(
 }
 
 /** MAV_MISSION_RESULT values used when acknowledging an upload. */
+internal fun missionFrameSupported(frame: Int): Boolean =
+    frame == 3 || frame == 6 // MAV_FRAME_GLOBAL_RELATIVE_ALT(_INT)
+
+
 internal object MissionResult {
     const val ACCEPTED = 0
     const val ERROR = 1

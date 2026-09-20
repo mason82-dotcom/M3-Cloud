@@ -145,6 +145,35 @@ class MavlinkMissionProtocolTest {
     }
 
     @Test
+    fun missionItemParserUsesCanonicalFrameCurrentAutocontinueAndTypeOffsets() {
+        val item = waypoint(0).copy(autocontinue = false)
+        val base = MavlinkMessages.missionItemInt(
+            item,
+            targetSystem = 1,
+            targetComponent = 1,
+            isCurrent = true
+        )
+        val payload = base + byteArrayOf(1) // MAV_MISSION_TYPE_FENCE extension at byte 37
+        val frame = MavlinkFramer(systemId = 255, componentId = 190)
+            .frame(MavlinkMsgId.MISSION_ITEM_INT, payload)
+
+        val parsed = MavlinkInbound.parseMissionItem(frame, frame.size)
+        requireNotNull(parsed)
+
+        assertEquals("frame byte 34", 6, parsed.frame)
+        assertFalse("autocontinue byte 36 must not be confused with current byte 35", parsed.item.autocontinue)
+        assertEquals("mission_type extension byte 37", 1, parsed.missionType)
+    }
+
+    @Test
+    fun onlyRelativeGlobalMissionFramesAreSupported() {
+        assertTrue(missionFrameSupported(3))
+        assertTrue(missionFrameSupported(6))
+        assertFalse(missionFrameSupported(0))
+        assertFalse(missionFrameSupported(10))
+    }
+
+    @Test
     fun noseForwardSurvivesEncodingAsNaNRatherThanZero() {
         val payload = MavlinkMessages.missionItemInt(
             waypoint(0, yaw = Float.NaN), targetSystem = 255, targetComponent = 190, isCurrent = true

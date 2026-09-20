@@ -14,6 +14,8 @@ internal data class MavlinkMissionCount(
 /** One uploaded mission item. */
 internal data class MavlinkMissionItem(
     val item: MissionItem,
+    /** MAV_FRAME carried by MISSION_ITEM_INT. Lyrebird currently supports relative-global only. */
+    val frame: Int,
     val missionType: Int,
     val senderSystem: Int,
     val senderComponent: Int
@@ -129,7 +131,10 @@ internal object MavlinkInbound {
     private const val FTP_TARGET_BYTES = 3
     private const val MISSION_TYPE_OFFSET = 2
     private const val MISSION_COUNT_TYPE_OFFSET = 4
-    private const val MISSION_ITEM_TYPE_OFFSET = 36
+    private const val MISSION_ITEM_FRAME_OFFSET = 34
+    private const val MISSION_ITEM_CURRENT_OFFSET = 35
+    private const val MISSION_ITEM_AUTOCONTINUE_OFFSET = 36
+    private const val MISSION_ITEM_TYPE_OFFSET = 37
     private const val COORD_SCALE = 1e7
 
     /** MANUAL_CONTROL axes are -1000..1000 for full deflection. */
@@ -217,10 +222,11 @@ internal object MavlinkInbound {
             latitudeDeg = buffer.getInt(16) / COORD_SCALE,
             longitudeDeg = buffer.getInt(20) / COORD_SCALE,
             altitudeM = buffer.getFloat(24).toDouble(),
-            autocontinue = payload[35].toInt() != 0
+            autocontinue = payload[MISSION_ITEM_AUTOCONTINUE_OFFSET].toInt() != 0
         )
         return MavlinkMissionItem(
             item = item,
+            frame = payload[MISSION_ITEM_FRAME_OFFSET].toInt() and 0xFF,
             missionType = if (frame.payloadLength > MISSION_ITEM_TYPE_OFFSET) {
                 payload[MISSION_ITEM_TYPE_OFFSET].toInt() and 0xFF
             } else {
