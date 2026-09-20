@@ -162,7 +162,9 @@ def decode_lyrebird_frame(frame: bytes) -> dict[str, Any]:
         },
         "flight_budget": {
             "max_radius_returnable_m": max_radius,
-            "time_to_home_s": go_home_s, "time_to_land_s": land_s, "total_flight_time_s": total_s,
+            "time_to_home_s": None if go_home_s == 0xFFFF else go_home_s,
+            "time_to_land_s": None if land_s == 0xFFFF else land_s,
+            "total_flight_time_s": None if total_s == 0xFFFF else total_s,
             "battery_to_home_percent": battery_home, "battery_to_land_percent": battery_land,
         },
         "reach": {"waypoint_seq": waypoint_seq, "yaw_seq": yaw_seq, "altitude_seq": altitude_seq},
