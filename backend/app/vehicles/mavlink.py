@@ -619,11 +619,19 @@ class LyrebirdMavlinkCollector:
                 self._detection_targets[host] = []
             if patch: _deep_merge(self._state[host], patch); changed = True
         for msg in messages:
-            system_id, _ = self._identity(msg)
-            if system_id != bound: continue
+            system_id, component_id = self._identity(msg)
+            if system_id != bound:
+                continue
             self._dispatch_message(host, msg)
+            # Only the vehicle/autopilot heartbeat owns aircraft flight state. Lyrebird also
+            # emits camera-component heartbeats with custom_mode=0; accepting those here would
+            # overwrite the valid aircraft mode (e.g. ATTI -> ALTITUDE_HOLD) with UNKNOWN.
+            if msg.get_type() == "HEARTBEAT" and component_id != AUTOPILOT_COMPONENT:
+                continue
             patch = normalize_mavlink_message(msg)
-            if patch: _deep_merge(self._state[host], patch); changed = True
+            if patch:
+                _deep_merge(self._state[host], patch)
+                changed = True
         if changed or heartbeat_system_id is not None: self._seen[host] = time.monotonic()
         if changed: self._schedule_publish(host)
 
