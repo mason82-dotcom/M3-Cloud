@@ -7,6 +7,7 @@ from sqlalchemy import delete
 from app.api_missions import (
     create_mission_deployment,
     mission_deployments,
+    mission_detail,
     MissionCreate,
     MissionItemInput,
     MissionUpdate,
@@ -320,3 +321,33 @@ async def test_ready_mission_seals_immutable_non_executing_handoff(monkeypatch) 
     listed_after = await mission_deployments(mission_id)
     assert listed_after[0]["revision_version"] == 1
     assert listed_after[0]["package"]["revision"]["plan"]["items"][0]["altitude_m"] == 50.0
+
+
+    runtime_id = sealed["package"]["wire"]["mission_id"]
+    runtime_vehicle = VehicleSnapshot(
+        id="vehicle:M3E-HANDOFF",
+        sn="M3E-HANDOFF",
+        name="M3E",
+        model="M3E",
+        source="lyrebird",
+        online=True,
+        sources=("lyrebird",),
+        telemetry={
+            "mission": {
+                "state": 2,
+                "current_seq": 0,
+                "mission_id": runtime_id,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "app.api_missions._registry",
+        lambda request: _DeploymentRegistry(runtime_vehicle),
+    )
+
+    observed = await mission_detail(mission_id, object())
+    assert observed["runtime"]["runtime_plan_identity"] == "VERIFIED"
+    assert observed["runtime"]["linked_to_persisted_plan"] is True
+    assert observed["runtime"]["deployment_id"] == sealed["id"]
+    assert observed["runtime"]["revision_version"] == 1
+    assert observed["runtime"]["plan_sha256"] == created["plan_sha256"]
