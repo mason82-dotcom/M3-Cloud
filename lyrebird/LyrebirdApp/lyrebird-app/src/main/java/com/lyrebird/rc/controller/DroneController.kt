@@ -1789,6 +1789,11 @@ object DroneController {
     // `GET /config/settings` reporting rthAltitude -1, and over MAVLink as an unreadable
     // LB_RTH_ALT. Each listener is therefore paired with one live fetch to seed the cache; the
     // listener then keeps it current.
+    /** Prime flight-limit listeners/readback as soon as an aircraft connects. */
+    fun warmFlightLimitState() {
+        setupFlightLimitListeners()
+    }
+
     private fun setupFlightLimitListeners() {
         if (flightLimitListenersRegistered) {
             refreshFlightLimitsIfNeeded()
