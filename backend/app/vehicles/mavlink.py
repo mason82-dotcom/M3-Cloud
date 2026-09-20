@@ -16,6 +16,7 @@ AUTOPILOT_COMPONENT = 1
 GCS_SYSTEM = 255
 GCS_COMPONENT = 190
 MAVLINK2_MAGIC = 0xFD
+MAVLINK_ROUTE_STALE_TIMEOUT_S = 10.0
 
 LYREBIRD_STATUS_ID = 42100
 LYREBIRD_STATUS_STRUCT = "<IiiffIIIHHHhhHHHBBB24s"
@@ -204,6 +205,9 @@ class LyrebirdMavlinkCollector:
         self._parsers: dict[str, Any] = {}
         self._state: dict[str, dict[str, Any]] = defaultdict(dict)
         self._seen: dict[str, float] = {}
+        self._system_by_host: dict[str, int] = {}
+        self._host_by_system: dict[int, str] = {}
+        self._duplicate_system: dict[str, int] = {}
         self._heartbeat_task: asyncio.Task[None] | None = None
 
     def set_publisher(self, publisher: Callable[[str, dict[str, Any]], Awaitable[None]] | None) -> None:
@@ -244,32 +248,63 @@ class LyrebirdMavlinkCollector:
             await asyncio.gather(*tuple(self._publish_tasks), return_exceptions=True)
             self._publish_tasks.clear()
 
+    @staticmethod
+    def _identity(msg: Any) -> tuple[int | None, int | None]:
+        header = msg.get_header()
+        return getattr(header, "srcSystem", None), getattr(header, "srcComponent", None)
+
+    def _bind_system(self, host: str, system_id: int) -> bool:
+        if not 1 <= system_id <= 254:
+            return False
+        existing_host = self._host_by_system.get(system_id)
+        if existing_host is not None and existing_host != host:
+            seen = self._seen.get(existing_host, 0.0)
+            if seen and time.monotonic() - seen <= MAVLINK_ROUTE_STALE_TIMEOUT_S:
+                self._duplicate_system[host] = system_id
+                return False
+            self._system_by_host.pop(existing_host, None)
+            self._host_by_system.pop(system_id, None)
+        previous = self._system_by_host.get(host)
+        if previous is not None and previous != system_id and self._host_by_system.get(previous) == host:
+            self._host_by_system.pop(previous, None)
+        self._system_by_host[host] = system_id
+        self._host_by_system[system_id] = host
+        self._duplicate_system.pop(host, None)
+        return True
+
+    def route_status(self, host: str) -> dict[str, Any]:
+        return {"system_id": self._system_by_host.get(host), "duplicate_system_id": self._duplicate_system.get(host)}
+
     def feed_datagram(self, data: bytes, host: str) -> None:
         allowed = {item.strip() for item in settings.lyrebird_hosts.split(",") if item.strip()}
         if host not in allowed:
             return
         parser = self._parsers.get(host)
         if parser is None:
-            parser = mavlink_common.MAVLink(None)
-            parser.robust_parsing = True
-            self._parsers[host] = parser
-        # The common dialect intentionally cannot decode Lyrebird's private message ids.
-        # Decode those from their MAVLink-2 frames first; lyrebird.xml remains the wire contract.
+            parser = mavlink_common.MAVLink(None); parser.robust_parsing = True; self._parsers[host] = parser
+        messages = parser.parse_buffer(data) or []
+        heartbeat_system_id = None
+        for msg in messages:
+            system_id, component_id = self._identity(msg)
+            if msg.get_type() == "HEARTBEAT" and component_id == AUTOPILOT_COMPONENT and system_id is not None:
+                heartbeat_system_id = int(system_id); break
+        bound = self._system_by_host.get(host)
+        if heartbeat_system_id is not None and heartbeat_system_id != bound:
+            if not self._bind_system(host, heartbeat_system_id): return
+            bound = heartbeat_system_id
+        if bound is None or self._host_by_system.get(bound) != host: return
+        changed = False
         for frame in _mavlink2_frames(data):
+            if frame[5] != bound: continue
             patch = decode_lyrebird_frame(frame)
-            if patch:
-                _deep_merge(self._state[host], patch)
-                self._seen[host] = time.monotonic()
-        for msg in parser.parse_buffer(data) or []:
-            header = msg.get_header()
-            if getattr(header, "srcComponent", None) == AUTOPILOT_COMPONENT or msg.get_type() in {
-                "BATTERY_STATUS", "RC_CHANNELS", "HOME_POSITION"
-            }:
-                patch = normalize_mavlink_message(msg)
-                if patch:
-                    _deep_merge(self._state[host], patch)
-                    self._seen[host] = time.monotonic()
-                    self._schedule_publish(host)
+            if patch: _deep_merge(self._state[host], patch); changed = True
+        for msg in messages:
+            system_id, _ = self._identity(msg)
+            if system_id != bound: continue
+            patch = normalize_mavlink_message(msg)
+            if patch: _deep_merge(self._state[host], patch); changed = True
+        if changed or heartbeat_system_id is not None: self._seen[host] = time.monotonic()
+        if changed: self._schedule_publish(host)
 
     def snapshot(self, host: str) -> dict[str, Any] | None:
         seen = self._seen.get(host)
@@ -277,6 +312,7 @@ class LyrebirdMavlinkCollector:
             return None
         result = dict(self._state.get(host, {}))
         result["source"] = "lyrebird_mavlink2"
+        result["mavlink_route"] = self.route_status(host)
         result["last_seen_ms"] = int(time.time() * 1000)
         return result
 
