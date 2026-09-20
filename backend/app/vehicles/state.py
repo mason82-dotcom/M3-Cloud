@@ -58,6 +58,30 @@ def normalize_aircraft_state(telemetry: dict[str, Any] | None, *, source: str) -
     if source == "lyrebird":
         positioning = deepcopy(result.get("positioning")) if isinstance(result.get("positioning"), dict) else {}
         rtk = result.get("rtk") if isinstance(result.get("rtk"), dict) else {}
+        # Fold the private RTK diagnostic surface into the canonical positioning object.
+        # Keep the nested rtk object in result for transport-level diagnostics/backwards compatibility.
+        if rtk:
+            positioning["rtk"] = {
+                "enabled": rtk.get("enabled"),
+                "connected": rtk.get("connected"),
+                "healthy": rtk.get("healthy"),
+                "fix": rtk.get("fix"),
+                "raw_fix": rtk.get("raw_fix"),
+                "age_ms": rtk.get("age_ms"),
+                "source": rtk.get("source"),
+                "std_latitude_m": rtk.get("std_latitude_m"),
+                "std_longitude_m": rtk.get("std_longitude_m"),
+                "std_altitude_m": rtk.get("std_altitude_m"),
+            }
+            native_positioning = positioning.get("native") if isinstance(positioning.get("native"), dict) else {}
+            native_positioning = deepcopy(native_positioning)
+            if rtk.get("raw_fix") is not None:
+                native_positioning["dji_rtk_raw_fix"] = rtk.get("raw_fix")
+            if rtk.get("source") is not None:
+                native_positioning["dji_rtk_source"] = rtk.get("source")
+            if native_positioning:
+                positioning["native"] = native_positioning
+
         # The private RTK diagnostic message is authoritative for freshness. In particular,
         # STALE must override an older GPS_RAW_INT FIXED/FLOAT value retained by deep merge.
         if rtk.get("fix") == "STALE":

@@ -53,3 +53,28 @@ def test_lyrebird_fresh_rtk_restores_fused_position_source():
     assert positioning["fix"]=="FIXED"
     assert positioning["rtk_stale"] is False
     assert positioning["position_source"]=="RTK_FUSED"
+
+
+def test_lyrebird_positioning_contains_canonical_rtk_diagnostics():
+    telemetry={
+        "positioning":{"fix":"SINGLE","position_source":"FLIGHT_CONTROLLER","gps_satellites":19,
+                       "native":{"mavlink_gps_fix_type":3}},
+        "rtk":{"fix":"STALE","raw_fix":"FIXED","enabled":True,"connected":True,"healthy":False,
+               "age_ms":4123,"source":"CUSTOM_NETWORK_SERVICE",
+               "std_latitude_m":0.012,"std_longitude_m":0.013,"std_altitude_m":0.021},
+    }
+    positioning=normalize_aircraft_state(telemetry,source="lyrebird")["aircraft_state"]["positioning"]
+    assert positioning["rtk"]=={
+        "enabled":True,"connected":True,"healthy":False,"fix":"STALE","raw_fix":"FIXED",
+        "age_ms":4123,"source":"CUSTOM_NETWORK_SERVICE",
+        "std_latitude_m":0.012,"std_longitude_m":0.013,"std_altitude_m":0.021,
+    }
+    assert positioning["native"]["mavlink_gps_fix_type"]==3
+    assert positioning["native"]["dji_rtk_raw_fix"]=="FIXED"
+    assert positioning["native"]["dji_rtk_source"]=="CUSTOM_NETWORK_SERVICE"
+
+def test_lyrebird_positioning_does_not_invent_rtk_diagnostics_without_private_status():
+    telemetry={"positioning":{"fix":"SINGLE","position_source":"FLIGHT_CONTROLLER","gps_satellites":12}}
+    positioning=normalize_aircraft_state(telemetry,source="lyrebird")["aircraft_state"]["positioning"]
+    assert "rtk" not in positioning
+    assert "native" not in positioning
