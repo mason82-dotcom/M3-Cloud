@@ -82,6 +82,38 @@ class MediaAsset(Base):
         nullable=True,
         index=True,
     )
+    capture_time_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    metadata_version: Mapped[int] = mapped_column(Integer, default=0)
+    metadata_status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)
+    metadata_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    camera_make: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    camera_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    camera_serial: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lens_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    image_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    orientation: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exposure_time_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    f_number: Mapped[float | None] = mapped_column(Float, nullable=True)
+    iso: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    focal_length_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    focal_length_35mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    gps_latitude: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+    gps_longitude: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+    gps_altitude_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_altitude_ref: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    dji_absolute_altitude_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dji_relative_altitude_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    flight_yaw_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    flight_pitch_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    flight_roll_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gimbal_yaw_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gimbal_pitch_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gimbal_roll_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
 
     platform: Mapped[str] = mapped_column(String(32), default="UNKNOWN", index=True)
     media_kind: Mapped[str] = mapped_column(String(32), default="UNKNOWN", index=True)
@@ -206,6 +238,7 @@ class ProcessingJobAsset(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    metadata_snapshot: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
 
 
 

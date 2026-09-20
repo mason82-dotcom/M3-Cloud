@@ -330,3 +330,28 @@ Processing input snapshots also freeze each original's normalized capture time. 
 both WebODM and Thermogram jobs. Thermogram job creation now freezes the same path, byte size,
 SHA-256, media kind, capture group, and capture timestamp contract as WebODM, so later media
 catalog rescans cannot silently change an external handoff.
+
+
+### EXIF / GPS / DJI XMP
+
+The external media scanner reads metadata from the original files **without modifying them**.
+For each catalogued image M3-Cloud stores a normalized metadata record plus a compact raw
+EXIF/XMP representation.
+
+Normalized fields include capture time and its provenance, camera/lens identity, dimensions,
+exposure, ISO, focal length, EXIF GPS coordinates/altitude, DJI absolute and relative altitude,
+aircraft attitude, and gimbal attitude. EXIF GPS coordinates are preferred when both EXIF and
+DJI XMP coordinates exist. This is important for M3M data because the aircraft writes
+sensor-position-compensated coordinates into the image EXIF.
+
+Altitude references remain separate:
+
+```text
+EXIF GPS altitude        -> EXIF sea-level reference
+DJI AbsoluteAltitude     -> DJI absolute/ellipsoid altitude
+DJI RelativeAltitude     -> relative to takeoff point
+```
+
+Existing catalog entries are backfilled automatically on the next media scan via the metadata
+schema version. Processing jobs freeze the normalized metadata together with size/hash/capture
+time so later rescans cannot silently change the processing input manifest.

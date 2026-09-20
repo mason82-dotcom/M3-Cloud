@@ -14,6 +14,7 @@ from app.database import session_factory
 from app.config import settings
 from app.media.datasets import build_dataset_manifest, build_media_datasets
 from app.media.matching import match_flight_by_capture_window
+from app.media.metadata import asset_metadata_payload
 from app.models import Flight, MediaAsset, MediaDatasetRecord
 
 
@@ -34,6 +35,8 @@ def _asset(asset: MediaAsset) -> dict[str, Any]:
         "mtime_ns": asset.mtime_ns,
         "sha256": asset.sha256,
         "capture_time_utc": asset.capture_time_utc.isoformat() if asset.capture_time_utc else None,
+        "capture_time_source": asset.capture_time_source,
+        "metadata": asset_metadata_payload(asset),
         "platform": asset.platform,
         "media_kind": asset.media_kind,
         "capture_group": asset.capture_group,

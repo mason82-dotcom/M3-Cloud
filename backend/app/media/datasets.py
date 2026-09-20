@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from pathlib import PurePosixPath
 from typing import Iterable
 
+from app.media.metadata import asset_metadata_payload
 from app.models import MediaAsset
 
 
@@ -128,6 +129,19 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
                 )
             )
 
+        metadata_ready = sum(
+            1 for asset in items
+            if asset.metadata_status in {"READY", "PARTIAL"}
+        )
+        gps_count = sum(
+            1 for asset in items
+            if asset.gps_latitude is not None and asset.gps_longitude is not None
+        )
+        capture_time_sources = Counter(
+            asset.capture_time_source or "NONE"
+            for asset in items
+        )
+
         datasets.append(
             {
                 "prefix": prefix,
@@ -140,6 +154,9 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
                 "capture_ended_at": capture_times[-1] if capture_times else None,
                 "capture_time_count": len(capture_times),
                 "capture_time_complete": len(capture_times) == len(items),
+                "capture_time_sources": dict(sorted(capture_time_sources.items())),
+                "metadata_ready_count": metadata_ready,
+                "gps_count": gps_count,
                 "workflows": workflows,
             }
         )
@@ -213,6 +230,8 @@ def build_dataset_manifest(
                             if asset.capture_time_utc
                             else None
                         ),
+                        "capture_time_source": asset.capture_time_source,
+                        "metadata": asset_metadata_payload(asset),
                     }
                     for asset in members
                 ],
@@ -221,7 +240,7 @@ def build_dataset_manifest(
 
     root = import_root.rstrip("/")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "prefix": normalized_prefix,
         "platform": platform,
         "external_path": f"{root}/{normalized_prefix}",
@@ -243,6 +262,8 @@ def build_dataset_manifest(
                     if asset.capture_time_utc
                     else None
                 ),
+                "capture_time_source": asset.capture_time_source,
+                "metadata": asset_metadata_payload(asset),
             }
             for asset in ungrouped
         ],

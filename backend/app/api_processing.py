@@ -122,7 +122,7 @@ async def processing_inputs(job_id: uuid.UUID) -> dict[str, Any]:
         ).all()
 
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "job_id": str(job.id),
             "kind": job.kind,
             "platform": job.platform,
@@ -142,6 +142,7 @@ async def processing_inputs(job_id: uuid.UUID) -> dict[str, Any]:
                         if item.capture_time_utc
                         else None
                     ),
+                    "metadata": item.metadata_snapshot or {},
                 }
                 for item in inputs
             ],

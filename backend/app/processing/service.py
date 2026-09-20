@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.media.metadata import asset_metadata_payload
 from app.models import (
     MediaAsset,
     MediaDatasetRecord,
@@ -92,6 +93,7 @@ def build_thermogram_handoff(
     assets: list[MediaAsset],
     *,
     handoff_root: str,
+    metadata_by_id: dict[str, dict[str, object]] | None = None,
 ) -> dict[str, object]:
     if job.kind != "THERMOGRAM" or job.platform != "M3T":
         raise ValueError("Processing job is not an M3T Thermogram handoff")
@@ -123,6 +125,10 @@ def build_thermogram_handoff(
                             if asset.capture_time_utc
                             else None
                         ),
+                        "metadata": (
+                            (metadata_by_id or {}).get(str(asset.id))
+                            or asset_metadata_payload(asset)
+                        ),
                     }
                     for asset in sorted(
                         members,
@@ -137,7 +143,7 @@ def build_thermogram_handoff(
         raise ValueError("Thermogram job contains no complete M3T capture pairs")
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "workflow": "THERMOGRAM",
         "platform": "M3T",
         "job_id": str(job.id),
@@ -430,6 +436,7 @@ class ProcessingManager:
                         media_kind=asset.media_kind,
                         capture_group=asset.capture_group,
                         capture_time_utc=asset.capture_time_utc,
+                        metadata_snapshot=asset_metadata_payload(asset),
                     )
                     for index, asset in enumerate(assets)
                 ]
@@ -537,6 +544,7 @@ class ProcessingManager:
             ).all()
 
             assets = []
+            metadata_by_id: dict[str, dict[str, object]] = {}
             for item in frozen:
                 source = await session.get(MediaAsset, item.media_asset_id)
                 if source is None:
@@ -548,11 +556,13 @@ class ProcessingManager:
                 source.capture_group = item.capture_group
                 source.capture_time_utc = item.capture_time_utc
                 assets.append(source)
+                metadata_by_id[str(item.media_asset_id)] = item.metadata_snapshot or {}
 
             handoff = build_thermogram_handoff(
                 job,
                 assets,
                 handoff_root=self.media_handoff_root,
+                metadata_by_id=metadata_by_id,
             )
             handoff["result_drop_path"] = _handoff_path(
                 self.external_result_handoff_root,

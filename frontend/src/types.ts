@@ -219,6 +219,51 @@ export interface FlightReplay {
   samples: FlightSample[];
 }
 
+export interface MediaMetadata {
+  metadata_version: number;
+  status: string;
+  error?: string | null;
+  capture_time_utc?: string | null;
+  capture_time_source?: string | null;
+  camera: {
+    make?: string | null;
+    model?: string | null;
+    serial?: string | null;
+    lens_model?: string | null;
+  };
+  image: {
+    width?: number | null;
+    height?: number | null;
+    orientation?: number | null;
+    exposure_time_s?: number | null;
+    f_number?: number | null;
+    iso?: number | null;
+    focal_length_mm?: number | null;
+    focal_length_35mm?: number | null;
+  };
+  gps: {
+    latitude?: number | null;
+    longitude?: number | null;
+    altitude_m?: number | null;
+    altitude_ref?: string | null;
+  };
+  dji_altitude: {
+    absolute_ellipsoid_m?: number | null;
+    relative_takeoff_m?: number | null;
+  };
+  flight_attitude: {
+    yaw_deg?: number | null;
+    pitch_deg?: number | null;
+    roll_deg?: number | null;
+  };
+  gimbal_attitude: {
+    yaw_deg?: number | null;
+    pitch_deg?: number | null;
+    roll_deg?: number | null;
+  };
+  raw?: Record<string, unknown>;
+}
+
 export interface MediaAsset {
   id: string;
   relative_path: string;
@@ -228,6 +273,8 @@ export interface MediaAsset {
   mtime_ns: number;
   sha256: string;
   capture_time_utc?: string | null;
+  capture_time_source?: string | null;
+  metadata?: MediaMetadata;
   platform: string;
   media_kind: string;
   capture_group?: string | null;
@@ -271,6 +318,9 @@ export interface MediaDataset {
   size_bytes: number;
   media_kinds: Record<string, number>;
   capture_group_count: number;
+  capture_time_sources?: Record<string, number>;
+  metadata_ready_count?: number;
+  gps_count?: number;
   workflows: MediaWorkflowReadiness[];
 }
 
@@ -282,6 +332,8 @@ export interface MediaDatasetManifestFile {
   size_bytes: number;
   sha256: string;
   capture_time_utc?: string | null;
+  capture_time_source?: string | null;
+  metadata?: MediaMetadata;
 }
 
 export interface MediaDatasetManifestGroup {
@@ -369,6 +421,7 @@ export interface ThermogramHandoffFile {
   size_bytes: number;
   sha256: string;
   capture_time_utc?: string | null;
+  metadata?: MediaMetadata;
 }
 
 export interface ThermogramHandoffGroup {

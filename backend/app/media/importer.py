@@ -19,6 +19,7 @@ from app.media.classifier import (
 )
 from app.media.datasets import build_media_datasets
 from app.media.matching import capture_time_from_filename, match_flight_by_capture_window
+from app.media.metadata import METADATA_VERSION, ExtractedMetadata, extract_media_metadata
 from app.models import MediaAsset, MediaDatasetRecord
 
 
@@ -251,25 +252,33 @@ class MediaImporter:
             select(MediaAsset).where(MediaAsset.relative_path == relative_path)
         )
 
-        if (
+        same_file = (
             existing is not None
             and existing.size_bytes == candidate.size_bytes
             and existing.mtime_ns == candidate.mtime_ns
-        ):
+        )
+        if same_file:
             existing.present = True
             existing.last_seen_at = seen_at
+            changed = False
             if (
                 existing.platform != candidate.classification.platform
                 or existing.media_kind != candidate.classification.media_kind
                 or existing.capture_group != candidate.classification.capture_group
-                or existing.capture_time_utc != candidate.capture_time_utc
             ):
                 existing.platform = candidate.classification.platform
                 existing.media_kind = candidate.classification.media_kind
                 existing.capture_group = candidate.classification.capture_group
-                existing.capture_time_utc = candidate.capture_time_utc
-                return "updated"
-            return "unchanged"
+                changed = True
+
+            if existing.metadata_version != METADATA_VERSION:
+                metadata, stable = await self._extract_metadata(candidate)
+                if not stable:
+                    return "skipped_unstable"
+                self._apply_metadata(existing, metadata)
+                changed = True
+
+            return "updated" if changed else "unchanged"
 
         digest, stable = await asyncio.to_thread(
             self._stable_sha256,
@@ -277,6 +286,10 @@ class MediaImporter:
             candidate.size_bytes,
             candidate.mtime_ns,
         )
+        if not stable:
+            return "skipped_unstable"
+
+        metadata, stable = await self._extract_metadata(candidate)
         if not stable:
             return "skipped_unstable"
 
@@ -299,7 +312,7 @@ class MediaImporter:
                 size_bytes=candidate.size_bytes,
                 mtime_ns=candidate.mtime_ns,
                 sha256=digest,
-                capture_time_utc=candidate.capture_time_utc,
+                capture_time_utc=metadata.capture_time_utc,
                 platform=candidate.classification.platform,
                 media_kind=candidate.classification.media_kind,
                 capture_group=candidate.classification.capture_group,
@@ -310,6 +323,7 @@ class MediaImporter:
                 discovered_at=seen_at,
                 last_seen_at=seen_at,
             )
+            self._apply_metadata(existing, metadata)
             session.add(existing)
             return "duplicates" if duplicate else "added"
 
@@ -318,7 +332,6 @@ class MediaImporter:
         existing.size_bytes = candidate.size_bytes
         existing.mtime_ns = candidate.mtime_ns
         existing.sha256 = digest
-        existing.capture_time_utc = candidate.capture_time_utc
         existing.platform = candidate.classification.platform
         existing.media_kind = candidate.classification.media_kind
         existing.capture_group = candidate.classification.capture_group
@@ -327,7 +340,61 @@ class MediaImporter:
         existing.present = True
         existing.duplicate_of = duplicate.id if duplicate else None
         existing.last_seen_at = seen_at
+        self._apply_metadata(existing, metadata)
         return "duplicates" if duplicate else "updated"
+
+    async def _extract_metadata(
+        self,
+        candidate: Candidate,
+    ) -> tuple[ExtractedMetadata, bool]:
+        metadata = await asyncio.to_thread(
+            extract_media_metadata,
+            candidate.path,
+            default_timezone=self.filename_timezone,
+            fallback_capture_time_utc=candidate.capture_time_utc,
+        )
+        after = candidate.path.stat()
+        stable = (
+            after.st_size == candidate.size_bytes
+            and after.st_mtime_ns == candidate.mtime_ns
+        )
+        return metadata, stable
+
+    @staticmethod
+    def _apply_metadata(asset: MediaAsset, metadata: ExtractedMetadata) -> None:
+        asset.capture_time_utc = metadata.capture_time_utc
+        asset.capture_time_source = metadata.capture_time_source
+        asset.metadata_version = METADATA_VERSION
+        asset.metadata_status = metadata.metadata_status
+        asset.metadata_error = metadata.metadata_error
+
+        asset.camera_make = metadata.camera_make
+        asset.camera_model = metadata.camera_model
+        asset.camera_serial = metadata.camera_serial
+        asset.lens_model = metadata.lens_model
+        asset.image_width = metadata.image_width
+        asset.image_height = metadata.image_height
+        asset.orientation = metadata.orientation
+        asset.exposure_time_s = metadata.exposure_time_s
+        asset.f_number = metadata.f_number
+        asset.iso = metadata.iso
+        asset.focal_length_mm = metadata.focal_length_mm
+        asset.focal_length_35mm = metadata.focal_length_35mm
+
+        asset.gps_latitude = metadata.gps_latitude
+        asset.gps_longitude = metadata.gps_longitude
+        asset.gps_altitude_m = metadata.gps_altitude_m
+        asset.gps_altitude_ref = metadata.gps_altitude_ref
+        asset.dji_absolute_altitude_m = metadata.dji_absolute_altitude_m
+        asset.dji_relative_altitude_m = metadata.dji_relative_altitude_m
+
+        asset.flight_yaw_deg = metadata.flight_yaw_deg
+        asset.flight_pitch_deg = metadata.flight_pitch_deg
+        asset.flight_roll_deg = metadata.flight_roll_deg
+        asset.gimbal_yaw_deg = metadata.gimbal_yaw_deg
+        asset.gimbal_pitch_deg = metadata.gimbal_pitch_deg
+        asset.gimbal_roll_deg = metadata.gimbal_roll_deg
+        asset.metadata_json = metadata.metadata_json
 
     @staticmethod
     def _reconcile_present_duplicates(assets: list[MediaAsset]) -> None:

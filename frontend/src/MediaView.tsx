@@ -47,6 +47,7 @@ export function MediaView() {
   const [platform, setPlatform] = useState("");
   const [mediaKind, setMediaKind] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [manifest, setManifest] = useState<MediaDatasetManifest | null>(null);
   const [scanning, setScanning] = useState(false);
   const [assigningDataset, setAssigningDataset] = useState<string | null>(null);
@@ -95,6 +96,9 @@ export function MediaView() {
         : assets,
     [assets, selectedGroup],
   );
+
+  const selectedAsset =
+    assets.find((asset) => asset.id === selectedAssetId) ?? null;
 
   const totalBytes = assets.reduce((sum, asset) => sum + asset.size_bytes, 0);
   const duplicateCount = assets.filter((asset) => asset.duplicate_of).length;
@@ -188,6 +192,10 @@ export function MediaView() {
                 {Object.entries(dataset.media_kinds)
                   .map(([kind, count]) => `${kind} ${count}`)
                   .join(" · ")}
+                {" · "}
+                GPS {dataset.gps_count ?? 0}/{dataset.asset_count}
+                {" · "}
+                metadata {dataset.metadata_ready_count ?? 0}/{dataset.asset_count}
               </small>
               <div className="datasetCaptureTime">
                 <span>Capture</span>
@@ -373,7 +381,11 @@ export function MediaView() {
               </thead>
               <tbody>
                 {visibleAssets.map((asset) => (
-                  <tr key={asset.id}>
+                  <tr
+                    className={asset.id === selectedAssetId ? "selected" : ""}
+                    key={asset.id}
+                    onClick={() => setSelectedAssetId(asset.id)}
+                  >
                     <td>
                       <strong>{asset.filename}</strong>
                       <small title={asset.relative_path}>{asset.relative_path}</small>
@@ -397,6 +409,67 @@ export function MediaView() {
           </div>
         </div>
       </section>
+
+      {selectedAsset ? (
+        <section className="panel mediaMetadataPanel">
+          <div className="panelHead">
+            <div>
+              <h2>EXIF / GPS / DJI metadata</h2>
+              <small>{selectedAsset.filename}</small>
+            </div>
+            <span>{selectedAsset.metadata?.status ?? "PENDING"}</span>
+          </div>
+          <div className="mediaMetadataGrid">
+            <article>
+              <h3>Capture</h3>
+              <dl>
+                <dt>UTC time</dt><dd>{selectedAsset.capture_time_utc ? new Date(selectedAsset.capture_time_utc).toISOString() : "—"}</dd>
+                <dt>Source</dt><dd>{selectedAsset.capture_time_source ?? "—"}</dd>
+                <dt>Camera</dt><dd>{[selectedAsset.metadata?.camera.make, selectedAsset.metadata?.camera.model].filter(Boolean).join(" ") || "—"}</dd>
+                <dt>Serial</dt><dd>{selectedAsset.metadata?.camera.serial ?? "—"}</dd>
+                <dt>Lens</dt><dd>{selectedAsset.metadata?.camera.lens_model ?? "—"}</dd>
+              </dl>
+            </article>
+            <article>
+              <h3>GPS / altitude</h3>
+              <dl>
+                <dt>Latitude</dt><dd>{selectedAsset.metadata?.gps.latitude ?? "—"}</dd>
+                <dt>Longitude</dt><dd>{selectedAsset.metadata?.gps.longitude ?? "—"}</dd>
+                <dt>EXIF altitude</dt><dd>{selectedAsset.metadata?.gps.altitude_m ?? "—"} {selectedAsset.metadata?.gps.altitude_ref ?? ""}</dd>
+                <dt>DJI absolute</dt><dd>{selectedAsset.metadata?.dji_altitude.absolute_ellipsoid_m ?? "—"} m</dd>
+                <dt>DJI relative</dt><dd>{selectedAsset.metadata?.dji_altitude.relative_takeoff_m ?? "—"} m</dd>
+              </dl>
+            </article>
+            <article>
+              <h3>Exposure / optics</h3>
+              <dl>
+                <dt>Dimensions</dt><dd>{selectedAsset.metadata?.image.width ?? "—"} × {selectedAsset.metadata?.image.height ?? "—"}</dd>
+                <dt>Exposure</dt><dd>{selectedAsset.metadata?.image.exposure_time_s ?? "—"} s</dd>
+                <dt>Aperture</dt><dd>{selectedAsset.metadata?.image.f_number ? `f/${selectedAsset.metadata.image.f_number}` : "—"}</dd>
+                <dt>ISO</dt><dd>{selectedAsset.metadata?.image.iso ?? "—"}</dd>
+                <dt>Focal length</dt><dd>{selectedAsset.metadata?.image.focal_length_mm ?? "—"} mm</dd>
+              </dl>
+            </article>
+            <article>
+              <h3>Aircraft / gimbal</h3>
+              <dl>
+                <dt>Flight yaw</dt><dd>{selectedAsset.metadata?.flight_attitude.yaw_deg ?? "—"}°</dd>
+                <dt>Flight pitch</dt><dd>{selectedAsset.metadata?.flight_attitude.pitch_deg ?? "—"}°</dd>
+                <dt>Flight roll</dt><dd>{selectedAsset.metadata?.flight_attitude.roll_deg ?? "—"}°</dd>
+                <dt>Gimbal yaw</dt><dd>{selectedAsset.metadata?.gimbal_attitude.yaw_deg ?? "—"}°</dd>
+                <dt>Gimbal pitch</dt><dd>{selectedAsset.metadata?.gimbal_attitude.pitch_deg ?? "—"}°</dd>
+              </dl>
+            </article>
+          </div>
+          {selectedAsset.metadata?.error ? (
+            <div className="mediaWarning">{selectedAsset.metadata.error}</div>
+          ) : null}
+          <details className="mediaRawMetadata">
+            <summary>Raw normalized EXIF/XMP</summary>
+            <pre>{JSON.stringify(selectedAsset.metadata?.raw ?? {}, null, 2)}</pre>
+          </details>
+        </section>
+      ) : null}
     </div>
   );
 }
