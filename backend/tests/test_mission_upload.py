@@ -159,3 +159,24 @@ async def test_old_sealed_package_remains_non_uploadable() -> None:
             preferred_executor="DJI_NATIVE",
         )
     assert exc.value.code == "PACKAGE_NOT_UPLOADABLE"
+
+
+
+class BrokenCollector(FakeCollector):
+    def send_mission_count(self, host, count):
+        raise RuntimeError("socket closed")
+
+
+@pytest.mark.asyncio
+async def test_transport_failure_is_normalized(monkeypatch) -> None:
+    monkeypatch.setattr("app.missions.uploader.settings.mission_upload_timeout_seconds", 1.0)
+    uploader = MissionUploader(BrokenCollector(2), resolver=resolver)
+
+    with pytest.raises(MissionUploadError) as exc:
+        await uploader.upload(
+            package(),
+            aircraft_sn="M3E-001",
+            preferred_executor="DJI_NATIVE",
+        )
+
+    assert exc.value.code == "TRANSPORT_UNAVAILABLE"

@@ -598,7 +598,11 @@ async def mission_deployment(
     deployment_id: uuid.UUID,
 ) -> dict[str, Any]:
     async with session_factory() as session:
-        deployment = await session.get(MissionDeployment, deployment_id)
+        deployment = await session.scalar(
+            select(MissionDeployment)
+            .where(MissionDeployment.id == deployment_id)
+            .with_for_update()
+        )
         if deployment is None or deployment.mission_id != mission_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -753,6 +757,7 @@ async def upload_mission_deployment(
             "EXECUTOR_UNVERIFIED",
             "EXECUTOR_MISMATCH",
             "REQUEST_OUT_OF_RANGE",
+            "TRANSPORT_UNAVAILABLE",
         }
         raise HTTPException(
             status_code=(

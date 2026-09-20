@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import math
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -213,7 +212,15 @@ class MissionUploader:
                 in ("MISSION_REQUEST_INT", "MISSION_REQUEST", "MISSION_ACK"),
             )
             try:
-                self.collector.send_mission_count(target.host, len(items))
+                try:
+                    self.collector.send_mission_count(target.host, len(items))
+                except (OSError, RuntimeError) as exc:
+                    raise MissionUploadError(
+                        "TRANSPORT_UNAVAILABLE",
+                        "Lyrebird MAVLink transport became unavailable before upload started",
+                        details={"host": target.host},
+                    ) from exc
+
                 for _ in range(len(items) * 2 + 4):
                     try:
                         reply = await asyncio.wait_for(
@@ -263,7 +270,17 @@ class MissionUploader:
                         lambda msg: msg.get_type()
                         in ("MISSION_REQUEST_INT", "MISSION_REQUEST", "MISSION_ACK"),
                     )
-                    self.collector.send_mission_item_int(target.host, item)
+                    try:
+                        self.collector.send_mission_item_int(target.host, item)
+                    except (OSError, RuntimeError) as exc:
+                        raise MissionUploadError(
+                            "TRANSPORT_UNAVAILABLE",
+                            "Lyrebird MAVLink transport became unavailable during upload",
+                            details={
+                                "host": target.host,
+                                "requested_sequences": requested,
+                            },
+                        ) from exc
 
                 raise MissionUploadError(
                     "UPLOAD_INCOMPLETE",
