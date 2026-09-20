@@ -36,7 +36,7 @@ class CameraCaptureConfiguratorTest {
         assertEquals(CameraCaptureProfile.M3M_RGB_MULTISPECTRAL, profile)
         assertEquals(
             setOf("RGB_CAMERA", "NDVI_CAMERA", "MS_G_CAMERA", "MS_R_CAMERA", "MS_RE_CAMERA", "MS_NIR_CAMERA"),
-            profile.storedSources.map { it.name }.toSet()
+            profile.storedSourceNames
         )
     }
 
