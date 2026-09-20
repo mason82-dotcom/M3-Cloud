@@ -137,6 +137,7 @@ import com.lyrebird.rc.webrtc.TelemetryProvider
 import com.lyrebird.rc.telemetry.TelemetryCoordinator
 import com.lyrebird.rc.telemetry.MockTelemetrySnapshot
 import com.lyrebird.rc.telemetry.RtkTelemetryMonitor
+import com.lyrebird.rc.telemetry.RtkTelemetryState
 import com.lyrebird.rc.telemetry.PositionResolver
 import com.lyrebird.rc.util.NetworkUtils
 import com.lyrebird.rc.util.ToastUtils
@@ -5830,7 +5831,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             latitude in -90.0..90.0 &&
             longitude in -180.0..180.0
 
-    private fun buildMavlinkSnapshot(): MavlinkSnapshot {
+    private fun buildMavlinkSnapshot(
+        rtkSnapshot: RtkTelemetryState? = null
+    ): MavlinkSnapshot {
         val location = getLocation3D()
         val homeLocation = getHomeLocation()
         val speed = getSpeed()
@@ -5841,7 +5844,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         val gimbalJoint = getGimbalJointAttitude()
         val goHomeInfo = goHomeAssessmentProcessor.value
         val lrfTarget = lrfTargetLocation
-        val rtk = rtkTelemetryMonitor.snapshot()
+        val rtk = rtkSnapshot ?: rtkTelemetryMonitor.snapshot()
         val rcSticks = virtualStickVM.stickValue.value
         val position = PositionResolver.resolve(
             flightControllerLatitudeDeg = location.latitude,
@@ -5859,6 +5862,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             altitudeAslM = position.altitudeAmslM,
             altitudeAglM = position.altitudeRelativeTakeoffM,
             positionSource = position.source.name,
+            flightControllerLatitudeDeg = location.latitude,
+            flightControllerLongitudeDeg = location.longitude,
+            flightControllerAltitudeM = location.altitude.takeIf { it.isFinite() },
             velocityNorthMps = speed.x,
             velocityEastMps = speed.y,
             velocityDownMps = speed.z,
@@ -5977,8 +5983,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
      * entire survey rather than one refresh per image.
      */
     private fun logSurveyMediaEvent(event: Payload.GeneratedMediaEvent) {
-        val aircraft = buildMavlinkSnapshot()
+        // One immutable RTK read drives both the resolved MAVLink position and survey metadata.
+        // An RTK callback therefore cannot make coordinates and fix state refer to different epochs.
         val rtk = rtkTelemetryMonitor.snapshot()
+        val aircraft = buildMavlinkSnapshot(rtk)
 
         val record = SurveyCaptureRecord(
                 eventEpochMs = event.receivedAtEpochMs,
@@ -5989,6 +5997,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                 longitudeDeg = aircraft.longitudeDeg,
                 altitudeAslM = aircraft.altitudeAslM,
                 altitudeAglM = aircraft.altitudeAglM,
+                positionSource = aircraft.positionSource,
+                flightControllerLatitudeDeg = aircraft.flightControllerLatitudeDeg,
+                flightControllerLongitudeDeg = aircraft.flightControllerLongitudeDeg,
+                flightControllerAltitudeM = aircraft.flightControllerAltitudeM,
                 satelliteCount = aircraft.satelliteCount,
 
                 headingDeg = aircraft.headingDeg,
@@ -6004,6 +6016,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                 gimbalJointYawDeg = aircraft.gimbalJointYawDeg,
 
                 rtkEnabled = rtk.enabled,
+                rtkConnected = rtk.connected,
                 rtkHealthy = rtk.healthy,
                 rtkFix = rtk.fix.name,
                 rtkRawFix = rtk.rawFix.name,
@@ -6011,6 +6024,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                 rtkLatitudeDeg = rtk.latitudeDeg,
                 rtkLongitudeDeg = rtk.longitudeDeg,
                 rtkAltitudeM = rtk.altitudeM,
+                rtkFusedLatitudeDeg = rtk.fusedLatitudeDeg,
+                rtkFusedLongitudeDeg = rtk.fusedLongitudeDeg,
+                rtkFusedAltitudeM = rtk.fusedAltitudeM,
                 rtkStdLatitudeM = rtk.stdLatitudeM,
                 rtkStdLongitudeM = rtk.stdLongitudeM,
                 rtkStdAltitudeM = rtk.stdAltitudeM,
