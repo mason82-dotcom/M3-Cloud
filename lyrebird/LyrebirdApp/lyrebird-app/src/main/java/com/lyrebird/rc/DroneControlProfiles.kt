@@ -14,7 +14,7 @@ enum class DroneControlProfile(
     private val payloadDrop: DronePayloadDrop? = null
 ) {
     MAVIC_3_ENTERPRISE(
-        displayName = "Mavic 3 Enterprise",
+        displayName = "Mavic 3 Enterprise Series",
         speedLimits = DroneSpeedLimits(
             maxHorizontalSpeedMps = 20.0,
             maxHorizontalAccelMps2 = 1.0,
