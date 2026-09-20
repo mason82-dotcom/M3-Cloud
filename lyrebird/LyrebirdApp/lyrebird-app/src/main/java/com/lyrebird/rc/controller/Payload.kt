@@ -32,6 +32,7 @@ import dji.v5.manager.datacenter.media.MediaFileDownloadListener
 import dji.sdk.keyvalue.value.payload.WidgetType
 import dji.sdk.keyvalue.value.payload.WidgetValue
 import java.io.OutputStream
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
@@ -49,6 +50,31 @@ import kotlin.math.roundToInt
 object Payload {
 
     private const val TAG = "Payload"
+
+    /**
+     * Cheap notification that DJI has committed a new media file.
+     *
+     * KeyNewlyGeneratedMediaFile does not provide a MediaFile handle or guaranteed filename. For
+     * survey logging that is an advantage: the callback can snapshot aircraft/RTK state without
+     * forcing a media-list refresh for every exposure. Filename reconciliation can be performed
+     * once after the flight from [mediaIndex].
+     */
+    data class GeneratedMediaEvent(
+        val mediaIndex: Int?,
+        val lens: String,
+        val receivedAtEpochMs: Long
+    )
+
+    /** Minimal post-flight media metadata used by the survey reconciler. */
+    data class ResolvedMedia(
+        val mediaIndex: Int,
+        val fileName: String,
+        val sizeBytes: Long,
+        val fileType: String
+    )
+
+    private val generatedMediaListeners =
+        CopyOnWriteArraySet<(GeneratedMediaEvent) -> Unit>()
 
     // ==================== Laser Range Finder (LRF) ====================
 
@@ -180,9 +206,89 @@ object Payload {
         if (newMediaListenerRegistered) return
         keyNewlyGeneratedMediaFile.listen(this) { newValue: GeneratedMediaFileInfo? ->
             latestGeneratedMediaInfo = newValue
-            if (collectingEvents && newValue != null) mediaEventQueue.offer(newValue)
+            if (newValue != null) {
+                if (collectingEvents) mediaEventQueue.offer(newValue)
+
+                val event = GeneratedMediaEvent(
+                    mediaIndex = newValue.index,
+                    lens = newValue.dcf_type?.name ?: "UNKNOWN",
+                    receivedAtEpochMs = System.currentTimeMillis()
+                )
+                generatedMediaListeners.forEach { listener ->
+                    runCatching { listener(event) }
+                        .onFailure { error ->
+                            Log.w(TAG, "Generated-media listener failed: ${error.message}")
+                        }
+                }
+            }
         }
         newMediaListenerRegistered = true
+    }
+
+    /**
+     * Observe all newly generated camera files without pulling the camera media list.
+     *
+     * The same underlying DJI listener is shared with capturePhoto/captureThermal, so registering
+     * survey logging does not create a competing KeyNewlyGeneratedMediaFile subscription.
+     */
+    fun addGeneratedMediaListener(listener: (GeneratedMediaEvent) -> Unit) {
+        generatedMediaListeners.add(listener)
+        setupNewMediaListener()
+    }
+
+    fun removeGeneratedMediaListener(listener: (GeneratedMediaEvent) -> Unit) {
+        generatedMediaListeners.remove(listener)
+    }
+
+    /**
+     * Resolve the media indices seen during one survey with ONE narrow camera-list pull.
+     *
+     * The request asks for only the newest capture count plus a small reserve. A full-card pull is
+     * intentionally not used as fallback: on a field SD card with many thousands of images that
+     * would turn a cheap post-flight bookkeeping step into a long camera transfer.
+     *
+     * Multiple files may share an index on multi-lens payloads, so the result maps each index to a
+     * list. M3E mapping normally resolves to a single JPEG per survey exposure.
+     */
+    fun resolveMediaIndices(
+        mediaVM: MediaVM,
+        indices: Set<Int>,
+        timeoutMs: Long = 8_000L
+    ): Map<Int, List<ResolvedMedia>> {
+        if (indices.isEmpty()) return emptyMap()
+        setupNewMediaListener()
+
+        val requestedCount = (indices.size + SURVEY_MEDIA_PULL_RESERVE)
+            .coerceAtLeast(SURVEY_MEDIA_PULL_MIN_COUNT)
+            .coerceAtMost(SURVEY_MEDIA_PULL_MAX_COUNT)
+
+        val pulled = mediaVM.pullAndAwait(
+            timeoutMs,
+            requestedCount,
+            FileListRequestTimeOrderType.NEW_FIRST
+        )
+
+        val byIndex = linkedMapOf<Int, MutableList<ResolvedMedia>>()
+        fun add(file: MediaFile?) {
+            if (file == null || file.fileIndex !in indices) return
+            val name = file.fileName?.takeIf { it.isNotBlank() } ?: return
+            byIndex.getOrPut(file.fileIndex) { mutableListOf() }.add(
+                ResolvedMedia(
+                    mediaIndex = file.fileIndex,
+                    fileName = name,
+                    sizeBytes = file.fileSize,
+                    fileType = file.fileType?.name ?: "UNKNOWN"
+                )
+            )
+        }
+        pulled.forEach { file ->
+            add(file)
+            file.subMediaFile?.forEach(::add)
+        }
+
+        return byIndex.mapValues { (_, files) ->
+            files.distinctBy { it.fileName }.sortedBy { it.fileName }
+        }
     }
 
     // Lens of a pushed event, from its DCF camera type (handle-free; no list pull needed).
@@ -597,6 +703,9 @@ object Payload {
     // Target short side (px) for downscaled zoom images, and JPEG quality of the re-encode.
     private const val ZOOM_TARGET_SHORT_SIDE = 1080
     private const val ZOOM_JPEG_QUALITY = 85
+    private const val SURVEY_MEDIA_PULL_RESERVE = 64
+    private const val SURVEY_MEDIA_PULL_MIN_COUNT = 128
+    private const val SURVEY_MEDIA_PULL_MAX_COUNT = 4096
 
     // Decode a JPEG, downscale so its SHORTER side is ~1080 px (aspect preserved, never upscaled),
     // and re-encode to JPEG. The re-encode discards all EXIF/metadata by design. Returns the
@@ -880,6 +989,7 @@ object Payload {
         lrfInfo = null
         newMediaListenerRegistered = false
         latestGeneratedMediaInfo = null
+        generatedMediaListeners.clear()
         mediaWarmedUp = false
         dropListenerIndex = null
     }

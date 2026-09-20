@@ -22,6 +22,7 @@ internal object MavlinkCrc {
         MavlinkMsgId.ATTITUDE to 39,
         MavlinkMsgId.GLOBAL_POSITION_INT to 104,
         MavlinkMsgId.VFR_HUD to 20,
+        MavlinkMsgId.ALTITUDE to 47,
         MavlinkMsgId.BATTERY_STATUS to 154,
         MavlinkMsgId.AUTOPILOT_VERSION to 178,
         MavlinkMsgId.HOME_POSITION to 104,

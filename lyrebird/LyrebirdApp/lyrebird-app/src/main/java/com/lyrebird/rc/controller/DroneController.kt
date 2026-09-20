@@ -1657,9 +1657,15 @@ object DroneController {
         missionConfig: WaylineMissionConfig,
         autoFlightSpeed: Double,
         onProgress: (Int) -> Unit = {},
-        onFinished: (Boolean) -> Unit = {}
+        onFinished: (Boolean) -> Unit = {},
+        extraActionGroups: List<WaylineActionGroup> = emptyList()
     ) = WaylineMissionHelper.navigateWaylineMissionNative(
-        waypointInfoModels, missionConfig, autoFlightSpeed, onProgress, onFinished
+        waypointInfoModels,
+        missionConfig,
+        autoFlightSpeed,
+        onProgress,
+        onFinished,
+        extraActionGroups
     )
 
     fun endMission() = WaylineMissionHelper.endMission()

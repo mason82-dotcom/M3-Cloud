@@ -78,6 +78,7 @@ EP_SET_SURFACE_H264_ENCODER = "/send/setSurfaceH264Encoder"
 EP_RC_PAIRING_START = "/send/rcPairing/start"
 EP_RC_PAIRING_STOP = "/send/rcPairing/stop"
 EP_GET_SETTINGS = "/config/settings"
+EP_GET_SURVEY_TODAY = "/get/survey/today"
 
 # Maps the webapp/dashboard setting key to the phone HTTP endpoint that writes it.
 # Every value is sent as the raw request body, which is what the phone parses.
@@ -910,6 +911,52 @@ class DJIInterface:
             f.write(response.content)
         print(f"{file_name} saved to: {save_path} ({len(response.content)} bytes)")
         return save_path
+
+    def getTodaySurveyInfo(self) -> dict[str, Any] | None:
+        """Metadata for today's WebODM/photogrammetry survey artifacts on the RC.
+
+        Unlike camera media, the mapping CSV and geo.txt live on the RC's own durable storage
+        (Lyrebird/Mapping/<date>/) and are aggregated per calendar day across every flight flown
+        that day, so this has no per-flight or "latest mission" concept -- only "today".
+        """
+        if self.IP_RC == "":
+            return None
+        try:
+            response = requests.get(f"{self.baseCommandUrl}{EP_GET_SURVEY_TODAY}", timeout=10)
+            response.raise_for_status()
+            info = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            print(f"Today's survey query failed: {exc}")
+            return None
+        return info if info.get("available") else None
+
+    def downloadTodaySurveyReports(self, out_dir=".") -> dict[str, str] | None:
+        """Download today's captures.csv and geo.txt (WebODM geo-reference file) from the RC."""
+        info = self.getTodaySurveyInfo()
+        if info is None:
+            return None
+        os.makedirs(out_dir, exist_ok=True)
+
+        result: dict[str, str] = {}
+        for key, url_key, name_key in (
+            ("captures", "capturesUrl", "capturesName"),
+            ("geo", "geoUrl", "geoName"),
+        ):
+            endpoint = info.get(url_key)
+            name = info.get(name_key)
+            if not endpoint or not name:
+                return None
+            try:
+                response = requests.get(f"{self.baseCommandUrl}{endpoint}", timeout=30)
+                response.raise_for_status()
+            except requests.RequestException as exc:
+                print(f"Survey report download failed ({key}): {exc}")
+                return None
+            path = os.path.join(out_dir, os.path.basename(name))
+            with open(path, "wb") as handle:
+                handle.write(response.content)
+            result[key] = path
+        return result
 
     def requestLRFMeasure(self):
         """Fire the H20T laser range finder once and return its reading."""

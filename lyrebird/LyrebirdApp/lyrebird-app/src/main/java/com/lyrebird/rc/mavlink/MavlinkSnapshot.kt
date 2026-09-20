@@ -1,5 +1,7 @@
 package com.lyrebird.rc.mavlink
 
+import com.lyrebird.rc.telemetry.RtkFix
+
 /**
  * One consistent read of the aircraft state, in plain units, with no DJI SDK types.
  *
@@ -49,6 +51,15 @@ internal data class MavlinkSnapshot(
     val headingDeg: Double = 0.0,
 
     val satelliteCount: Int = INVALID_SATELLITES,
+
+    // RTK state is kept SDK-free. FIX/FLOAT are promoted into GPS_RAW_INT; STALE or unhealthy RTK
+    // deliberately falls back to the ordinary GNSS fix inferred from satellite count.
+    val rtkFix: RtkFix = RtkFix.UNKNOWN,
+    val rtkHealthy: Boolean = false,
+    val rtkAgeMs: Long = Long.MAX_VALUE,
+    val rtkStdLatitudeM: Double? = null,
+    val rtkStdLongitudeM: Double? = null,
+    val rtkStdAltitudeM: Double? = null,
 
     /** Battery charge 0..100, or [INVALID_BATTERY] when the SDK has not reported one yet. */
     val batteryPercent: Int = INVALID_BATTERY,

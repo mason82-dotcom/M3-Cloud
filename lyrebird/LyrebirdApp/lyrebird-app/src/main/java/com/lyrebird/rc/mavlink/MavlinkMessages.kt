@@ -1,5 +1,6 @@
 package com.lyrebird.rc.mavlink
 
+import com.lyrebird.rc.telemetry.RtkFix
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlin.math.sqrt
@@ -146,7 +147,7 @@ internal object MavlinkMessages {
             .u16(MavlinkSnapshot.UINT16_UNKNOWN)
             .u16((groundSpeed * MPS_TO_CMPS).roundToInt().coerceIn(0, MavlinkSnapshot.UINT16_UNKNOWN))
             .u16(headingCdeg(snapshot.headingDeg))
-            .u8(gpsFixType(snapshot.satelliteCount))
+            .u8(gpsFixType(snapshot))
             .u8(snapshot.satelliteCount.coerceIn(0, U8_MAX))
             .build()
     }
@@ -177,6 +178,30 @@ internal object MavlinkMessages {
             .i16(mpsToCmps(snapshot.velocityEastMps))
             .i16(mpsToCmps(snapshot.velocityDownMps))
             .u16(headingCdeg(snapshot.headingDeg))
+            .build()
+
+    /**
+     * time_usec(u64), altitude_monotonic(f), altitude_amsl(f), altitude_local(f),
+     * altitude_relative(f), altitude_terrain(f), bottom_clearance(f)
+     *
+     * DJI exposes a reliable AMSL altitude and a take-off-relative altitude to Lyrebird, but the
+     * telemetry path currently has no independent terrain model or fused bottom-clearance source.
+     * MAVLink defines terrain values below -1000 m as unknown and negative bottom clearance as
+     * unavailable, so those fields are explicit unknowns rather than invented measurements.
+     *
+     * altitude_local and altitude_monotonic use the same take-off-relative source for now. It is
+     * the closest consistent flight-local altitude Lyrebird has, and keeps UgCS' PX4 VSM supplied
+     * with its required ALTITUDE message without claiming a terrain or range measurement.
+     */
+    fun altitude(snapshot: MavlinkSnapshot, timeUsec: Long): ByteArray =
+        PayloadWriter()
+            .u64(timeUsec)
+            .f32(snapshot.altitudeAglM.toFloat()) // monotonic: best available flight-local source
+            .f32(snapshot.altitudeAslM.toFloat()) // AMSL
+            .f32(snapshot.altitudeAglM.toFloat()) // local
+            .f32(snapshot.altitudeAglM.toFloat()) // relative to take-off/home reference
+            .f32(ALTITUDE_TERRAIN_UNKNOWN)
+            .f32(BOTTOM_CLEARANCE_UNKNOWN)
             .build()
 
     /** airspeed(f), groundspeed(f), alt(f), climb(f), heading(i16), throttle(u16) */
@@ -880,7 +905,20 @@ internal object MavlinkMessages {
                 snapshot.velocityEastMps * snapshot.velocityEastMps
         )
 
-    /** MAVLink GPS fix type, from satellite count — DJI reports no fix type directly. */
+    /**
+     * Prefer DJI's real RTK positioning solution when it is both healthy and fresh.
+     *
+     * STALE is intentionally not an RTK fix: UgCS must never keep displaying RTK FIX after the
+     * correction/location stream has stopped. In that case we fall back to the ordinary GNSS fix.
+     */
+    fun gpsFixType(snapshot: MavlinkSnapshot): Int = when {
+        snapshot.rtkHealthy && snapshot.rtkFix == RtkFix.FIXED -> GPS_FIX_TYPE_RTK_FIXED
+        snapshot.rtkHealthy && snapshot.rtkFix == RtkFix.FLOAT -> GPS_FIX_TYPE_RTK_FLOAT
+        snapshot.rtkHealthy && snapshot.rtkFix == RtkFix.SINGLE -> GPS_FIX_TYPE_3D
+        else -> gpsFixType(snapshot.satelliteCount)
+    }
+
+    /** MAVLink GPS fix type fallback from satellite count when no usable RTK solution exists. */
     fun gpsFixType(satelliteCount: Int): Int = when {
         satelliteCount >= GPS_FIX_3D_SATELLITES -> GPS_FIX_TYPE_3D
         satelliteCount >= GPS_FIX_2D_SATELLITES -> GPS_FIX_TYPE_2D
@@ -923,6 +961,10 @@ internal object MavlinkMessages {
     private const val GPS_FIX_TYPE_NO_FIX = 0
     private const val GPS_FIX_TYPE_2D = 2
     private const val GPS_FIX_TYPE_3D = 3
+    private const val GPS_FIX_TYPE_RTK_FLOAT = 5
+    private const val GPS_FIX_TYPE_RTK_FIXED = 6
+    private const val ALTITUDE_TERRAIN_UNKNOWN = -1001.0f
+    private const val BOTTOM_CLEARANCE_UNKNOWN = -1.0f
     private const val GPS_FIX_2D_SATELLITES = 4
     private const val GPS_FIX_3D_SATELLITES = 6
     private const val GPS_STABILIZED_SATELLITES = 5

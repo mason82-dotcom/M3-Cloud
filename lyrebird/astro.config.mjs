@@ -83,6 +83,7 @@ export default defineConfig({
 						{ label: 'Telemetry', slug: 'telemetry' },
 						{ label: 'Missions', slug: 'missions' },
 						{ label: 'ROS 2', slug: 'ros' },
+						{ label: 'UgCS Integration', slug: 'ugcs-integration' },
 					],
 				},
 				{

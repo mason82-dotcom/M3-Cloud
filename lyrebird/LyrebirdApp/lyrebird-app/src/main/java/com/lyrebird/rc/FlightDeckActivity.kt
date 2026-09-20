@@ -10,6 +10,8 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import java.io.File
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 import com.lyrebird.rc.settings.LyrebirdOnboarding
 import com.lyrebird.rc.settings.LyrebirdSettingsBackup
 import com.lyrebird.rc.settings.DroneSettingsProfiles
@@ -84,6 +86,8 @@ import com.lyrebird.rc.controller.RoiControl
 import dji.v5.ux.detection.DetectedTarget
 import dji.v5.ux.detection.DetectionOverlayView
 import com.lyrebird.rc.logger.LyrebirdFlightLogger
+import com.lyrebird.rc.logger.SurveyCaptureRecord
+import com.lyrebird.rc.logger.SurveyReportWriter
 import com.lyrebird.rc.models.BasicAircraftControlVM
 import com.lyrebird.rc.models.MediaVM
 import com.lyrebird.rc.models.PayloadWidgetVM
@@ -102,6 +106,7 @@ import com.lyrebird.rc.mavlink.MavlinkMissionSink
 import com.lyrebird.rc.mavlink.MissionExecutor
 import com.lyrebird.rc.mavlink.MissionItem
 import com.lyrebird.rc.mavlink.MissionProgressListener
+import com.lyrebird.rc.mavlink.SurveyDistanceCompiler
 import com.lyrebird.rc.mavlink.PendingCommand
 import com.lyrebird.rc.mavlink.PendingKind
 import com.lyrebird.rc.mavlink.CommandProgress
@@ -130,6 +135,7 @@ import com.lyrebird.rc.webrtc.SharedPhoneCameraFrameSource
 import com.lyrebird.rc.webrtc.TelemetryProvider
 import com.lyrebird.rc.telemetry.TelemetryCoordinator
 import com.lyrebird.rc.telemetry.MockTelemetrySnapshot
+import com.lyrebird.rc.telemetry.RtkTelemetryMonitor
 import com.lyrebird.rc.util.NetworkUtils
 import com.lyrebird.rc.util.ToastUtils
 import com.lyrebird.rc.server.LyrebirdDiscoveryManager
@@ -239,6 +245,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
     companion object {
         private const val TAG = "LyrebirdDefaultLayout"
+        private const val SURVEY_MEDIA_SETTLE_MS = 2_500L
 
         /** text_drone_status's own size, from uxsdk_activity_default_layout.xml. */
         private const val DRONE_STATUS_NORMAL_TEXT_SIZE_SP = 11f
@@ -458,6 +465,25 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         }
     }
     private val telemetryCoordinator = TelemetryCoordinator()
+    private val rtkTelemetryMonitor = RtkTelemetryMonitor()
+
+    /**
+     * True only while a native MAVLink mission containing camera-by-distance is executing.
+     * Manual photos during an ordinary flight must not inflate survey image counts.
+     */
+    @Volatile
+    private var surveyMediaTrackingActive = false
+
+    private val surveyCaptureRecords =
+        Collections.synchronizedList(mutableListOf<SurveyCaptureRecord>())
+    private val surveyFinalizing = AtomicBoolean(false)
+
+    private val surveyGeneratedMediaListener: (Payload.GeneratedMediaEvent) -> Unit = { event ->
+        if (surveyMediaTrackingActive && LyrebirdFlightLogger.isSessionActive) {
+            logSurveyMediaEvent(event)
+        }
+    }
+
     private lateinit var discoveryManager: LyrebirdDiscoveryManager
     
     // ViewModels for drone control
@@ -4106,6 +4132,8 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         setupStorageListeners()
         setupFlightStateListeners()
         setupTelemetryListeners()
+        rtkTelemetryMonitor.start()
+        Payload.addGeneratedMediaListener(surveyGeneratedMediaListener)
     }
 
     private fun setupBatteryAndRthListeners() {
@@ -5206,12 +5234,15 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             }
 
             // Cancel key listeners
+            rtkTelemetryMonitor.stop()
             KeyManager.getInstance().cancelListen(this)
 
             // Detach the M400 main-camera first-frame detector if still registered
             unregisterMainCamFrameDetector()
 
-            // Cancel H20T payload (LRF + thermal) key listeners
+            Payload.removeGeneratedMediaListener(surveyGeneratedMediaListener)
+
+            // Cancel H20T payload (LRF + thermal) and shared generated-media key listeners
             Payload.destroy()
 
             // Release MediaVM (thermal capture) listeners and media manager
@@ -5782,6 +5813,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         val gimbalJoint = getGimbalJointAttitude()
         val goHomeInfo = goHomeAssessmentProcessor.value
         val lrfTarget = lrfTargetLocation
+        val rtk = rtkTelemetryMonitor.snapshot()
 
         return MavlinkSnapshot(
             droneName = droneName,
@@ -5797,6 +5829,12 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             yawDeg = attitude.yaw,
             headingDeg = getHeading(),
             satelliteCount = getSatelliteCount(),
+            rtkFix = rtk.fix,
+            rtkHealthy = rtk.healthy,
+            rtkAgeMs = rtk.ageMs,
+            rtkStdLatitudeM = rtk.stdLatitudeM,
+            rtkStdLongitudeM = rtk.stdLongitudeM,
+            rtkStdAltitudeM = rtk.stdAltitudeM,
             batteryPercent = getBatteryLevel(),
             remainingFlightTimeS = goHomeAssessmentProcessor.value.remainingFlightTime,
             homeLatitudeDeg = homeLocation.latitude,
@@ -5861,6 +5899,117 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                 DetectedTargetSnapshot(it.type, it.left, it.top, it.right, it.bottom, it.confidence)
             }
         )
+    }
+
+    /**
+     * Freeze navigation, attitude, gimbal and RTK at the media-generated callback.
+     *
+     * No camera media-list access occurs here. The event contains the durable DJI media index;
+     * filename reconciliation belongs after the mission, where one list refresh can resolve the
+     * entire survey rather than one refresh per image.
+     */
+    private fun logSurveyMediaEvent(event: Payload.GeneratedMediaEvent) {
+        val aircraft = buildMavlinkSnapshot()
+        val rtk = rtkTelemetryMonitor.snapshot()
+
+        val record = SurveyCaptureRecord(
+                eventEpochMs = event.receivedAtEpochMs,
+                mediaIndex = event.mediaIndex,
+                lens = event.lens,
+
+                latitudeDeg = aircraft.latitudeDeg,
+                longitudeDeg = aircraft.longitudeDeg,
+                altitudeAslM = aircraft.altitudeAslM,
+                altitudeAglM = aircraft.altitudeAglM,
+                satelliteCount = aircraft.satelliteCount,
+
+                headingDeg = aircraft.headingDeg,
+                aircraftRollDeg = aircraft.rollDeg,
+                aircraftPitchDeg = aircraft.pitchDeg,
+                aircraftYawDeg = aircraft.yawDeg,
+
+                gimbalRollDeg = aircraft.gimbalRollDeg,
+                gimbalPitchDeg = aircraft.gimbalPitchDeg,
+                gimbalYawDeg = aircraft.gimbalYawDeg,
+                gimbalJointRollDeg = aircraft.gimbalJointRollDeg,
+                gimbalJointPitchDeg = aircraft.gimbalJointPitchDeg,
+                gimbalJointYawDeg = aircraft.gimbalJointYawDeg,
+
+                rtkEnabled = rtk.enabled,
+                rtkHealthy = rtk.healthy,
+                rtkFix = rtk.fix.name,
+                rtkRawFix = rtk.rawFix.name,
+                rtkAgeMs = rtk.ageMs,
+                rtkLatitudeDeg = rtk.latitudeDeg,
+                rtkLongitudeDeg = rtk.longitudeDeg,
+                rtkAltitudeM = rtk.altitudeM,
+                rtkStdLatitudeM = rtk.stdLatitudeM,
+                rtkStdLongitudeM = rtk.stdLongitudeM,
+                rtkStdAltitudeM = rtk.stdAltitudeM,
+                rtkSource = rtk.source,
+
+                flightMode = aircraft.flightMode
+            )
+        surveyCaptureRecords.add(record)
+        LyrebirdFlightLogger.logSurveyCapture(record)
+    }
+
+    /**
+     * Close one survey after a short camera-write grace period, then reconcile all file indices in
+     * one narrow NEW_FIRST pull and write CSV + JSON quality files beside the flight log.
+     */
+    private fun finalizeSurveyMedia(reason: String) {
+        if (!surveyMediaTrackingActive) return
+        if (!surveyFinalizing.compareAndSet(false, true)) return
+
+        captureExecutor.execute {
+            try {
+                Thread.sleep(SURVEY_MEDIA_SETTLE_MS)
+                surveyMediaTrackingActive = false
+
+                val captures = synchronized(surveyCaptureRecords) {
+                    surveyCaptureRecords.toList()
+                }
+                val logPath = LyrebirdFlightLogger.currentLogPath
+                if (captures.isEmpty() || logPath.isNullOrBlank()) return@execute
+
+                val indices = captures.mapNotNull { it.mediaIndex }.toSet()
+                val mediaByIndex = Payload.resolveMediaIndices(mediaVM, indices)
+                val files = SurveyReportWriter.write(
+                    flightLogPath = logPath,
+                    captures = captures,
+                    mediaByIndex = mediaByIndex,
+                    finishReason = reason
+                )
+                val rows = SurveyReportWriter.reconcile(captures, mediaByIndex)
+                val summary = SurveyReportWriter.summarize(rows)
+
+                LyrebirdFlightLogger.logSurveySummary(
+                    total = summary.totalCaptures,
+                    resolved = summary.resolvedFiles,
+                    fixed = summary.fixed,
+                    float = summary.float,
+                    stale = summary.stale,
+                    missingRtk = summary.missingRtk,
+                    csvPath = files.csv.absolutePath,
+                    summaryPath = files.summaryJson.absolutePath
+                )
+
+                Log.i(
+                    TAG,
+                    "Survey report: ${summary.resolvedFiles}/${summary.totalCaptures} media resolved, " +
+                        "RTK fixed=${summary.fixed}, float=${summary.float}, " +
+                        "stale=${summary.stale}, missing=${summary.missingRtk}"
+                )
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+            } catch (e: Exception) {
+                Log.e(TAG, "Survey reconciliation failed: ${e.message}", e)
+            } finally {
+                surveyFinalizing.set(false)
+                surveyCaptureRecords.clear()
+            }
+        }
     }
 
     /**
@@ -6771,7 +6920,22 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             // MISSION_START, so a running plan must not be stopped and restarted by the second
             // command of the pair.
             if (running) return CommandResult(MavlinkCommandOutcome.ACCEPTED)
+            if (surveyFinalizing.get() || surveyMediaTrackingActive) {
+                return CommandResult(
+                    MavlinkCommandOutcome.DENIED,
+                    "Previous survey is still reconciling camera media"
+                )
+            }
             stopMission()
+            if (
+                executor == MissionExecutor.ONBOARD &&
+                items.any { it.command == Mav.CMD_DO_SET_CAM_TRIGG_DIST }
+            ) {
+                return CommandResult(
+                    MavlinkCommandOutcome.DENIED,
+                    "Camera-by-distance requires the DJI native mission executor"
+                )
+            }
             return when (executor) {
                 MissionExecutor.DJI_NATIVE -> startNative(items)
                 MissionExecutor.ONBOARD -> startOnboard(items, startIndex)
@@ -6797,6 +6961,13 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
          * skipped; DJI's wayline engine has no camera-mode concept.
          */
         private fun startNative(items: List<MissionItem>): CommandResult {
+            val surveyCaptures = runCatching { SurveyDistanceCompiler.compile(items) }
+                .getOrElse { error ->
+                    return CommandResult(
+                        MavlinkCommandOutcome.DENIED,
+                        "Invalid camera-by-distance action: ${error.message}"
+                    )
+                }
             var speed = items.firstNotNullOfOrNull { it.speedMps }
                 ?: DroneControlProfiles.activeProfile().defaultCruiseSpeedMps
             var currentRoi: WaylineLocationCoordinate3D? = null
@@ -6828,6 +6999,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                     } else {
                         null
                     }
+                    Mav.CMD_DO_SET_CAM_TRIGG_DIST -> Unit
                     else -> translatePlanActionToWaylineAction(item)?.let { pendingActions.add(it) }
                 }
             }
@@ -6845,6 +7017,39 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                 last.actionInfos = ArrayList(last.actionInfos + pendingActions)
             }
 
+            val surveyActionGroups = surveyCaptures.map { capture ->
+                if (capture.targetCameraId !in 0..1) {
+                    return CommandResult(
+                        MavlinkCommandOutcome.DENIED,
+                        "Unsupported camera id ${capture.targetCameraId} for distance capture"
+                    )
+                }
+                if (capture.startWaypointIndex !in waypointModels.indices ||
+                    capture.endWaypointIndex !in waypointModels.indices
+                ) {
+                    return CommandResult(
+                        MavlinkCommandOutcome.DENIED,
+                        "Camera-by-distance range is outside the waypoint path"
+                    )
+                }
+
+                if (capture.triggerImmediately) {
+                    val waypoint = waypointModels[capture.startWaypointIndex]
+                    val immediatePhoto = WaylineActionInfo().apply {
+                        actionType = WaylineActionType.TAKE_PHOTO
+                        takePhotoParam = ActionTakePhotoParam().apply { payloadPositionIndex = 0 }
+                    }
+                    waypoint.actionInfos = ArrayList(waypoint.actionInfos + immediatePhoto)
+                }
+
+                WaylineMissionHelper.createDistancePhotoActionGroup(
+                    startIndex = capture.startWaypointIndex,
+                    endIndex = capture.endWaypointIndex,
+                    distanceM = capture.distanceM,
+                    payloadPositionIndex = 0
+                )
+            }
+
             val finishAction = when (items.lastOrNull {
                 it.command == Mav.CMD_NAV_LAND || it.command == Mav.CMD_NAV_RETURN_TO_LAUNCH
             }?.command) {
@@ -6860,6 +7065,12 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             )
 
             running = true
+            if (surveyCaptures.isNotEmpty()) {
+                surveyCaptureRecords.clear()
+                surveyMediaTrackingActive = true
+            } else {
+                surveyMediaTrackingActive = false
+            }
             // Distinct from NAVIGATING: DJI's own wayline engine is flying this, not the app's
             // virtual-stick loop, and the status badge showing MANUAL for a mission that is
             // flying perfectly fine was ambient RC stick noise being read as a takeover — see the
@@ -6873,9 +7084,13 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                 onProgress = { waypointIndex -> listener?.onItemStarted(waypointIndex) },
                 onFinished = { success ->
                     running = false
+                    if (surveyMediaTrackingActive) {
+                        finalizeSurveyMedia(if (success) "mission_finished" else "mission_failed")
+                    }
                     DroneController.clearMissionActiveIfStillSet()
                     listener?.onMissionFinished(success)
-                }
+                },
+                extraActionGroups = surveyActionGroups
             )
             return CommandResult(MavlinkCommandOutcome.ACCEPTED)
         }
@@ -7010,7 +7225,8 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                 )
                 // Distance-triggered capture has no executor yet — accepted at upload so the
                 // transfer does not fail (see Mav.CMD_DO_SET_CAM_TRIGG_DIST), not actioned here.
-                Mav.CMD_DO_SET_CAM_TRIGG_DIST -> Log.d(TAG, "Camera trigger distance not yet implemented, ignoring")
+                Mav.CMD_DO_SET_CAM_TRIGG_DIST ->
+                    Log.e(TAG, "Distance capture reached onboard executor unexpectedly")
                 Mav.CMD_DO_SET_ROI_LOCATION -> mavlinkCommandSink.setRegionOfInterest(
                     item.latitudeDeg, item.longitudeDeg, item.altitudeM
                 )
@@ -7114,6 +7330,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
         override fun stopMission(): CommandResult {
             running = false
+            if (surveyMediaTrackingActive) finalizeSurveyMedia("mission_stopped")
             missionThread?.interrupt()
             missionThread = null
             mainHandler.post { DroneController.abortAllMissions() }

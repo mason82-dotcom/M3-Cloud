@@ -8,6 +8,7 @@ import com.lyrebird.rc.utils.wpml.WaypointInfoModel
 import dji.v5.common.callback.CommonCallbacks
 import dji.v5.common.error.IDJIError
 import dji.sdk.wpmz.value.mission.ActionGimbalRotateParam
+import dji.sdk.wpmz.value.mission.ActionTakePhotoParam
 import dji.sdk.wpmz.value.mission.WaylineActionGroup
 import dji.sdk.wpmz.value.mission.WaylineActionInfo
 import dji.sdk.wpmz.value.mission.WaylineActionNodeList
@@ -217,12 +218,18 @@ object WaylineMissionHelper {
     }
 
     private fun createTemplateWaypointInfo(
-        waypointInfoModels: List<WaypointInfoModel>
+        waypointInfoModels: List<WaypointInfoModel>,
+        extraActionGroups: List<WaylineActionGroup> = emptyList()
     ): WaylineTemplateWaypointInfo {
         val waypoints = waypointInfoModels.map { it.waylineWaypoint }
         val info = WaylineTemplateWaypointInfo()
         info.waypoints = waypoints
-        info.actionGroups = transformActionsToGroups(waypointInfoModels)  // Build proper action groups
+        val actionGroups = transformActionsToGroups(waypointInfoModels)
+        extraActionGroups.forEach { group ->
+            group.groupId = actionGroups.size
+            actionGroups.add(group)
+        }
+        info.actionGroups = actionGroups
         info.globalFlightHeight = 100.0
         info.isGlobalFlightHeightSet = true
         info.globalTurnMode = WaylineWaypointTurnMode.TO_POINT_AND_STOP_WITH_DISCONTINUITY_CURVATURE
@@ -305,12 +312,58 @@ object WaylineMissionHelper {
         return actionGroups
     }
 
+    fun createDistancePhotoActionGroup(
+        startIndex: Int,
+        endIndex: Int,
+        distanceM: Double,
+        payloadPositionIndex: Int = 0
+    ): WaylineActionGroup {
+        require(startIndex >= 0)
+        require(endIndex >= startIndex)
+        require(distanceM > 0.0 && distanceM.isFinite())
+
+        val trigger = WaylineActionTrigger().apply {
+            triggerType = WaylineActionTriggerType.MULTIPLE_DISTANCE
+            distanceInterval = distanceM
+        }
+        val photo = WaylineActionInfo().apply {
+            actionType = WaylineActionType.TAKE_PHOTO
+            takePhotoParam = ActionTakePhotoParam().apply {
+                this.payloadPositionIndex = payloadPositionIndex
+            }
+        }
+        val group = WaylineActionGroup().apply {
+            groupId = 0
+            this.startIndex = startIndex
+            this.endIndex = endIndex
+            setTrigger(trigger)
+            setActions(arrayListOf(photo))
+        }
+
+        val root = WaylineActionTreeNode().apply {
+            nodeType = WaylineActionsRelationType.SEQUENCE
+            childrenNum = 1
+        }
+        val child = WaylineActionTreeNode().apply {
+            nodeType = WaylineActionsRelationType.LEAF
+            actionIndex = 0
+        }
+        group.setNodeLists(
+            arrayListOf(
+                WaylineActionNodeList().apply { setNodes(arrayListOf(root)) },
+                WaylineActionNodeList().apply { setNodes(arrayListOf(child)) }
+            )
+        )
+        return group
+    }
+
     fun createTemplate(
         waypointInfoModels: List<WaypointInfoModel>,
-        trajectorySpeed: Double = 5.0
+        trajectorySpeed: Double = 5.0,
+        extraActionGroups: List<WaylineActionGroup> = emptyList()
     ): Template {
         val t = Template()
-        t.waypointInfo = createTemplateWaypointInfo(waypointInfoModels)
+        t.waypointInfo = createTemplateWaypointInfo(waypointInfoModels, extraActionGroups)
 
         val cp = WaylineCoordinateParam().apply {
             coordinateMode = WaylineCoordinateMode.WGS84
@@ -505,7 +558,8 @@ object WaylineMissionHelper {
         missionConfig: WaylineMissionConfig,
         autoFlightSpeed: Double,
         onProgress: (Int) -> Unit = {},
-        onFinished: (Boolean) -> Unit = {}
+        onFinished: (Boolean) -> Unit = {},
+        extraActionGroups: List<WaylineActionGroup> = emptyList()
     ) {
         if (waypointInfoModels.size < 2) {
             ToastUtils.showToast("Need at least 2 waypoints")
@@ -526,7 +580,7 @@ object WaylineMissionHelper {
         WPMZManager.getInstance().init(ContextUtil.getContext())
 
         val mission = createWaylineMission()
-        val template = createTemplate(waypointInfoModels, autoFlightSpeed)
+        val template = createTemplate(waypointInfoModels, autoFlightSpeed, extraActionGroups)
 
         val missionName = generateTrajectoryName()
         val kmzOutPath = "$kmzDir$missionName.kmz"

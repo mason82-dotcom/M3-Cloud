@@ -89,3 +89,17 @@ private-notes/
 .ruff_cache/
 .pytest_cache/
 .testmondata/
+
+# Scratch workspace for exporting edge-detection models (venv + cloned exporter repo +
+# large intermediate weights) -- never commit, see edge-models/*/README.md instead.
+.mdexport-venv/
+.mdexport-yolov5/
+.mdexport-models/
+.mdexport-*.log
+
+# Exported edge-detection model binaries: too large for git, distribute out-of-band
+# (adb push to the RC/phone). Keep the READMEs and labels, which are small and are the
+# actual reproducible/documented artifact.
+edge-models/**/*.tflite
+edge-models/**/*.pt
+edge-models/**/*.onnx

@@ -395,6 +395,9 @@ internal class MavlinkTelemetryEndpoint(
             Stream(MavlinkMsgId.GLOBAL_POSITION_INT, POSITION_INTERVAL_MS) {
                 MavlinkMessages.globalPositionInt(it, timeBootMs())
             },
+            Stream(MavlinkMsgId.ALTITUDE, POSITION_INTERVAL_MS) {
+                MavlinkMessages.altitude(it, unixTimeUsec())
+            },
             Stream(MavlinkMsgId.VFR_HUD, POSITION_INTERVAL_MS) { MavlinkMessages.vfrHud(it) },
             Stream(
                 MavlinkMsgId.ATTITUDE,
@@ -1146,6 +1149,15 @@ internal class MavlinkTelemetryEndpoint(
                 // Honest refusal beats a fabricated home point.
                 Mav.RESULT_DENIED
             }
+        }
+
+        messageId == MavlinkMsgId.ALTITUDE -> {
+            val snapshot = runCatching { snapshotProvider() }.getOrDefault(MavlinkSnapshot())
+            sendOnce(
+                MavlinkMsgId.ALTITUDE,
+                MavlinkMessages.altitude(snapshot, unixTimeUsec())
+            )
+            Mav.RESULT_ACCEPTED
         }
 
         messageId == MavlinkMsgId.CAMERA_INFORMATION && forCamera -> sendCameraInformation()

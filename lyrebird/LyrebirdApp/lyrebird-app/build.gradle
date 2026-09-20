@@ -139,8 +139,8 @@ android {
 
     // Disable lint
     lintOptions {
-        checkReleaseBuilds false
-        abortOnError false
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     testOptions {
@@ -183,39 +183,39 @@ android {
     }
 
     buildFeatures {
-        buildConfig true
-        viewBinding true
+        buildConfig = true
+        viewBinding = true
     }
 }
 
 dependencies {
     /** <----------------- MSDK dependencies ------------------> **/
-    compileOnly deps.aircraftProvided
-    implementation deps.aircraft
+    compileOnly rootProject.deps.aircraftProvided
+    implementation rootProject.deps.aircraft
 
     /** <----------------- Sample dependencies ------------------> **/
     implementation project(':uxsdk')
-    implementation deps.appcompat
-    implementation deps.constraintLayout
-    implementation deps.aacCommon
-    implementation deps.aacRuntime
-    implementation deps.kotlinLib
-    implementation deps.ktxCore
-    implementation deps.ktxFrag
-    implementation deps.ktxNavigation
-    implementation deps.ktxNavigationUi
-    implementation deps.recyclerview
-    implementation deps.legacySupport
-    implementation deps.lifecycleViewModel
-    implementation deps.lifecycleLiveData
-    implementation deps.leakcanary
-    implementation deps.glide
-    implementation deps.dynamicanimation
-    implementation deps.expandedit
-    implementation deps.rx3Kt
-    implementation deps.dom
+    implementation rootProject.deps.appcompat
+    implementation rootProject.deps.constraintLayout
+    implementation rootProject.deps.aacCommon
+    implementation rootProject.deps.aacRuntime
+    implementation rootProject.deps.kotlinLib
+    implementation rootProject.deps.ktxCore
+    implementation rootProject.deps.ktxFrag
+    implementation rootProject.deps.ktxNavigation
+    implementation rootProject.deps.ktxNavigationUi
+    implementation rootProject.deps.recyclerview
+    implementation rootProject.deps.legacySupport
+    implementation rootProject.deps.lifecycleViewModel
+    implementation rootProject.deps.lifecycleLiveData
+    implementation rootProject.deps.leakcanary
+    implementation rootProject.deps.glide
+    implementation rootProject.deps.dynamicanimation
+    implementation rootProject.deps.expandedit
+    implementation rootProject.deps.rx3Kt
+    implementation rootProject.deps.dom
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
-    implementation deps.lynx
+    implementation rootProject.deps.lynx
 
     // WebSocket library for formation control
     implementation 'org.java-websocket:Java-WebSocket:1.5.3'
@@ -226,6 +226,6 @@ dependencies {
     // On-device edge inference for exported YOLO/TFLite models
     implementation 'org.tensorflow:tensorflow-lite:2.16.1'
 
-    testImplementation deps.junit4
-    testImplementation deps.json
+    testImplementation rootProject.deps.junit4
+    testImplementation rootProject.deps.json
 }

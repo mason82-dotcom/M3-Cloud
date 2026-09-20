@@ -138,6 +138,51 @@ object LyrebirdFlightLogger {
     }
 
     /**
+     * Log one image at the instant DJI reports that the file was generated.
+     *
+     * Unlike the coarse five-second telemetry records, survey captures retain millisecond epoch
+     * time because image/position correlation depends on sub-second ordering.
+     */
+    fun logSurveyCapture(record: SurveyCaptureRecord) {
+        if (!sessionActive) return
+        runCatching {
+            val obj = JSONObject()
+            obj.put("t", record.eventEpochMs / 1000)
+            obj.put("t_ms", record.eventEpochMs)
+            obj.put("type", "SURVEY_CAPTURE")
+            record.toLogFields().forEach { (key, value) -> obj.put(key, value) }
+            writeLine(obj.toString())
+        }.onFailure { failure ->
+            Log.w(TAG, "logSurveyCapture error: ${failure.message}")
+        }
+    }
+
+    fun logSurveySummary(
+        total: Int,
+        resolved: Int,
+        fixed: Int,
+        float: Int,
+        stale: Int,
+        missingRtk: Int,
+        csvPath: String,
+        summaryPath: String
+    ) {
+        commitLog(
+            "SURVEY_SUMMARY",
+            mapOf(
+                "totalCaptures" to total,
+                "resolvedFiles" to resolved,
+                "rtkFixed" to fixed,
+                "rtkFloat" to float,
+                "rtkStale" to stale,
+                "rtkMissing" to missingRtk,
+                "capturesCsv" to csvPath,
+                "summaryJson" to summaryPath
+            )
+        )
+    }
+
+    /**
      * Log an HTTP command.
      * [endpoint] is the URI (e.g. "/send/goto"), [params] is the POST body.
      */

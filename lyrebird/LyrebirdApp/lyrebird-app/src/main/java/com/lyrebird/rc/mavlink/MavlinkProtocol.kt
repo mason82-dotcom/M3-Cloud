@@ -47,6 +47,8 @@ internal object MavlinkMsgId {
     const val ATTITUDE = 30
     const val GLOBAL_POSITION_INT = 33
     const val VFR_HUD = 74
+    /** Current system altitude. Required by UgCS' PX4 VSM essential telemetry set. */
+    const val ALTITUDE = 141
     // MAVLink 2 message id for EXTENDED_SYS_STATE. The message only exists in the MAVLink 2
     // dialect and lives at 245 there; 125 is POWER_STATUS in both dialects. QGroundControl 5.1.3
     // (which is MAVLink 2 only) listens for EXTENDED_SYS_STATE at 245, so sending 125 made its

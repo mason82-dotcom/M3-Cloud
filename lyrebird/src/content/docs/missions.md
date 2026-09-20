@@ -42,7 +42,7 @@ MAVLink concept for picking one — there is nothing to negotiate over the wire.
 | Per-item heading (`param4`) | Honoured, as a fixed wayline yaw | Honoured |
 | Per-leg speed (`DO_CHANGE_SPEED`) | Honoured, as a per-waypoint speed | Honoured |
 | Camera / gimbal actions | Translated to wayline actions, triggered on reaching the waypoint they sit after | Executed directly, in plan order |
-| Region of interest (`DO_SET_ROI*`) | Static target only — see below | Full continuous tracking |
+| Distance-triggered capture (`DO_SET_CAM_TRIGG_DIST`) | Compiled to a native `MULTIPLE_DISTANCE` action group across the active waypoint span | Rejected; camera-by-distance requires the DJI-native executor |
 | Progress reporting | `MISSION_CURRENT` per waypoint reached; no per-item `MISSION_ITEM_REACHED` | Exact `MISSION_ITEM_REACHED` per item |
 | `MAV_CMD_SET_CAMERA_MODE` | No wayline equivalent — skipped | Honoured |
 
@@ -73,6 +73,7 @@ WPML construct has the matching meaning:
 | `DO_CHANGE_SPEED` | The waypoint's own `speed` field, applying to the legs that follow it, exactly like the onboard executor's running-speed variable |
 | `IMAGE_START_CAPTURE` / `VIDEO_START_CAPTURE` / `VIDEO_STOP_CAPTURE` | A `takePhoto` / `startRecord` / `stopRecord` wayline action, triggered on reaching the waypoint the item sits after |
 | `DO_GIMBAL_MANAGER_PITCHYAW` | A `gimbalRotate` wayline action, absolute pitch/yaw |
+| `DO_SET_CAM_TRIGG_DIST` | A `multipleDistance` wayline action group, spanning every waypoint between the start and end of the triggered span, with a single `takePhoto` action — see below |
 | `DO_SET_ROI_LOCATION` / `DO_SET_ROI` (location mode) | Waypoint yaw mode `towardPOI` + gimbal heading mode `towardPOI`, both pointed at the ROI coordinate — see below |
 | `DO_SET_ROI_NONE` / `DO_SET_ROI` (non-location mode) | Clears the active ROI for waypoints that follow |
 | `SET_CAMERA_MODE` | No wayline equivalent — skipped |
@@ -96,6 +97,28 @@ a value calculated once and held fixed until the next waypoint. What it cannot d
 target: a wayline mission is compiled once before flight, so an ROI that MAVLink would keep updating
 in real time can only be captured as wherever it was when the plan was built. A mission that needs a
 moving ROI has to use `onboard`, which re-reads the live ROI command like a normal autonomous action.
+
+### Distance-triggered capture, compiled to one wayline action group
+
+`DO_SET_CAM_TRIGG_DIST` is modal, the same way ROI is: `param1 > 0` (re)starts triggering a photo
+every `param1` metres of ground travel from that item on; `param1 == 0` stops it. A survey/grid
+plan from a photogrammetry planner (UgCS, QGC's Survey tool) typically emits exactly one of these
+before the grid's waypoints and one `param1 == 0` after — or never turns it off, letting the
+mission's end close it implicitly.
+
+The native translator (`WaylineMissionHelper.SurveyDistanceCapture`) tracks the open/closed span the
+same way it tracks ROI: walking the item list, it opens a span at the first waypoint following a
+`param1 > 0` item and closes it — inclusive — at the waypoint immediately before whatever ends it
+(a `param1 == 0` item, a later `DO_SET_CAM_TRIGG_DIST` starting a new span, or simply the plan's last
+waypoint). Each closed span becomes **one** `WaylineActionGroup` with a `MULTIPLE_DISTANCE` trigger
+covering that whole `startWaypoint..endWaypoint` range and a single `TAKE_PHOTO` action — not one
+action per waypoint. A grid with a few hundred photos compiles to one trigger group per contiguous
+survey leg, not one action per photo; DJI's own wayline engine fires the mechanical shutter on the
+flight controller as ground distance accumulates, independent of the app's own execution loop.
+
+This groups separately from the per-waypoint `REACH_POINT` action groups the rest of this table
+builds — a `MULTIPLE_DISTANCE` group is not tied to any single waypoint's arrival, so it cannot be
+folded into them.
 
 ## Onboard, for comparison
 
