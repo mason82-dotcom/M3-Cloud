@@ -424,8 +424,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         private val WEBRTC_FPS_OPTIONS = intArrayOf(5, 10, 15, 20, 25, 30)
     }
 
-    private var cameraLiveSourcePersistRunnable: Runnable? = null
-    @Volatile private var cameraLiveSourceProfileReady = false
     @Volatile private var restoringCameraLiveSource = false
 
     private enum class StreamResolutionPreset(
@@ -902,7 +900,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         setupAircraftConnectionListener()
         setupAircraftIdleMonitor()
         setupVideoSourceState()
-        setupCameraLiveSourcePreference()
         setupMockVideoPreview()
         setupPhoneVideoPreview()
         setupMapExpandToggle()
@@ -5319,7 +5316,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             // Persist this aircraft's settings so the next flight on the same drone restores them.
             DroneSettingsProfiles.saveCurrentProfile(sharedPreferences, PER_DRONE_PROFILE_KEYS)
 
-            cameraLiveSourcePersistRunnable?.let(mainHandler::removeCallbacks)
             mainHandler.removeCallbacksAndMessages(null)
             stopPhoneCameraPreview()
 
@@ -5393,46 +5389,35 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         return true
     }
 
-    /**
-     * Persist only a stable operator-selected camera live source. M3M briefly falls back to
-     * RGB_CAMERA while entering PHOTO_NORMAL; the capture path restores the previous source, so
-     * a short debounce prevents that transient reset from overwriting the per-aircraft preference.
-     */
-    private fun setupCameraLiveSourcePreference() {
-        val sourceKey: DJIKey<CameraVideoStreamSourceType> =
-            KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, ComponentIndexType.LEFT_OR_MAIN)
+    override fun setPreferredCameraLiveSource(value: String): Boolean {
+        val normalized = value.trim().uppercase()
+        val source = CameraVideoStreamSourceType.values()
+            .firstOrNull { it.name == normalized }
+            ?: return false
 
-        KeyManager.getInstance().listen(sourceKey, this) { _, value ->
-            val source = value ?: return@listen
-            if (!cameraLiveSourceProfileReady || restoringCameraLiveSource) return@listen
+        sharedPreferences.edit()
+            .putString(PREF_CAMERA_LIVE_SOURCE, source.name)
+            .apply()
+        DroneSettingsProfiles.saveCurrentProfile(sharedPreferences, PER_DRONE_PROFILE_KEYS)
+        Log.i(TAG, "Persisted explicit camera live source: ${source.name}")
+        return true
+    }
 
-            cameraLiveSourcePersistRunnable?.let(mainHandler::removeCallbacks)
-            val expectedName = source.name
-            val persist = Runnable {
-                if (!cameraLiveSourceProfileReady || restoringCameraLiveSource) return@Runnable
-                val current = sourceKey.get(CameraVideoStreamSourceType.DEFAULT_CAMERA)
-                if (current?.name != expectedName) return@Runnable
-
-                sharedPreferences.edit()
-                    .putString(PREF_CAMERA_LIVE_SOURCE, expectedName)
-                    .apply()
-                DroneSettingsProfiles.saveCurrentProfile(sharedPreferences, PER_DRONE_PROFILE_KEYS)
-                Log.i(TAG, "Persisted camera live source: $expectedName")
-            }
-            cameraLiveSourcePersistRunnable = persist
-            mainHandler.postDelayed(persist, 1_200L)
+    private fun schedulePreferredCameraLiveSourceRestore() {
+        // DJI can publish RGB_CAMERA again while the camera pipeline is still starting.
+        // Reconcile the saved operator choice at bounded points; each pass re-reads prefs.
+        listOf(400L, 1_500L, 4_000L).forEach { delayMs ->
+            mainHandler.postDelayed({ restorePreferredCameraLiveSource() }, delayMs)
         }
     }
 
-    private fun restorePreferredCameraLiveSource(attemptsRemaining: Int = 2) {
-        val preferredName = sharedPreferences.getString(PREF_CAMERA_LIVE_SOURCE, null)
+    private fun restorePreferredCameraLiveSource(attemptsRemaining: Int = 2) {        val preferredName = sharedPreferences.getString(PREF_CAMERA_LIVE_SOURCE, null)
             ?.trim()
             .orEmpty()
         val preferred = CameraVideoStreamSourceType.values()
             .firstOrNull { it.name == preferredName }
 
         if (preferred == null) {
-            cameraLiveSourceProfileReady = true
             return
         }
 
@@ -5449,7 +5434,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                     if (preferred !in range.orEmpty()) {
                         Log.w(TAG, "Saved camera live source $preferredName unsupported by current camera")
                         restoringCameraLiveSource = false
-                        cameraLiveSourceProfileReady = true
                         return
                     }
 
@@ -5458,9 +5442,32 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                         preferred,
                         object : CommonCallbacks.CompletionCallback {
                             override fun onSuccess() {
-                                Log.i(TAG, "Restored camera live source: $preferredName")
-                                restoringCameraLiveSource = false
-                                cameraLiveSourceProfileReady = true
+                                mainHandler.postDelayed({
+                                    KeyManager.getInstance().getValue(
+                                        sourceKey,
+                                        object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
+                                            override fun onSuccess(current: CameraVideoStreamSourceType?) {
+                                                if (current == preferred) {
+                                                    Log.i(TAG, "Restored camera live source: $preferredName")
+                                                } else {
+                                                    Log.w(
+                                                        TAG,
+                                                        "Camera live source changed after restore: expected=$preferredName actual=${current?.name}"
+                                                    )
+                                                }
+                                                restoringCameraLiveSource = false
+                                            }
+
+                                            override fun onFailure(error: IDJIError) {
+                                                Log.w(
+                                                    TAG,
+                                                    "Camera live-source restore readback failed: ${error.description()}"
+                                                )
+                                                restoringCameraLiveSource = false
+                                            }
+                                        }
+                                    )
+                                }, 250L)
                             }
 
                             override fun onFailure(error: IDJIError) {
@@ -5486,7 +5493,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         } else {
             Log.w(TAG, "Camera live-source restore unavailable: $reason")
             restoringCameraLiveSource = false
-            cameraLiveSourceProfileReady = true
         }
     }
 
@@ -5523,7 +5529,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                             }
                             Log.i(TAG, "Applied per-drone settings profile for $droneSerialNumber")
                         }
-                        restorePreferredCameraLiveSource()
+                        schedulePreferredCameraLiveSourceRestore()
                     }
                     applyAutomaticDroneName()
                     if (!configuredMavlinkSystemIdIsManual() && previousSystemId != currentMavlinkSystemId()) {
