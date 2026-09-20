@@ -97,13 +97,16 @@ internal object CameraLiveSourceController {
         val requested = rawSource.trim().uppercase()
         val source = CameraVideoStreamSourceType.values()
             .firstOrNull { it.name == requested }
-            ?: return CameraLiveSourceSetResult(
-                requested = requested,
-                setStatus = "INVALID_SOURCE",
-                source = readCurrent(index).source,
-                readStatus = "OK",
-                error = "Unknown camera video stream source"
-            )
+            ?: run {
+                val readback = readCurrent(index)
+                return CameraLiveSourceSetResult(
+                    requested = requested,
+                    setStatus = "INVALID_SOURCE",
+                    source = readback.source,
+                    readStatus = readback.readStatus,
+                    error = "Unknown camera video stream source"
+                )
+            }
 
         val latch = CountDownLatch(1)
         val success = AtomicBoolean(false)
