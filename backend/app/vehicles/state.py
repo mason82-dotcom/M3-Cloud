@@ -11,6 +11,45 @@ DJI_CLOUD_MODE_NAMES = {
     16:"VIRTUAL_STICK", 17:"LIVE_FLIGHT_CONTROLS", 18:"AIRBORNE_RTK_FIXING",
 }
 
+DJI_MSDK_MODE_NAMES = {
+    "GPS_NORMAL": "POSITION_HOLD",
+    "GPS_SPORT": "POSITION_HOLD",
+    "GPS_TRIPOD": "POSITION_HOLD",
+    "GPS_NOVICE": "POSITION_HOLD",
+    "APAS": "POSITION_HOLD",
+    "AUTO_AVOIDANCE": "POSITION_HOLD",
+    "ATTI": "ALTITUDE_HOLD",
+    "ATTI_LANDING": "ALTITUDE_HOLD",
+    "MANUAL": "MANUAL",
+    "VIRTUAL_STICK": "OFFBOARD",
+    "WAYPOINT": "MISSION",
+    "GO_HOME": "SAFE_RECOVERY",
+    "AUTO_LANDING": "LAND",
+    "FORCE_LANDING": "LAND",
+    "TAKE_OFF_READY": "TAKEOFF",
+    "AUTO_TAKE_OFF": "TAKEOFF",
+    "MOTOR_START": "TAKEOFF",
+    "POI": "ORBIT",
+    "SMART_FLIGHT": "INTELLIGENT",
+    "SMART_FLY": "INTELLIGENT",
+    "CLICK_GO": "INTELLIGENT",
+    "FOLLOW_ME": "INTELLIGENT",
+    "TAP_FLY": "INTELLIGENT",
+    "QUICK_MOVIE": "INTELLIGENT",
+    "MASTER_SHOT": "INTELLIGENT",
+    "CINEMATIC": "INTELLIGENT",
+    "DRAW": "INTELLIGENT",
+    "PANO": "INTELLIGENT",
+    "TIME_LAPSE": "INTELLIGENT",
+}
+
+def _lyrebird_mode(mavlink_mode: Any, dji_mode: Any) -> Any:
+    if isinstance(mavlink_mode, str) and mavlink_mode and mavlink_mode != "UNKNOWN":
+        return mavlink_mode
+    if isinstance(dji_mode, str):
+        return DJI_MSDK_MODE_NAMES.get(dji_mode.upper(), dji_mode if dji_mode.upper() != "UNKNOWN" else None)
+    return None
+
 def _dji_cloud_state(result: dict[str, Any]) -> dict[str, Any]:
     code = result.get("mode_code")
     mode = DJI_CLOUD_MODE_NAMES.get(code) if isinstance(code, int) and not isinstance(code, bool) else None
@@ -114,7 +153,7 @@ def normalize_aircraft_state(telemetry: dict[str, Any] | None, *, source: str) -
             positioning["rtk_stale"] = False
             positioning["position_source"] = "RTK_FUSED"
         common.update({
-            "mode": native.get("mode") or result.get("flight_mode"),
+            "mode": _lyrebird_mode(native.get("mode"), result.get("flight_mode")),
             "armed": native.get("armed"),
             "is_flying": native.get("is_flying"),
             "failsafe": native.get("failsafe"),
