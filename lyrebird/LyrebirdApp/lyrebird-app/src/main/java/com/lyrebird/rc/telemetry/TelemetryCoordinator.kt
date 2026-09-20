@@ -156,8 +156,9 @@ class TelemetryCoordinator {
      * streaming config, and a handful of numbers — zoom ratio, distance to home, remaining
      * charge, the low-battery thresholds, the intermediary-waypoint flag — that never made it
      * into a MAVLink message). Everything MAVLink already carries (location, attitude, battery
-     * percent, gimbal, flight mode, waypoint-reached latches, ...) is left out on purpose: sending
-     * it again over TCP would just be the same state twice on two wires to the same listener.
+     * percent, gimbal, waypoint-reached latches, ...) is left out on purpose. The native DJI
+     * flightMode is the exception: MAVLink carries Lyrebird's normalized PX4-compatible mode,
+     * not the original MSDK enum name, so retaining flightMode preserves source-native provenance.
      * `detections` rides along whole rather than split further — it changes rarely and is small,
      * so splitting it for a partial win is not worth the fragility.
      *
@@ -172,6 +173,6 @@ class TelemetryCoordinator {
         val detectionsJson = detectionTelemetryJson()
         val streamingJson = streamingTelemetryJson()
 
-        return """{"telemetryMode":"gap","droneName":"$droneName","phoneLocation":$phoneLocationJson,"webRtc":$webRtcMetricsJson,"detections":$detectionsJson,"streaming":$streamingJson,"zoomRatio":$zoomRatio,"distanceToHome":$distanceToHome,"intermediaryWaypointReached":$intermediaryWaypointReached,"remainingCharge":$remainingCharge,"seriousLowBatteryThreshold":$seriousLowBatteryThreshold,"lowBatteryThreshold":$lowBatteryThreshold}"""
+        return """{"telemetryMode":"gap","droneName":"$droneName","flightMode":"$flightMode","phoneLocation":$phoneLocationJson,"webRtc":$webRtcMetricsJson,"detections":$detectionsJson,"streaming":$streamingJson,"zoomRatio":$zoomRatio,"distanceToHome":$distanceToHome,"intermediaryWaypointReached":$intermediaryWaypointReached,"remainingCharge":$remainingCharge,"seriousLowBatteryThreshold":$seriousLowBatteryThreshold,"lowBatteryThreshold":$lowBatteryThreshold}"""
     }
 }
