@@ -64,3 +64,47 @@ async def test_external_media_scan_catalogs_and_deduplicates(tmp_path: Path) -> 
         )
     assert missing is not None
     assert missing.present is False
+
+
+
+@pytest.mark.asyncio
+async def test_missing_import_root_does_not_mark_catalog_missing(tmp_path: Path) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(MediaAsset))
+        session.add(
+            MediaAsset(
+                relative_path="M3E/existing.JPG",
+                filename="existing.JPG",
+                extension=".jpg",
+                size_bytes=123,
+                mtime_ns=1,
+                sha256="a" * 64,
+                platform="M3E",
+                media_kind="RGB",
+                capture_group="M3E/existing",
+                storage_mode="EXTERNAL",
+                external_root="media-import",
+                present=True,
+                duplicate_of=None,
+                discovered_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                last_seen_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+            )
+        )
+        await session.commit()
+
+    importer = MediaImporter(
+        session_factory,
+        root=str(tmp_path / "not-mounted"),
+        min_age_seconds=0,
+    )
+    result = await importer.scan()
+
+    assert result.marked_missing == 0
+    assert importer.last_error == "IMPORT_ROOT_UNAVAILABLE"
+
+    async with session_factory() as session:
+        asset = await session.scalar(
+            select(MediaAsset).where(MediaAsset.relative_path == "M3E/existing.JPG")
+        )
+    assert asset is not None
+    assert asset.present is True
