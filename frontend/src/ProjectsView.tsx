@@ -354,7 +354,7 @@ export function ProjectsView() {
                 <span>{survey.kind}</span>
               </div>
               <small>
-                {survey.flight_count} flights · {survey.dataset_count} datasets · {survey.processing_count} jobs
+                {survey.flight_count} flights · {survey.dataset_count} datasets · {survey.mission_count} missions · {survey.processing_count} jobs
               </small>
             </button>
           ))}
@@ -380,6 +380,7 @@ export function ProjectsView() {
             <div className="surveyLineageSummary">
               <span>Flights<b>{lineage?.flights.length ?? selectedSurvey.flight_count}</b></span>
               <span>Datasets<b>{lineage?.datasets.length ?? selectedSurvey.dataset_count}</b></span>
+              <span>Missions<b>{lineage?.missions.length ?? selectedSurvey.mission_count}</b></span>
               <span>Processing<b>{lineage?.processing_jobs.length ?? selectedSurvey.processing_count}</b></span>
               <span>Results<b>{lineage?.processing_jobs.reduce((sum, job) => sum + job.results.length, 0) ?? 0}</b></span>
             </div>

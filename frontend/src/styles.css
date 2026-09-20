@@ -1899,3 +1899,320 @@ button { font: inherit; }
   font-size: 9px;
   text-decoration: none;
 }
+
+
+.missionsView {
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr);
+  gap: 10px;
+  min-height: calc(100vh - 94px);
+}
+
+.missionsError {
+  grid-column: 1 / -1;
+  border: 1px solid #8d4c4c;
+  border-radius: 8px;
+  background: rgb(70 26 26 / 92%);
+  padding: 8px 10px;
+  color: #ffdada;
+  font-size: 10px;
+}
+
+.missionRail {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.missionCreate {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border-bottom: 1px solid var(--line);
+}
+
+.missionCreate input,
+.missionCreate select,
+.missionCreate button,
+.missionInspector select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0e151e;
+  color: var(--text);
+  padding: 7px 8px;
+  font-size: 10px;
+}
+
+.missionCreate button {
+  cursor: pointer;
+  background: var(--panel2);
+}
+
+.missionList {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.missionItem {
+  width: 100%;
+  margin-bottom: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0e151e;
+  color: var(--text);
+  padding: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.missionItem.selected {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.missionItem > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.missionItem strong,
+.missionItem small {
+  display: block;
+}
+
+.missionItem strong {
+  font-size: 11px;
+}
+
+.missionItem span,
+.missionItem small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.missionRuntimeSmall {
+  margin-top: 4px;
+  color: var(--info) !important;
+}
+
+.missionWorkspace {
+  min-width: 0;
+}
+
+.missionSafetyBanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+  border: 1px solid #6b5733;
+  border-radius: 8px;
+  background: #2c2416;
+  padding: 8px 10px;
+  color: #e7c277;
+  font-size: 10px;
+}
+
+.missionSafetyBanner strong {
+  white-space: nowrap;
+}
+
+.missionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+  padding: 0 2px;
+}
+
+.missionHeader h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.missionHeader p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.missionHeaderActions button,
+.missionEditorActions button,
+.missionTable button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.missionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 10px;
+}
+
+.missionMapShell {
+  position: relative;
+  min-height: 390px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.missionMap {
+  position: absolute;
+  inset: 0;
+}
+
+.missionInspector {
+  min-height: 390px;
+}
+
+.missionInspector > label {
+  display: grid;
+  gap: 4px;
+  padding: 7px 10px 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.missionFacts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  margin: 12px 10px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 9px;
+}
+
+.missionFacts dt {
+  color: var(--muted);
+}
+
+.missionFacts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.missionRuntimeBox {
+  display: grid;
+  gap: 5px;
+  margin: 12px 10px 0;
+  padding: 9px;
+  border: 1px solid #1d2935;
+  border-radius: 7px;
+  background: #0e151e;
+}
+
+.missionRuntimeBox strong {
+  font-size: 10px;
+}
+
+.missionRuntimeBox span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.missionRuntimeBox b {
+  color: var(--text);
+}
+
+.missionRuntimeBox small,
+.missionVehicleHint {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.missionVehicleHint {
+  display: block;
+  margin: 8px 10px 0;
+}
+
+.missionEditor {
+  margin-top: 10px;
+  min-height: 220px;
+  overflow: hidden;
+}
+
+.missionEditorActions {
+  display: flex;
+  gap: 6px;
+}
+
+.missionTableWrap {
+  overflow: auto;
+}
+
+.missionTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9px;
+}
+
+.missionTable th,
+.missionTable td {
+  padding: 7px;
+  border-bottom: 1px solid #1d2935;
+  text-align: left;
+}
+
+.missionTable th {
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.missionTable input {
+  width: 120px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #0e151e;
+  color: var(--text);
+  padding: 5px;
+  font-size: 9px;
+}
+
+.surveyLineageSummary {
+  grid-template-columns: repeat(5, minmax(90px, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .missionsView {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  .missionGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .missionInspector {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 780px) {
+  .missionsView {
+    grid-template-columns: 1fr;
+  }
+
+  .missionRail {
+    max-height: 330px;
+  }
+
+  .surveyLineageSummary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

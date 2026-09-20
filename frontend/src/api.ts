@@ -9,6 +9,8 @@ import type {
   MediaGroup,
   MediaImportStatus,
   MediaPositionCollection,
+  Mission,
+  MissionPlanItem,
   ProcessingJob,
   ProcessingMapInfo,
   ProcessingProfile,
@@ -151,6 +153,68 @@ export async function assignMediaDatasetSurvey(
     throw new Error(body?.detail ?? `Dataset survey assignment failed: ${response.status}`);
   }
   return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function fetchMissions(input: {
+  surveyId?: string;
+  aircraftSn?: string;
+  includeArchived?: boolean;
+} = {}): Promise<Mission[]> {
+  const params = new URLSearchParams({ limit: "500" });
+  if (input.surveyId) params.set("survey_id", input.surveyId);
+  if (input.aircraftSn) params.set("aircraft_sn", input.aircraftSn);
+  if (input.includeArchived) params.set("include_archived", "true");
+
+  const response = await fetch(`/api/v1/missions?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Missions request failed: ${response.status}`);
+  }
+  return response.json() as Promise<Mission[]>;
+}
+
+export async function createMission(input: {
+  name: string;
+  survey_id?: string | null;
+  aircraft_sn?: string | null;
+  preferred_executor?: "DJI_NATIVE" | "ONBOARD" | null;
+  items?: MissionPlanItem[];
+}): Promise<Mission> {
+  const response = await fetch("/api/v1/missions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Mission create failed: ${response.status}`);
+  }
+  return response.json() as Promise<Mission>;
+}
+
+export async function updateMission(
+  missionId: string,
+  input: {
+    name?: string;
+    survey_id?: string | null;
+    aircraft_sn?: string | null;
+    preferred_executor?: "DJI_NATIVE" | "ONBOARD" | null;
+    status?: "DRAFT" | "READY" | "ARCHIVED";
+    items?: MissionPlanItem[];
+  },
+): Promise<Mission> {
+  const response = await fetch(
+    `/api/v1/missions/${encodeURIComponent(missionId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Mission update failed: ${response.status}`);
+  }
+  return response.json() as Promise<Mission>;
 }
 
 export async function fetchVehicles(): Promise<Vehicle[]> {

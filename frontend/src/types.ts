@@ -170,7 +170,62 @@ export interface Survey {
   status: "ACTIVE" | "COMPLETED" | "ARCHIVED" | string;
   flight_count: number;
   dataset_count: number;
+  mission_count: number;
   processing_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MissionPlanItem {
+  seq: number;
+  command: number;
+  param1?: number | null;
+  param2?: number | null;
+  param3?: number | null;
+  param4?: number | null;
+  latitude_deg: number;
+  longitude_deg: number;
+  altitude_m: number;
+  autocontinue: boolean;
+}
+
+export interface MissionRuntime {
+  available: boolean;
+  source?: string;
+  state_code?: number | null;
+  state: string;
+  current_seq?: number | null;
+  waypoint_reached_seq?: number | null;
+  runtime_plan_identity: "UNVERIFIED" | string;
+  linked_to_persisted_plan: boolean;
+}
+
+export interface Mission {
+  id: string;
+  survey_id?: string | null;
+  name: string;
+  kind: string;
+  source: string;
+  status: "DRAFT" | "READY" | "ARCHIVED" | string;
+  aircraft_sn?: string | null;
+  preferred_executor?: "DJI_NATIVE" | "ONBOARD" | null;
+  external_ref?: string | null;
+  plan_version: number;
+  item_count: number;
+  plan_sha256: string;
+  plan: {
+    schema_version: number;
+    protocol: string;
+    items: MissionPlanItem[];
+  };
+  compatibility: {
+    m3cloud_execution_enabled: boolean;
+    lyrebird_mavlink_upload_compatible: boolean;
+    lyrebird_unsupported_items: Array<{ seq: number; command: number }>;
+    dji_native_execution_compatible?: boolean | null;
+    note: string;
+  };
+  runtime?: MissionRuntime | null;
   created_at: string;
   updated_at: string;
 }
@@ -186,6 +241,18 @@ export interface SurveyLineage {
     ended_at?: string | null;
     distance_m: number;
     duration_s?: number | null;
+  }>;
+  missions: Array<{
+    id: string;
+    name: string;
+    status: string;
+    source: string;
+    aircraft_sn?: string | null;
+    preferred_executor?: string | null;
+    item_count: number;
+    plan_version: number;
+    plan_sha256: string;
+    updated_at: string;
   }>;
   datasets: Array<{
     id: string;

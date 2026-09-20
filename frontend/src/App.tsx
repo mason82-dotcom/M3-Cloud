@@ -5,6 +5,7 @@ import { FlightHistoryView } from "./FlightHistory";
 import { useLiveEvents } from "./live";
 import { MapView } from "./MapView";
 import { MediaView } from "./MediaView";
+import { MissionsView } from "./MissionsView";
 import { ProcessingView } from "./ProcessingView";
 import { ProjectsView } from "./ProjectsView";
 import type {
@@ -609,6 +610,12 @@ export default function App() {
           </section>
         ) : null}
 
+        {activeView === "missions" ? (
+          <section className="view active">
+            <MissionsView />
+          </section>
+        ) : null}
+
         {activeView === "live" ? (
           <section className="view active">
             <LiveView vehicle={selectedVehicle} />
@@ -646,7 +653,7 @@ export default function App() {
           </section>
         ) : null}
 
-        {!["operations", "projects", "live", "flights", "media", "processing", "system"].includes(activeView) ? (
+        {!["operations", "projects", "missions", "live", "flights", "media", "processing", "system"].includes(activeView) ? (
           <section className="view active">
             <div className="placeholder">
               <h2>{nav[1]}</h2>
