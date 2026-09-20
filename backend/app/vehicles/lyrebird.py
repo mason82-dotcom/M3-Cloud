@@ -222,11 +222,18 @@ class LyrebirdVehicleProvider:
             config = response.json()
             if not isinstance(config, dict):
                 return None
-            tcp, camera_caps, identity_settings = await asyncio.gather(
-                self._read_telemetry(host),
-                self._read_camera_capabilities(client, host),
-                self._read_identity_settings(client, host),
-            )
+            # Lyrebird's embedded HTTP server can serialize requests. Keep the two
+            # HTTP identity reads sequential so one request cannot starve the other,
+            # while TCP telemetry is collected independently in parallel.
+            tcp_task = asyncio.create_task(self._read_telemetry(host))
+            try:
+                camera_caps = await self._read_camera_capabilities(client, host)
+                identity_settings = await self._read_identity_settings(client, host)
+                tcp = await tcp_task
+            finally:
+                if not tcp_task.done():
+                    tcp_task.cancel()
+                    await asyncio.gather(tcp_task, return_exceptions=True)
             config = merge_identity_config(config, identity_settings)
             mavlink = self._mavlink_collector.snapshot(host) if self._mavlink_collector is not None else None
             telemetry = merge_transport_telemetry(mavlink, tcp)
