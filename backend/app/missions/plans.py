@@ -189,8 +189,9 @@ def compile_mission_item_int(plan: dict[str, object]) -> dict[str, object]:
 
         latitude = float(raw["latitude_deg"])
         longitude = float(raw["longitude_deg"])
-        x = round(latitude * 10_000_000)
-        y = round(longitude * 10_000_000)
+        # Kotlin/Lyrebird roundToInt rounds half values toward +infinity.
+        x = math.floor(latitude * 10_000_000 + 0.5)
+        y = math.floor(longitude * 10_000_000 + 0.5)
         if not -(2**31) <= x < 2**31 or not -(2**31) <= y < 2**31:
             raise ValueError("Mission coordinate does not fit MISSION_ITEM_INT")
 
