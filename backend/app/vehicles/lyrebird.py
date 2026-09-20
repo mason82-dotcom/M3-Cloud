@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 from app.config import settings
 from app.vehicles.base import VehicleSnapshot
-from app.vehicles.payloads import AircraftPlatform, attach_payload_capabilities
+from app.vehicles.payloads import AircraftPlatform, attach_payload_capabilities, platform_from_camera_type
 
 def _configured_hosts() -> list[str]:
     return [item.strip() for item in settings.lyrebird_hosts.split(",") if item.strip()]
@@ -77,9 +77,26 @@ def merge_transport_telemetry(mavlink: dict[str, Any] | None, tcp: dict[str, Any
     merged["source"] = "lyrebird_mavlink2+tcp_gap" if tcp else "lyrebird_mavlink2"
     return merged
 
-def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any] | None = None) -> VehicleSnapshot:
+def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any] | None = None, camera_capabilities: dict[str, Any] | None = None) -> VehicleSnapshot:
     name = str(config.get("droneName") or host)
-    return VehicleSnapshot(id=f"lyrebird:{host}", sn=f"lyrebird@{host}", name=name, model="LYREBIRD_AIRCRAFT", source="lyrebird", online=True, updated_at_ms=int(time.time() * 1000), telemetry=attach_payload_capabilities(telemetry, AircraftPlatform.UNKNOWN))
+    caps = camera_capabilities or {}
+    platform = platform_from_camera_type(caps.get("cameraType"))
+    model = platform.value if platform != AircraftPlatform.UNKNOWN else "LYREBIRD_AIRCRAFT"
+    enriched = attach_payload_capabilities(telemetry, platform)
+    if enriched is not None and caps:
+        enriched["payload"]["camera"] = {
+            "component_index": caps.get("componentIndex"),
+            "connected": caps.get("connected"),
+            "camera_type": caps.get("cameraType"),
+            "firmware_version": caps.get("firmwareVersion"),
+            "camera_mode": caps.get("cameraMode"),
+            "camera_mode_range": caps.get("cameraModeRange") or [],
+            "live_view_source": caps.get("liveViewSource"),
+            "live_view_source_range": caps.get("liveViewSourceRange") or [],
+            "capture_stored_sources": caps.get("captureStoredSources") or [],
+            "capture_current_screen": caps.get("captureCurrentScreen"),
+        }
+    return VehicleSnapshot(id=f"lyrebird:{host}", sn=f"lyrebird@{host}", name=name, model=model, source="lyrebird", online=True, updated_at_ms=int(time.time() * 1000), telemetry=enriched)
 
 class LyrebirdVehicleProvider:
     source = "lyrebird"
@@ -104,6 +121,18 @@ class LyrebirdVehicleProvider:
                 except OSError:
                     pass
 
+    async def _read_camera_capabilities(self, client: httpx.AsyncClient, host: str) -> dict[str, Any] | None:
+        try:
+            response = await client.get(
+                f"http://{host}:{settings.lyrebird_http_port}/get/camera/capabilities",
+                timeout=settings.lyrebird_timeout_seconds,
+            )
+            response.raise_for_status()
+            value = response.json()
+            return value if isinstance(value, dict) else None
+        except (httpx.HTTPError, ValueError):
+            return None
+
     async def _probe(self, client: httpx.AsyncClient, host: str) -> VehicleSnapshot | None:
         try:
             response = await client.get(f"http://{host}:{settings.lyrebird_http_port}/config", timeout=settings.lyrebird_timeout_seconds)
@@ -111,10 +140,13 @@ class LyrebirdVehicleProvider:
             config = response.json()
             if not isinstance(config, dict):
                 return None
-            tcp = await self._read_telemetry(host)
+            tcp, camera_caps = await asyncio.gather(
+                self._read_telemetry(host),
+                self._read_camera_capabilities(client, host),
+            )
             mavlink = self._mavlink_collector.snapshot(host) if self._mavlink_collector is not None else None
             telemetry = merge_transport_telemetry(mavlink, tcp)
-            return normalize_config(host, config, telemetry)
+            return normalize_config(host, config, telemetry, camera_caps)
         except (httpx.HTTPError, ValueError):
             return None
 

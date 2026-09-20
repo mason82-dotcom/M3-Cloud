@@ -17,3 +17,33 @@ def test_tcp_telemetry_keeps_aircraft_and_controller_position_separate():
     assert state["battery"]["capacity_percent"] == 81
     assert "ellipsoid_height_m" not in state
     assert "rtk" not in state
+
+
+def test_camera_capability_probe_provides_explicit_m3m_identity():
+    vehicle = normalize_config(
+        "192.168.1.42",
+        {"droneName": "field-drone", "hasThermal": False},
+        {},
+        {
+            "componentIndex": "LEFT_OR_MAIN",
+            "connected": True,
+            "cameraType": "M3M",
+            "firmwareVersion": "01.00",
+            "cameraMode": "PHOTO_NORMAL",
+            "cameraModeRange": ["PHOTO_NORMAL"],
+            "liveViewSource": "RGB_CAMERA",
+            "liveViewSourceRange": ["RGB_CAMERA"],
+            "captureStoredSources": ["RGB_CAMERA", "NDVI_CAMERA", "MS_G_CAMERA", "MS_R_CAMERA", "MS_RE_CAMERA", "MS_NIR_CAMERA"],
+            "captureCurrentScreen": False,
+        },
+    )
+    assert vehicle.model == "M3M"
+    assert vehicle.telemetry["payload"]["platform"] == "M3M"
+    assert vehicle.telemetry["payload"]["multispectral"] is True
+    assert vehicle.telemetry["payload"]["thermal"] is False
+    assert "MS_NIR_CAMERA" in vehicle.telemetry["payload"]["camera"]["capture_stored_sources"]
+
+def test_has_thermal_alone_does_not_claim_m3t():
+    vehicle = normalize_config("10.0.0.8", {"droneName": "unknown", "hasThermal": True}, {})
+    assert vehicle.model == "LYREBIRD_AIRCRAFT"
+    assert vehicle.telemetry["payload"]["platform"] == "UNKNOWN"
