@@ -30,7 +30,7 @@ async def _redis_probe() -> None:
     await redis_client.ping()
 
 
-async def _minio_probe() -> None:
+async def _object_storage_probe() -> None:
     client = create_storage_client()
     await asyncio.to_thread(client.list_buckets)
 
@@ -49,7 +49,7 @@ async def readiness() -> dict[str, Any]:
     checks = await asyncio.gather(
         _check("postgres", _database_probe),
         _check("redis", _redis_probe),
-        _check("minio", _minio_probe),
+        _check("object_storage", _object_storage_probe),
         _check("emqx", _emqx_probe),
     )
     services = dict(checks)
