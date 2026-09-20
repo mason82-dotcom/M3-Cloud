@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  python-quality:
+    name: Lyrebird Python quality and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lyrebird
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: lyrebird/GroundStation/Python/pyproject.toml
+
+      - name: Install quality and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e GroundStation/Python
+          python -m pip install ruff radon mypy types-requests bandit pytest pymavlink==2.4.43
+
+      - name: Ruff lint
+        run: python -m ruff check GroundStation --output-format=github
+
+      - name: Ruff format check
+        run: python -m ruff format --check GroundStation
+
+      - name: Radon complexity
+        run: python scripts/check_radon_complexity.py
+
+      - name: Mypy
+        run: python -m mypy
+
+      - name: Bandit
+        run: python -m bandit -r GroundStation -ll --skip B101
+
+      - name: GroundStation tests
+        run: python -m pytest GroundStation/tests -q
+
+  android-quality:
+    name: Lyrebird Android compile and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: lyrebird/LyrebirdApp/android-sdk-v5-as
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Write CI local.properties
+        run: |
+          {
+            echo "sdk.dir=${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+            echo "AIRCRAFT_API_KEY=ci-placeholder"
+            echo "MAPLIBRE_TOKEN=dummy"
+          } > local.properties
+
+      - name: Spotless, compile, and unit tests
+        run: ./gradlew --no-daemon :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
+
+      - name: Lyrebird Detekt and Lint reports
+        run: ./gradlew --no-daemon qualityLyrebird
+
+      - name: Upload Android quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-quality-reports
+          if-no-files-found: ignore
+          path: |
+            lyrebird/LyrebirdApp/android-sdk-v5-as/build/reports/detekt/
+            lyrebird/LyrebirdApp/lyrebird-app/build/reports/
