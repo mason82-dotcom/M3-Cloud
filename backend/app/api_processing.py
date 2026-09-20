@@ -44,6 +44,7 @@ def _job(job: ProcessingJob) -> dict[str, Any]:
         "input_prefix": job.input_prefix,
         "platform": job.platform,
         "flight_id": str(job.flight_id) if job.flight_id else None,
+        "survey_id": str(job.survey_id) if job.survey_id else None,
         "media_kinds": job.media_kinds,
         "options": job.options,
         "image_count": job.image_count,

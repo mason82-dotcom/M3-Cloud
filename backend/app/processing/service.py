@@ -413,6 +413,7 @@ class ProcessingManager:
                 input_prefix=normalized_prefix,
                 platform=platform_value,
                 flight_id=dataset_record.flight_id if dataset_record else None,
+                survey_id=dataset_record.survey_id if dataset_record else None,
                 media_kinds=list(profile_value.media_kinds),
                 options=profile_value.as_options(),
                 image_count=len(assets),
@@ -491,6 +492,7 @@ class ProcessingManager:
                 input_prefix=normalized_prefix,
                 platform="M3T",
                 flight_id=dataset_record.flight_id if dataset_record else None,
+                survey_id=dataset_record.survey_id if dataset_record else None,
                 media_kinds=list(THERMOGRAM_KINDS),
                 options=[
                     {"name": "workflow", "value": "THERMOGRAM_M3T"},

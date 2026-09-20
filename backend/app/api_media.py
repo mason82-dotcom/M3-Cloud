@@ -181,6 +181,7 @@ async def media_datasets(
                 {
                     "id": str(record.id) if record else None,
                     "flight_id": str(record.flight_id) if record and record.flight_id else None,
+                    "survey_id": str(record.survey_id) if record and record.survey_id else None,
                     "flight_aircraft_sn": flight.aircraft_sn if flight else None,
                     "flight_started_at": flight.started_at.isoformat() if flight else None,
                     "capture_started_at": (
@@ -249,6 +250,7 @@ async def assign_dataset_flight(
             "platform": dataset.platform,
             "prefix": dataset.prefix,
             "flight_id": str(dataset.flight_id) if dataset.flight_id else None,
+            "survey_id": str(dataset.survey_id) if dataset.survey_id else None,
             "flight_aircraft_sn": flight.aircraft_sn if flight else None,
             "flight_started_at": flight.started_at.isoformat() if flight else None,
             "flight_assignment_source": dataset.flight_assignment_source,

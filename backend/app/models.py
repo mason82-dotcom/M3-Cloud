@@ -13,6 +13,45 @@ class Base(DeclarativeBase):
     pass
 
 
+class Project(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class Survey(Base):
+    __tablename__ = "surveys"
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_survey_project_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="GENERIC", index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class Flight(Base):
     __tablename__ = "flights"
 
@@ -20,6 +59,12 @@ class Flight(Base):
     aircraft_sn: Mapped[str] = mapped_column(String(128), index=True)
     gateway_sn: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     dji_track_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    survey_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("surveys.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status: Mapped[str] = mapped_column(String(32), default="ACTIVE", index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -154,6 +199,12 @@ class MediaDatasetRecord(Base):
         nullable=True,
         index=True,
     )
+    survey_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("surveys.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     capture_started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -194,6 +245,12 @@ class ProcessingJob(Base):
     flight_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("flights.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    survey_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("surveys.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

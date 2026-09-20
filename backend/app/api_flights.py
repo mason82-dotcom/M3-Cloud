@@ -28,6 +28,7 @@ def _summary(flight: Flight) -> dict[str, Any]:
         "aircraft_sn": flight.aircraft_sn,
         "gateway_sn": flight.gateway_sn,
         "dji_track_id": flight.dji_track_id,
+        "survey_id": str(flight.survey_id) if flight.survey_id else None,
         "status": flight.status,
         "started_at": flight.started_at.isoformat(),
         "ended_at": flight.ended_at.isoformat() if flight.ended_at else None,
