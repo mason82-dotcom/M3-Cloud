@@ -29,6 +29,8 @@ class CameraCapabilityProbeTest {
                     "MS_RE_CAMERA", "MS_NIR_CAMERA"
                 ),
                 recordStoredSources = listOf("RGB_CAMERA", "NDVI_CAMERA"),
+                captureStorageReadStatus = "OK",
+                recordStorageReadStatus = "NOT_APPLICABLE",
                 captureCurrentScreen = false,
                 thermalCapture = false,
                 multispectralCapture = true
@@ -42,5 +44,7 @@ class CameraCapabilityProbeTest {
         assertEquals(6, json.getJSONArray("captureStoredSources").length())
         assertEquals(2, json.getJSONArray("recordStoredSources").length())
         assertEquals("NDVI_CAMERA", json.getJSONArray("recordStoredSources").getString(1))
+        assertEquals("OK", json.getString("captureStorageReadStatus"))
+        assertEquals("NOT_APPLICABLE", json.getString("recordStorageReadStatus"))
     }
 }

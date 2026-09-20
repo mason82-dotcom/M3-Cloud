@@ -55,6 +55,9 @@ def test_camera_capability_probe_provides_explicit_m3m_identity():
             "liveViewSource": "RGB_CAMERA",
             "liveViewSourceRange": ["RGB_CAMERA"],
             "captureStoredSources": ["RGB_CAMERA", "NDVI_CAMERA", "MS_G_CAMERA", "MS_R_CAMERA", "MS_RE_CAMERA", "MS_NIR_CAMERA"],
+            "recordStoredSources": ["RGB_CAMERA", "NDVI_CAMERA"],
+            "captureStorageReadStatus": "OK",
+            "recordStorageReadStatus": "NOT_APPLICABLE",
             "captureCurrentScreen": False,
         },
     )
@@ -63,6 +66,8 @@ def test_camera_capability_probe_provides_explicit_m3m_identity():
     assert vehicle.telemetry["payload"]["multispectral"] is True
     assert vehicle.telemetry["payload"]["thermal"] is False
     assert vehicle.telemetry["payload"]["camera"]["record_stored_sources"] == ["RGB_CAMERA", "NDVI_CAMERA"]
+    assert vehicle.telemetry["payload"]["camera"]["capture_storage_read_status"] == "OK"
+    assert vehicle.telemetry["payload"]["camera"]["record_storage_read_status"] == "NOT_APPLICABLE"
     assert "MS_NIR_CAMERA" in vehicle.telemetry["payload"]["camera"]["capture_stored_sources"]
 
 def test_has_thermal_alone_does_not_claim_m3t():
