@@ -81,3 +81,50 @@ def test_camera_capability_probe_accepts_explicit_platform_fallback():
     assert vehicle.telemetry["payload"]["platform"] == "M3M"
     assert vehicle.telemetry["payload"]["multispectral"] is True
     assert vehicle.telemetry["payload"]["thermal"] is False
+
+
+def test_provider_serializes_rc_http_identity_reads(monkeypatch):
+    import asyncio
+    import httpx
+    from app.vehicles.lyrebird import LyrebirdVehicleProvider
+
+    class Response:
+        def __init__(self, payload):
+            self._payload = payload
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return self._payload
+
+    class SingleFlightClient:
+        def __init__(self):
+            self.active = 0
+        async def get(self, url, timeout):
+            self.active += 1
+            try:
+                if self.active > 1:
+                    raise httpx.ReadTimeout("concurrent RC HTTP request")
+                await asyncio.sleep(0)
+                if url.endswith("/config"):
+                    return Response({"droneName": "field", "aircraftSerialNumber": "1581F-M3M"})
+                if url.endswith("/get/camera/capabilities"):
+                    return Response({"cameraType": "M3M", "platform": "M3M", "connected": True})
+                if url.endswith("/config/settings"):
+                    return Response({"aircraftSerialNumber": "1581F-M3M"})
+                raise AssertionError(url)
+            finally:
+                self.active -= 1
+
+    async def run():
+        provider = LyrebirdVehicleProvider(client=SingleFlightClient())
+        async def no_tcp(host):
+            return None
+        provider._read_telemetry = no_tcp
+        vehicles = await provider.list_vehicles()
+        assert len(vehicles) == 1
+        assert vehicles[0].model == "M3M"
+        assert vehicles[0].telemetry["payload"]["platform"] == "M3M"
+
+    monkeypatch.setattr("app.vehicles.lyrebird.settings.lyrebird_enabled", True)
+    monkeypatch.setattr("app.vehicles.lyrebird.settings.lyrebird_hosts", "192.168.178.45")
+    asyncio.run(run())
