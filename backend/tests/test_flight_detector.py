@@ -100,7 +100,7 @@ def flight_sample(
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_flight_recorder_persists_completed_postgis_path() -> None:
     async with session_factory() as session:
         await session.execute(delete(TelemetrySample))
