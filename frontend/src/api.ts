@@ -1,5 +1,6 @@
 import type {
   FlightDetail,
+  FlightReplay,
   FlightSummary,
   SystemHealth,
   Vehicle,
@@ -39,6 +40,18 @@ export async function fetchFlightDetail(flightId: string): Promise<FlightDetail>
     throw new Error(`Flight detail request failed: ${response.status}`);
   }
   return response.json() as Promise<FlightDetail>;
+}
+
+export async function fetchFlightSamples(
+  flightId: string,
+): Promise<FlightReplay> {
+  const response = await fetch(
+    `/api/v1/flights/${encodeURIComponent(flightId)}/samples?limit=10000`,
+  );
+  if (!response.ok) {
+    throw new Error(`Flight samples request failed: ${response.status}`);
+  }
+  return response.json() as Promise<FlightReplay>;
 }
 
 export async function fetchSystemHealth(): Promise<SystemHealth> {

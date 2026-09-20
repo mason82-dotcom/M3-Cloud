@@ -175,6 +175,35 @@ export interface FlightDetail extends FlightSummary {
   path?: import("geojson").LineString | null;
 }
 
+export interface FlightSample {
+  id: number;
+  recorded_at: string;
+  source_timestamp_ms: number;
+  source: string;
+  longitude?: number | null;
+  latitude?: number | null;
+  position_z_m?: number | null;
+  relative_altitude_m?: number | null;
+  ellipsoid_height_m?: number | null;
+  horizontal_speed_mps?: number | null;
+  vertical_speed_mps?: number | null;
+  heading_deg?: number | null;
+  mode_code?: number | null;
+  battery_percent?: number | null;
+  position_convergence?: string | null;
+  gps_satellites?: number | null;
+  rtk_satellites?: number | null;
+}
+
+export interface FlightReplay {
+  flight_id: string;
+  total: number;
+  count: number;
+  offset: number;
+  truncated: boolean;
+  samples: FlightSample[];
+}
+
 export interface ComponentHealth {
   ok?: boolean;
   status?: string;

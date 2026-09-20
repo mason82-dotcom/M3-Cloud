@@ -337,3 +337,138 @@ button { font: inherit; }
     grid-template-columns: 90px minmax(0, 1fr);
   }
 }
+
+
+.historyLegend {
+  position: absolute;
+  z-index: 8;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  max-width: calc(100% - 28px);
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgb(13 19 27 / 90%);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.historyLegend span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.historyLegend i {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.legend-fixed { background: #55d58a; }
+.legend-float { background: #69a9ff; }
+.legend-converged { background: #4fc3b6; }
+.legend-warn { background: #e7b34c; }
+.legend-stale { background: #ef7272; }
+
+.replayPanel {
+  min-height: auto;
+  padding: 10px 12px;
+}
+
+.replayHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.replayHead h2 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.replayHead small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.replayActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.replayActions button,
+.replayActions select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 10px;
+}
+
+.replayActions button {
+  cursor: pointer;
+}
+
+.replayActions button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.replayPanel > input[type="range"] {
+  width: 100%;
+  margin: 2px 0 9px;
+  accent-color: var(--accent);
+}
+
+.replayMetrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(90px, 1fr));
+  gap: 7px;
+}
+
+.replayMetrics span {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #1d2935;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.replayMetrics b {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.historyDetail {
+  grid-template-rows: minmax(380px, 1fr) auto auto auto;
+}
+
+@media (max-width: 1100px) {
+  .replayMetrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .replayHead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .replayMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

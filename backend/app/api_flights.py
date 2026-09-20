@@ -77,3 +77,74 @@ async def flight_detail(flight_id: uuid.UUID) -> dict[str, Any]:
             }
         )
         return detail
+
+
+@router.get("/{flight_id}/samples")
+async def flight_samples(
+    flight_id: uuid.UUID,
+    limit: int = Query(default=10_000, ge=1, le=20_000),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """Return ordered replay samples with explicit source/positioning provenance."""
+
+    async with session_factory() as session:
+        flight = await session.get(Flight, flight_id)
+        if flight is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Flight not found",
+            )
+
+        total = await session.scalar(
+            select(func.count(TelemetrySample.id)).where(
+                TelemetrySample.flight_id == flight_id
+            )
+        )
+        total = int(total or 0)
+
+        statement = (
+            select(
+                TelemetrySample,
+                func.ST_X(TelemetrySample.position).label("longitude"),
+                func.ST_Y(TelemetrySample.position).label("latitude"),
+                func.ST_Z(TelemetrySample.position).label("position_z_m"),
+            )
+            .where(TelemetrySample.flight_id == flight_id)
+            .order_by(TelemetrySample.recorded_at, TelemetrySample.id)
+            .offset(offset)
+            .limit(limit)
+        )
+        rows = (await session.execute(statement)).all()
+
+        samples = []
+        for sample, longitude, latitude, position_z_m in rows:
+            samples.append(
+                {
+                    "id": sample.id,
+                    "recorded_at": sample.recorded_at.isoformat(),
+                    "source_timestamp_ms": sample.source_timestamp_ms,
+                    "source": sample.source,
+                    "longitude": longitude,
+                    "latitude": latitude,
+                    "position_z_m": position_z_m,
+                    "relative_altitude_m": sample.relative_altitude_m,
+                    "ellipsoid_height_m": sample.ellipsoid_height_m,
+                    "horizontal_speed_mps": sample.horizontal_speed_mps,
+                    "vertical_speed_mps": sample.vertical_speed_mps,
+                    "heading_deg": sample.heading_deg,
+                    "mode_code": sample.mode_code,
+                    "battery_percent": sample.battery_percent,
+                    "position_convergence": sample.position_convergence,
+                    "gps_satellites": sample.gps_satellites,
+                    "rtk_satellites": sample.rtk_satellites,
+                }
+            )
+
+        return {
+            "flight_id": str(flight_id),
+            "total": total,
+            "count": len(samples),
+            "offset": offset,
+            "truncated": offset + len(samples) < total,
+            "samples": samples,
+        }

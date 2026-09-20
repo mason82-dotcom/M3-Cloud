@@ -3,6 +3,7 @@ import uuid
 import pytest
 from sqlalchemy import delete, func, select
 
+from app.api_flights import flight_samples
 from app.database import session_factory
 from app.flights.detector import DetectorState, FlightDecision, FlightDetector
 from app.flights.service import FlightRecorder, haversine_m
@@ -176,6 +177,17 @@ async def test_flight_recorder_persists_completed_postgis_path() -> None:
         assert sources == ["dji_cloud"]
         assert point_count == 5
         assert isinstance(flight.id, uuid.UUID)
+        flight_id = flight.id
+
+    replay = await flight_samples(flight_id, limit=100, offset=0)
+    assert replay["total"] == 5
+    assert replay["count"] == 5
+    assert replay["truncated"] is False
+    assert [sample["source"] for sample in replay["samples"]] == ["dji_cloud"] * 5
+    assert replay["samples"][0]["latitude"] == pytest.approx(49.0)
+    assert replay["samples"][0]["longitude"] == pytest.approx(8.0)
+    assert replay["samples"][0]["position_z_m"] == pytest.approx(150.4)
+    assert replay["samples"][0]["position_convergence"] == "CONVERGED"
 
 
 
