@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.media.classifier import (
@@ -102,7 +102,9 @@ class MediaImporter:
                 if not self.root.is_dir():
                     raise NotADirectoryError(self.root)
 
-                raw = await asyncio.to_thread(self._discover_candidates)
+                raw, visible_paths, skipped_young = await asyncio.to_thread(
+                    self._discover_candidates
+                )
                 classifications = reconcile_group_platforms(
                     [(item.relative_path, item.classification) for item in raw]
                 )
@@ -122,7 +124,7 @@ class MediaImporter:
                     "updated": 0,
                     "unchanged": 0,
                     "duplicates": 0,
-                    "skipped_unstable": 0,
+                    "skipped_unstable": skipped_young,
                 }
 
                 async with self.sessions() as session:
@@ -134,16 +136,16 @@ class MediaImporter:
                         )
                         counters[outcome] += 1
 
-                    missing = await session.execute(
-                        update(MediaAsset)
-                        .where(
-                            MediaAsset.present.is_(True),
-                            MediaAsset.last_seen_at < started,
+                    present_assets = (
+                        await session.scalars(
+                            select(MediaAsset).where(MediaAsset.present.is_(True))
                         )
-                        .values(present=False)
-                        .returning(MediaAsset.id)
-                    )
-                    marked_missing = len(missing.scalars().all())
+                    ).all()
+                    marked_missing = 0
+                    for asset in present_assets:
+                        if asset.relative_path not in visible_paths:
+                            asset.present = False
+                            marked_missing += 1
                     await session.commit()
 
                 finished = datetime.now(timezone.utc)
@@ -180,9 +182,11 @@ class MediaImporter:
             "last_scan": self.last_result.as_dict() if self.last_result else None,
         }
 
-    def _discover_candidates(self) -> list[Candidate]:
+    def _discover_candidates(self) -> tuple[list[Candidate], set[str], int]:
         now = time.time()
         preliminary: list[Candidate] = []
+        visible_paths: set[str] = set()
+        skipped_young = 0
 
         for path in sorted(self.root.rglob("*")):
             if not path.is_file():
@@ -192,9 +196,13 @@ class MediaImporter:
             if not supported_image(relative):
                 continue
 
+            relative_value = relative.as_posix()
+            visible_paths.add(relative_value)
+
             stat = path.stat()
             age = now - stat.st_mtime
             if age < self.min_age_seconds:
+                skipped_young += 1
                 continue
 
             preliminary.append(
@@ -207,7 +215,7 @@ class MediaImporter:
                 )
             )
 
-        return preliminary
+        return preliminary, visible_paths, skipped_young
 
     async def _upsert_candidate(
         self,
