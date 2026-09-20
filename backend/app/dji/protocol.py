@@ -83,3 +83,54 @@ def make_reply(
 
 def encode_json(payload: Mapping[str, Any]) -> bytes:
     return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+@dataclass(frozen=True)
+class PropertyMessage:
+    """Common uplink envelope used by DJI OSD/state property topics."""
+
+    timestamp: int
+    data: dict[str, Any]
+    tid: str | None = None
+    bid: str | None = None
+    gateway: str | None = None
+    from_sn: str | None = None
+    need_reply: bool = False
+
+
+def parse_property_message(payload: bytes | str | Mapping[str, Any]) -> PropertyMessage:
+    """Parse OSD/state payloads, which intentionally do not require a method field."""
+
+    if isinstance(payload, bytes):
+        payload = payload.decode("utf-8")
+    if isinstance(payload, str):
+        try:
+            decoded: Any = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise ProtocolError(f"invalid JSON: {exc.msg}") from exc
+    else:
+        decoded = dict(payload)
+
+    if not isinstance(decoded, dict):
+        raise ProtocolError("DJI property payload must be a JSON object")
+
+    timestamp = decoded.get("timestamp")
+    data = decoded.get("data")
+    if not isinstance(timestamp, int):
+        raise ProtocolError("timestamp must be an integer")
+    if not isinstance(data, dict):
+        raise ProtocolError("data must be an object")
+
+    def optional_text(name: str) -> str | None:
+        value = decoded.get(name)
+        return value if isinstance(value, str) and value else None
+
+    return PropertyMessage(
+        timestamp=timestamp,
+        data=data,
+        tid=optional_text("tid"),
+        bid=optional_text("bid"),
+        gateway=optional_text("gateway"),
+        from_sn=optional_text("from"),
+        need_reply=bool(decoded.get("need_reply", False)),
+    )

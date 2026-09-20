@@ -23,8 +23,14 @@ class TopicKind(StrEnum):
 @dataclass(frozen=True)
 class ParsedTopic:
     raw: str
-    gateway_sn: str | None
+    device_sn: str | None
     kind: TopicKind
+
+    @property
+    def gateway_sn(self) -> str | None:
+        """Compatibility alias: status topics use the device SN as gateway SN."""
+
+        return self.device_sn
 
 
 SUBSCRIPTIONS: tuple[str, ...] = (
