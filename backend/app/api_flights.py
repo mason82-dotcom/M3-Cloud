@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app.database import session_factory
-from app.models import Flight
+from app.models import Flight, TelemetrySample
 
 
 router = APIRouter(prefix="/api/v1/flights", tags=["flights"])
@@ -60,9 +60,17 @@ async def flight_detail(flight_id: uuid.UUID) -> dict[str, Any]:
             value = await session.scalar(select(func.ST_AsGeoJSON(column)).where(Flight.id == flight_id))
             return json.loads(value) if value else None
 
+        source_rows = await session.scalars(
+            select(TelemetrySample.source)
+            .where(TelemetrySample.flight_id == flight_id)
+            .distinct()
+            .order_by(TelemetrySample.source)
+        )
+
         detail = _summary(flight)
         detail.update(
             {
+                "sources": source_rows.all(),
                 "takeoff_position": await geometry(Flight.takeoff_position),
                 "landing_position": await geometry(Flight.landing_position),
                 "path": await geometry(Flight.path),

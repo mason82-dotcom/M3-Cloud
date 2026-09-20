@@ -161,6 +161,7 @@ class FlightRecorder:
             flight_id=active.flight_id,
             recorded_at=self._recorded_at(telemetry),
             source_timestamp_ms=int(telemetry.get("source_timestamp_ms") or 0),
+            source=self._text(telemetry.get("recording_source")) or "unknown",
             position=point_z(telemetry),
             relative_altitude_m=self._float(telemetry.get("relative_altitude_m")),
             ellipsoid_height_m=self._float(telemetry.get("ellipsoid_height_m")),

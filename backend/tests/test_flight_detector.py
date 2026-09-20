@@ -80,6 +80,7 @@ def flight_sample(
         "source_sn": "M3E-INTEGRATION-TEST",
         "gateway_sn": "RC-INTEGRATION-TEST",
         "source_timestamp_ms": timestamp_ms,
+        "recording_source": "dji_cloud",
         "latitude": latitude,
         "longitude": longitude,
         "relative_altitude_m": altitude,
@@ -162,9 +163,17 @@ async def test_flight_recorder_persists_completed_postgis_path() -> None:
         sample_count = await session.scalar(
             select(func.count(TelemetrySample.id)).where(TelemetrySample.flight_id == flight.id)
         )
+        sources = (
+            await session.scalars(
+                select(TelemetrySample.source)
+                .where(TelemetrySample.flight_id == flight.id)
+                .distinct()
+            )
+        ).all()
         point_count = await session.scalar(select(func.ST_NPoints(flight.path)))
 
         assert sample_count == 5
+        assert sources == ["dji_cloud"]
         assert point_count == 5
         assert isinstance(flight.id, uuid.UUID)
 

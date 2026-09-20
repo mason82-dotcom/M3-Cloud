@@ -47,6 +47,7 @@ class TelemetrySample(Base):
     )
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     source_timestamp_ms: Mapped[int] = mapped_column(BigInteger, index=True)
+    source: Mapped[str] = mapped_column(String(32), index=True)
     position = mapped_column(Geometry("POINTZ", srid=4326), nullable=True)
     relative_altitude_m: Mapped[float | None] = mapped_column(Float, nullable=True)
     ellipsoid_height_m: Mapped[float | None] = mapped_column(Float, nullable=True)

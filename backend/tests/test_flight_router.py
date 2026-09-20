@@ -72,7 +72,9 @@ async def test_lyrebird_preempts_dji_for_same_serial() -> None:
     )
 
     assert len(recorder.samples) == 2
+    assert recorder.samples[0]["recording_source"] == "dji_cloud"
     assert recorder.samples[1]["source_sn"] == "AIRCRAFT-A"
+    assert recorder.samples[1]["recording_source"] == "lyrebird"
     assert recorder.samples[1]["horizontal_speed_mps"] == 5.0
     assert recorder.samples[1]["vertical_speed_mps"] == 1.0
     assert recorder.samples[1]["aircraft_state"]["positioning"]["fix"] == "FIXED"

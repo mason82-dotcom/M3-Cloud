@@ -400,6 +400,7 @@ export function FlightHistoryView() {
           <dl>
             <dt>Flight ID</dt><dd>{detail?.id ?? "—"}</dd>
             <dt>Gateway</dt><dd>{detail?.gateway_sn ?? "—"}</dd>
+            <dt>Sources</dt><dd>{detail?.sources?.join(" + ") || "—"}</dd>
             <dt>DJI track</dt><dd>{detail?.dji_track_id ?? "—"}</dd>
             <dt>End reason</dt><dd>{detail?.end_reason ?? "—"}</dd>
             <dt>Started</dt><dd>{detail ? startedAt(detail.started_at) : "—"}</dd>

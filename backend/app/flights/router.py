@@ -29,6 +29,7 @@ class FlightTelemetryRouter:
         """DJI Cloud observer entry point."""
 
         sample = normalize_aircraft_state(telemetry, source="dji_cloud") or telemetry
+        sample["recording_source"] = "dji_cloud"
         aircraft_sn = sample.get("source_sn")
         if not isinstance(aircraft_sn, str) or not aircraft_sn:
             return
@@ -97,6 +98,7 @@ class FlightTelemetryRouter:
                 "source_sn": vehicle.sn,
                 "gateway_sn": vehicle.gateway_sn,
                 "source_timestamp_ms": timestamp_ms,
+                "recording_source": "lyrebird",
                 "horizontal_speed_mps": horizontal,
                 "vertical_speed_mps": vertical,
             }
