@@ -288,3 +288,18 @@ POST /api/v1/processing/jobs/<UUID>/external-results/import
 ```
 
 Imported Thermogram outputs use the same result download API and flight/job lineage as WebODM.
+
+
+### Immutable processing input manifests
+
+Every processing job stores a content snapshot of each selected original: relative path, byte
+size, SHA-256, media kind, and capture group. The snapshot is independent from later media-catalog
+updates.
+
+```text
+GET /api/v1/processing/jobs/<UUID>/inputs
+GET /api/v1/processing/jobs/<UUID>/inputs/download
+```
+
+WebODM verifies each source file against this snapshot immediately before upload. A changed source
+aborts processing instead of silently changing the job input.

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.database import session_factory
-from app.models import ProcessingJob, ProcessingResult
+from app.models import ProcessingJob, ProcessingJobAsset, ProcessingResult
 from app.processing.profiles import DEFAULT_PROFILE, profile_catalog
 from app.storage import create_storage_client
 
@@ -102,6 +102,64 @@ def _result(result: ProcessingResult) -> dict[str, Any]:
         "details": result.details or {},
         "created_at": result.created_at.isoformat(),
     }
+
+
+@router.get("/jobs/{job_id}/inputs")
+async def processing_inputs(job_id: uuid.UUID) -> dict[str, Any]:
+    async with session_factory() as session:
+        job = await session.get(ProcessingJob, job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Processing job not found",
+            )
+        inputs = (
+            await session.scalars(
+                select(ProcessingJobAsset)
+                .where(ProcessingJobAsset.job_id == job_id)
+                .order_by(ProcessingJobAsset.ordinal)
+            )
+        ).all()
+
+        return {
+            "schema_version": 1,
+            "job_id": str(job.id),
+            "kind": job.kind,
+            "platform": job.platform,
+            "input_prefix": job.input_prefix,
+            "asset_count": len(inputs),
+            "assets": [
+                {
+                    "ordinal": item.ordinal,
+                    "media_asset_id": str(item.media_asset_id),
+                    "relative_path": item.relative_path,
+                    "size_bytes": item.size_bytes,
+                    "sha256": item.sha256,
+                    "media_kind": item.media_kind,
+                    "capture_group": item.capture_group,
+                }
+                for item in inputs
+            ],
+        }
+
+
+@router.get("/jobs/{job_id}/inputs/download")
+async def download_processing_inputs(job_id: uuid.UUID) -> Response:
+    manifest = await processing_inputs(job_id)
+    payload = json.dumps(
+        manifest,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="m3-processing-inputs.json"',
+            "Content-Length": str(len(payload)),
+        },
+    )
 
 
 @router.get("/jobs/{job_id}/results")

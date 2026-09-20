@@ -489,6 +489,12 @@ export function ProcessingView() {
                 <i style={{ width: percent(job.progress) }} />
               </div>
 
+              <div className="processingJobAudit">
+                <a href={`/api/v1/processing/jobs/${encodeURIComponent(job.id)}/inputs/download`}>
+                  Input manifest
+                </a>
+              </div>
+
               <div className="processingMetrics">
                 <span>Progress<b>{percent(job.progress)}</b></span>
                 <span>Images<b>{job.uploaded_count}/{job.image_count}</b></span>

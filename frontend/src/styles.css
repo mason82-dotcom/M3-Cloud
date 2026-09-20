@@ -1377,3 +1377,20 @@ button { font: inherit; }
     grid-template-columns: 1fr;
   }
 }
+
+
+.processingJobAudit {
+  display: flex;
+  justify-content: flex-end;
+  margin: 6px 0;
+}
+
+.processingJobAudit a {
+  color: var(--accent);
+  font-size: 9px;
+  text-decoration: none;
+}
+
+.processingJobAudit a:hover {
+  text-decoration: underline;
+}
