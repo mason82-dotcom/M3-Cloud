@@ -19,6 +19,7 @@ from app.models import (
     ProcessingResult,
 )
 from app.processing.mbtiles import publish_mbtiles
+from app.processing.tiles3d import THREE_D_TILE_ARCHIVES, publish_3d_tiles
 from app.processing.profiles import get_profile
 from app.storage import create_storage_client
 from app.processing.webodm import WebODMClient
@@ -510,6 +511,15 @@ class ProcessingManager:
                                 bucket=RESULT_BUCKET,
                                 job_id=job_id,
                                 mbtiles_path=destination,
+                            )
+                        elif asset in THREE_D_TILE_ARCHIVES:
+                            details = await asyncio.to_thread(
+                                publish_3d_tiles,
+                                storage,
+                                bucket=RESULT_BUCKET,
+                                job_id=job_id,
+                                asset_name=asset,
+                                archive_path=destination,
                             )
 
                         async with self.sessions() as session:

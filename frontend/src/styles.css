@@ -1026,3 +1026,23 @@ button { font: inherit; }
     inset: 8px;
   }
 }
+
+
+.processing3DActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.processing3DActions select {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 6px 9px;
+  font-size: 10px;
+}
+
+.processing3DModal .maplibregl-canvas {
+  outline: none;
+}

@@ -274,3 +274,99 @@ async def processing_map_tile(
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+@router.get("/jobs/{job_id}/scenes")
+async def processing_scenes(job_id: uuid.UUID) -> list[dict[str, Any]]:
+    async with session_factory() as session:
+        results = (
+            await session.scalars(
+                select(ProcessingResult)
+                .where(ProcessingResult.job_id == job_id)
+                .order_by(ProcessingResult.asset_name)
+            )
+        ).all()
+
+        scenes: list[dict[str, Any]] = []
+        for result in results:
+            details = result.details or {}
+            if details.get("scene_kind") != "3D_TILES":
+                continue
+            tileset_path = details.get("tileset_path")
+            if not isinstance(tileset_path, str) or not tileset_path:
+                continue
+            scenes.append(
+                {
+                    "job_id": str(job_id),
+                    "result_id": str(result.id),
+                    "asset_name": result.asset_name,
+                    "scene_type": details.get("scene_type"),
+                    "tileset_url": (
+                        f"/api/v1/processing/jobs/{job_id}/scenes/"
+                        f"{result.id}/{tileset_path}"
+                    ),
+                    "bounds": details.get("bounds"),
+                    "file_count": details.get("file_count"),
+                    "published_bytes": details.get("published_bytes"),
+                    "asset_version": details.get("asset_version"),
+                }
+            )
+        return scenes
+
+
+@router.get("/jobs/{job_id}/scenes/{result_id}/{asset_path:path}")
+async def processing_scene_asset(
+    job_id: uuid.UUID,
+    result_id: uuid.UUID,
+    asset_path: str,
+) -> StreamingResponse:
+    normalized = asset_path.replace("\\", "/").strip("/")
+    parts = normalized.split("/")
+    if not normalized or ".." in parts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid scene asset path",
+        )
+
+    async with session_factory() as session:
+        result = await session.get(ProcessingResult, result_id)
+        if result is None or result.job_id != job_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="3D scene result not found",
+            )
+
+        details = result.details or {}
+        prefix = details.get("scene_prefix")
+        if details.get("scene_kind") != "3D_TILES" or not isinstance(prefix, str):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="3D scene is not published",
+            )
+
+        bucket = result.bucket
+        object_key = f"{prefix}/{normalized}"
+
+    client = create_storage_client()
+    try:
+        response = client.get_object(Bucket=bucket, Key=object_key)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="3D scene asset not found",
+        ) from exc
+
+    body = response["Body"]
+    content_type = response.get("ContentType") or "application/octet-stream"
+
+    def chunks():
+        try:
+            yield from body.iter_chunks(chunk_size=1024 * 1024)
+        finally:
+            body.close()
+
+    return StreamingResponse(
+        chunks(),
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

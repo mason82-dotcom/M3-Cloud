@@ -295,6 +295,18 @@ export interface ProcessingResult {
   created_at: string;
 }
 
+export interface ProcessingSceneInfo {
+  job_id: string;
+  result_id: string;
+  asset_name: string;
+  scene_type?: string | null;
+  tileset_url: string;
+  bounds?: [number, number, number, number] | null;
+  file_count?: number | null;
+  published_bytes?: number | null;
+  asset_version?: string | null;
+}
+
 export interface ProcessingMapInfo {
   job_id: string;
   result_id: string;

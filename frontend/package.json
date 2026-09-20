@@ -11,7 +11,11 @@
   "dependencies": {
     "maplibre-gl": "6.10.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "@deck.gl/core": "9.4.0",
+    "@deck.gl/geo-layers": "9.4.0",
+    "@deck.gl/maplibre": "9.4.0",
+    "@loaders.gl/3d-tiles": "4.5.1"
   },
   "devDependencies": {
     "@types/geojson": "7946.0.16",

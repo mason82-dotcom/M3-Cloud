@@ -8,6 +8,7 @@ import type {
   ProcessingJob,
   ProcessingMapInfo,
   ProcessingProfile,
+  ProcessingSceneInfo,
   ProcessingResult,
   SystemHealth,
   Vehicle,
@@ -162,6 +163,18 @@ export async function fetchProcessingMap(
     throw new Error(`Processing map request failed: ${response.status}`);
   }
   return response.json() as Promise<ProcessingMapInfo>;
+}
+
+export async function fetchProcessingScenes(
+  jobId: string,
+): Promise<ProcessingSceneInfo[]> {
+  const response = await fetch(
+    `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/scenes`,
+  );
+  if (!response.ok) {
+    throw new Error(`Processing scenes request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingSceneInfo[]>;
 }
 
 export function processingResultDownloadUrl(

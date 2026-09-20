@@ -5,6 +5,7 @@ import {
   fetchMedia,
   fetchProcessingMap,
   fetchProcessingResults,
+  fetchProcessingScenes,
   fetchProcessingJobs,
   fetchProcessingProfiles,
   processingResultDownloadUrl,
@@ -15,6 +16,7 @@ import type {
   ProcessingProfile,
   ProcessingResult,
 } from "./types";
+import { Processing3DView } from "./Processing3DView";
 import { ProcessingResultMap } from "./ProcessingResultMap";
 
 const ACTIVE_STATUSES = new Set([
@@ -110,6 +112,8 @@ export function ProcessingView() {
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<Record<string, ProcessingResult[]>>({});
   const [mapInfo, setMapInfo] = useState<Awaited<ReturnType<typeof fetchProcessingMap>>>(null);
+  const [scenes, setScenes] = useState<Awaited<ReturnType<typeof fetchProcessingScenes>>>([]);
+  const [scene, setScene] = useState<Awaited<ReturnType<typeof fetchProcessingScenes>>[number] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadResults = useCallback(async (jobId: string) => {
@@ -129,6 +133,21 @@ export function ProcessingView() {
         return;
       }
       setMapInfo(value);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, []);
+
+  const open3D = useCallback(async (jobId: string) => {
+    try {
+      const values = await fetchProcessingScenes(jobId);
+      if (values.length === 0) {
+        setError("Für diesen Job ist noch keine 3D-Tiles-Szene veröffentlicht.");
+        return;
+      }
+      setScenes(values);
+      setScene(values[0]);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -331,6 +350,9 @@ export function ProcessingView() {
                   <button onClick={() => void openMap(job.id)} type="button">
                     Orthophoto map
                   </button>
+                  <button onClick={() => void open3D(job.id)} type="button">
+                    3D viewer
+                  </button>
                   {(results[job.id] ?? []).map((result) => (
                     <a
                       href={processingResultDownloadUrl(job.id, result.id)}
@@ -352,6 +374,18 @@ export function ProcessingView() {
         <ProcessingResultMap
           info={mapInfo}
           onClose={() => setMapInfo(null)}
+        />
+      ) : null}
+
+      {scene ? (
+        <Processing3DView
+          scene={scene}
+          scenes={scenes}
+          onSelect={setScene}
+          onClose={() => {
+            setScene(null);
+            setScenes([]);
+          }}
         />
       ) : null}
     </div>
