@@ -2,7 +2,13 @@ import json
 
 import pytest
 
-from app.dji.protocol import ProtocolError, make_reply, parse_envelope, parse_property_message
+from app.dji.protocol import (
+    ProtocolError,
+    make_property_reply,
+    make_reply,
+    parse_envelope,
+    parse_property_message,
+)
 from app.dji.topics import TopicKind, parse_topic, status_reply_topic
 
 
@@ -59,3 +65,24 @@ def test_property_message_does_not_require_method() -> None:
     assert message.gateway == "RC123"
     assert message.from_sn == "M3E123"
     assert message.data["elevation"] == 10.5
+
+
+def test_property_reply_keeps_correlation_ids() -> None:
+    message = parse_property_message(
+        {
+            "tid": "t-state",
+            "bid": "b-state",
+            "timestamp": 1,
+            "need_reply": 1,
+            "data": {"home_latitude": 49.2},
+        }
+    )
+
+    reply = make_property_reply(message, timestamp_ms=2)
+
+    assert reply == {
+        "tid": "t-state",
+        "bid": "b-state",
+        "timestamp": 2,
+        "data": {"result": 0},
+    }
