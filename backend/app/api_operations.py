@@ -35,7 +35,7 @@ async def system_health(request: Request) -> dict[str, object]:
         "components": {
             "postgres": ready["services"]["postgres"],
             "redis": ready["services"]["redis"],
-            "storage": ready["services"]["minio"],
+            "storage": ready["services"]["object_storage"],
             "mqtt": ready["services"]["emqx"],
             "dji": {
                 "ok": dji_service is not None,
