@@ -6,13 +6,14 @@ from typing import Protocol
 from app.dji.protocol import (
     ProtocolError,
     encode_json,
+    make_property_reply,
     make_reply,
     parse_envelope,
     parse_property_message,
 )
 from app.dji.registry import DeviceRegistry
 from app.dji.telemetry import TelemetryStore
-from app.dji.topics import TopicKind, parse_topic, status_reply_topic
+from app.dji.topics import TopicKind, parse_topic, state_reply_topic, status_reply_topic
 
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,13 @@ class DJIMessageRouter:
                     kind=parsed.kind,
                     message=message,
                 )
+                if parsed.kind is TopicKind.STATE and message.need_reply:
+                    await self.publisher.publish(
+                        state_reply_topic(parsed.device_sn),
+                        encode_json(make_property_reply(message, result=0)),
+                        qos=0,
+                        retain=False,
+                    )
             except (ProtocolError, ValueError):
                 logger.warning("Ignoring invalid DJI property payload on %s", topic, exc_info=True)
             except Exception:
