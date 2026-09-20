@@ -9,6 +9,7 @@ class TopicKind(StrEnum):
     STATUS_REPLY = "status_reply"
     OSD = "osd"
     STATE = "state"
+    STATE_REPLY = "state_reply"
     EVENTS = "events"
     EVENTS_REPLY = "events_reply"
     REQUESTS = "requests"
@@ -75,6 +76,8 @@ def parse_topic(topic: str) -> ParsedTopic:
     if len(parts) >= 4 and parts[0] == "thing" and parts[1] == "product":
         gateway_sn = parts[2] or None
         suffix = "/".join(parts[3:])
+        if suffix == "state_reply":
+            return ParsedTopic(topic, gateway_sn, TopicKind.STATE_REPLY)
         return ParsedTopic(
             topic,
             gateway_sn,
@@ -86,3 +89,7 @@ def parse_topic(topic: str) -> ParsedTopic:
 
 def status_reply_topic(gateway_sn: str) -> str:
     return f"sys/product/{gateway_sn}/status_reply"
+
+
+def state_reply_topic(device_sn: str) -> str:
+    return f"thing/product/{device_sn}/state_reply"
