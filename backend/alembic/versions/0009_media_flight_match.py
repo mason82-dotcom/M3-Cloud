@@ -61,6 +61,19 @@ def upgrade() -> None:
         ),
     )
 
+    # Associations created before automatic matching existed were necessarily
+    # operator-selected. Preserve them as manual so future scans never replace them.
+    op.execute(
+        """
+        UPDATE media_datasets
+        SET
+            flight_assignment_source = 'MANUAL',
+            flight_match_status = 'MANUAL',
+            flight_match_candidates = json_build_array(flight_id::text)
+        WHERE flight_id IS NOT NULL
+        """
+    )
+
 
 def downgrade() -> None:
     op.drop_column("media_datasets", "flight_match_candidates")
