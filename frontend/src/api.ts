@@ -231,6 +231,27 @@ export async function createMissionDeployment(
   return response.json() as Promise<MissionDeployment>;
 }
 
+export async function uploadMissionDeployment(
+  missionId: string,
+  deploymentId: string,
+): Promise<MissionDeployment> {
+  const response = await fetch(
+    `/api/v1/missions/${encodeURIComponent(missionId)}/deployments/${encodeURIComponent(deploymentId)}/upload`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as {
+      detail?: string | { message?: string };
+    } | null;
+    const detail =
+      typeof body?.detail === "string"
+        ? body.detail
+        : body?.detail?.message;
+    throw new Error(detail ?? `Mission upload failed: ${response.status}`);
+  }
+  return response.json() as Promise<MissionDeployment>;
+}
+
 export function missionDeploymentDownloadUrl(
   missionId: string,
   deploymentId: string,

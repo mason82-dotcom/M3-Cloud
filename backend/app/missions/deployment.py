@@ -57,7 +57,7 @@ def build_deployment_package(
         "handoff": {
             "protocol": "MAVLINK_MISSION",
             "wire_ready": bool(compat.get("wire_ready")),
-            "upload_enabled": False,
+            "upload_enabled": True,
             "execution_enabled": False,
             "frame_policy": (
                 "EXPLICIT_PER_ITEM"
@@ -65,10 +65,11 @@ def build_deployment_package(
                 else "UNRESOLVED"
             ),
             "note": (
-                "This is an immutable handoff/audit package, not a flight command. "
-                "Wire-ready includes logical MISSION_ITEM_INT fields with runtime target IDs. "
-                "Null float params must be encoded as IEEE NaN. M3-Cloud still does not "
-                "upload or execute this plan."
+                "This is an immutable handoff/audit package. Wire-ready includes logical "
+                "MISSION_ITEM_INT fields with runtime target IDs. Null float params must be "
+                "encoded as IEEE NaN. M3-Cloud may upload this exact package into Lyrebird's "
+                "mission store when the server upload gate is enabled, but execution remains "
+                "disabled."
             ),
         },
     }

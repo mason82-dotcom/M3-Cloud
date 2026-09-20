@@ -12,8 +12,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api_operations import _registry
+from app.config import settings
 from app.database import session_factory
 from app.missions.deployment import build_deployment_package, deployment_sha256
+from app.missions.uploader import MissionUploadError
 from app.missions.plans import (
     compatibility,
     mission_state_name,
@@ -464,6 +466,19 @@ def _deployment_payload(deployment: MissionDeployment) -> dict[str, Any]:
         "preferred_executor": deployment.preferred_executor,
         "package_sha256": deployment.package_sha256,
         "package": deployment.package_json,
+        "upload_status": deployment.upload_status,
+        "upload_attempts": deployment.upload_attempts,
+        "last_upload_at": deployment.last_upload_at.isoformat() if deployment.last_upload_at else None,
+        "uploaded_at": deployment.uploaded_at.isoformat() if deployment.uploaded_at else None,
+        "upload_error": deployment.upload_error,
+        "upload_details": deployment.upload_details or {},
+        "upload_action_available": (
+            settings.mission_upload_enabled
+            and isinstance(deployment.package_json, dict)
+            and isinstance(deployment.package_json.get("handoff"), dict)
+            and deployment.package_json["handoff"].get("upload_enabled") is True
+            and deployment.upload_status not in {"UPLOADING", "UPLOADED"}
+        ),
         "created_at": deployment.created_at.isoformat(),
     }
 
@@ -614,3 +629,155 @@ async def download_mission_deployment(
             "Content-Length": str(len(payload)),
         },
     )
+
+
+
+@router.post("/{mission_id}/deployments/{deployment_id}/upload")
+async def upload_mission_deployment(
+    mission_id: uuid.UUID,
+    deployment_id: uuid.UUID,
+    request: Request,
+) -> dict[str, Any]:
+    """Upload a sealed plan into Lyrebird's mission store. This never starts execution."""
+
+    if not settings.mission_upload_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Mission upload is disabled by server configuration",
+        )
+
+    async with session_factory() as session:
+        deployment = await session.get(MissionDeployment, deployment_id)
+        if deployment is None or deployment.mission_id != mission_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission deployment not found",
+            )
+        if deployment.upload_status == "UPLOADED":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Mission deployment was already uploaded",
+            )
+        if deployment.upload_status == "UPLOADING":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Mission deployment upload is already in progress",
+            )
+
+        package = deployment.package_json or {}
+        handoff = package.get("handoff") if isinstance(package, dict) else None
+        if not isinstance(handoff, dict) or handoff.get("upload_enabled") is not True:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This sealed deployment is not upload-enabled",
+            )
+        if handoff.get("execution_enabled") is not False:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Deployment execution policy is not disabled",
+            )
+
+        vehicles = await _registry(request).list_vehicles()
+        vehicle = next(
+            (item for item in vehicles if item.sn == deployment.aircraft_sn),
+            None,
+        )
+        if vehicle is None or not vehicle.online:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Assigned aircraft is not online",
+            )
+
+        telemetry = vehicle.telemetry if isinstance(vehicle.telemetry, dict) else {}
+        mission_runtime = telemetry.get("mission")
+        state_code = (
+            mission_runtime.get("state")
+            if isinstance(mission_runtime, dict)
+            else None
+        )
+        state_name = mission_state_name(state_code)
+        if state_name in {"ACTIVE", "PAUSED"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Aircraft mission runtime is {state_name}; upload would replace an active plan",
+            )
+
+        now = datetime.now(timezone.utc)
+        deployment.upload_status = "UPLOADING"
+        deployment.upload_attempts += 1
+        deployment.last_upload_at = now
+        deployment.upload_error = None
+        deployment.upload_details = {}
+        await session.commit()
+
+    uploader = getattr(request.app.state, "mission_uploader", None)
+    if uploader is None:
+        error = MissionUploadError(
+            "UPLOADER_UNAVAILABLE",
+            "Mission uploader is not available",
+        )
+    else:
+        error = None
+
+    try:
+        if error is not None:
+            raise error
+        result = await uploader.upload(
+            package,
+            aircraft_sn=deployment.aircraft_sn,
+            preferred_executor=deployment.preferred_executor,
+        )
+    except MissionUploadError as exc:
+        async with session_factory() as session:
+            failed = await session.get(MissionDeployment, deployment_id)
+            if failed is not None:
+                failed.upload_status = "FAILED"
+                failed.upload_error = f"{exc.code}: {exc}"
+                failed.upload_details = {
+                    "code": exc.code,
+                    **exc.details,
+                    "execution_started": False,
+                }
+                await session.commit()
+
+        conflict_codes = {
+            "PACKAGE_NOT_UPLOADABLE",
+            "PACKAGE_EXECUTION_POLICY",
+            "WIRE_INVALID",
+            "WIRE_EMPTY",
+            "WIRE_SEQUENCE",
+            "NO_LYREBIRD_HOSTS",
+            "AIRCRAFT_NOT_FOUND",
+            "MAVLINK_ROUTE_UNAVAILABLE",
+            "EXECUTOR_UNSUPPORTED",
+            "EXECUTOR_UNVERIFIED",
+            "EXECUTOR_MISMATCH",
+            "REQUEST_OUT_OF_RANGE",
+        }
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+                if exc.code in conflict_codes
+                else status.HTTP_502_BAD_GATEWAY
+            ),
+            detail={
+                "message": str(exc),
+                "code": exc.code,
+                "details": exc.details,
+            },
+        ) from exc
+
+    async with session_factory() as session:
+        uploaded = await session.get(MissionDeployment, deployment_id)
+        if uploaded is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission deployment disappeared after upload",
+            )
+        uploaded.upload_status = "UPLOADED"
+        uploaded.uploaded_at = datetime.now(timezone.utc)
+        uploaded.upload_error = None
+        uploaded.upload_details = result.as_dict()
+        await session.commit()
+        await session.refresh(uploaded)
+        return _deployment_payload(uploaded)

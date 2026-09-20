@@ -118,6 +118,12 @@ class MissionDeployment(Base):
     preferred_executor: Mapped[str | None] = mapped_column(String(32), nullable=True)
     package_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     package_json: Mapped[dict[str, object]] = mapped_column(JSON)
+    upload_status: Mapped[str] = mapped_column(String(32), default="SEALED", index=True)
+    upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_upload_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    upload_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    upload_details: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 

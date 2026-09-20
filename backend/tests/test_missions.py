@@ -289,8 +289,10 @@ async def test_ready_mission_seals_immutable_non_executing_handoff(monkeypatch) 
     assert sealed["plan_sha256"] == created["plan_sha256"]
     assert sealed["aircraft_sn"] == "M3E-HANDOFF"
     assert sealed["package"]["preflight"]["checks_passed"] is True
-    assert sealed["package"]["handoff"]["upload_enabled"] is False
+    assert sealed["package"]["handoff"]["upload_enabled"] is True
     assert sealed["package"]["handoff"]["execution_enabled"] is False
+    assert sealed["upload_status"] == "SEALED"
+    assert sealed["upload_attempts"] == 0
     assert sealed["package"]["handoff"]["wire_ready"] is True
     assert sealed["package"]["handoff"]["frame_policy"] == "EXPLICIT_PER_ITEM"
     assert sealed["package"]["wire"]["message"] == "MISSION_ITEM_INT"

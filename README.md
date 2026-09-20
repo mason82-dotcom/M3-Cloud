@@ -432,3 +432,29 @@ GET  /api/v1/surveys/<survey-id>/manifest/download
 The Survey manifest is a point-in-time lineage export. It includes current Flight and MediaDataset
 associations, original media hashes/metadata, immutable ProcessingJob input snapshots, and archived
 ProcessingResult hashes/object keys. It does not modify or copy external originals.
+
+
+## Mission handoff upload
+
+Mission planning remains separated from aircraft execution. A READY revision can be sealed into an
+immutable handoff package and, when explicitly enabled, that exact package can be uploaded into
+Lyrebird's MAVLink mission store.
+
+```dotenv
+M3CLOUD_MISSION_UPLOAD_ENABLED=false
+M3CLOUD_MISSION_UPLOAD_TIMEOUT_SECONDS=6
+```
+
+Upload uses the standard MAVLink mission handshake
+`MISSION_COUNT -> MISSION_REQUEST_INT -> MISSION_ITEM_INT -> MISSION_ACK`. Before transfer,
+M3-Cloud verifies the physical aircraft serial, a live MAVLink route, and Lyrebird's reported
+`missionExecutor` against the executor sealed in the deployment. Upload is blocked while the
+aircraft reports an ACTIVE or PAUSED mission.
+
+```text
+POST /api/v1/missions/<mission-id>/deployments/<deployment-id>/upload
+```
+
+The action only replaces/stores the mission plan. M3-Cloud still exposes no mission start, pause,
+resume, land, RTH, or abort command. Old handoff packages sealed before upload support remain
+audit-only because immutable packages are never rewritten.

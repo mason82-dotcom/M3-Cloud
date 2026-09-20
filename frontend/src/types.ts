@@ -261,6 +261,13 @@ export interface MissionDeployment {
       note: string;
     };
   };
+  upload_status: "SEALED" | "UPLOADING" | "UPLOADED" | "FAILED" | string;
+  upload_attempts: number;
+  last_upload_at?: string | null;
+  uploaded_at?: string | null;
+  upload_error?: string | null;
+  upload_details: Record<string, unknown>;
+  upload_action_available: boolean;
   created_at: string;
 }
 

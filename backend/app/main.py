@@ -17,6 +17,7 @@ from app.health import readiness
 from app.live import LiveTelemetryHub, router as live_router
 from app.media.importer import MediaImporter
 from app.media.watcher import MediaImportWatcher
+from app.missions.uploader import MissionUploader
 from app.processing.service import ProcessingManager
 from app.api_operations import router as operations_router
 from app.redis_client import redis_client
@@ -49,6 +50,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.lyrebird_live = lyrebird_live
     app.state.lyrebird_mavlink_collector = lyrebird_mavlink_collector
+    app.state.mission_uploader = MissionUploader(lyrebird_mavlink_collector)
 
     processing_manager = ProcessingManager(
         session_factory,

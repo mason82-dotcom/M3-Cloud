@@ -2339,3 +2339,46 @@ button { font: inherit; }
   cursor: default;
   opacity: .45;
 }
+
+
+.missionDeployments {
+  display: grid;
+  gap: 7px;
+}
+
+.missionDeploymentRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0e151e;
+}
+
+.missionDeploymentRow > span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.missionDeploymentRow > button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.missionDeploymentRow > button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.missionDeploymentRow > small {
+  grid-column: 1 / -1;
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}

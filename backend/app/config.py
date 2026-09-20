@@ -109,6 +109,14 @@ class Settings(BaseSettings):
         default=5.0,
         validation_alias="M3CLOUD_LYREBIRD_MAVLINK_TTL_SECONDS",
     )
+    mission_upload_enabled: bool = Field(
+        default=False,
+        validation_alias="M3CLOUD_MISSION_UPLOAD_ENABLED",
+    )
+    mission_upload_timeout_seconds: float = Field(
+        default=6.0,
+        validation_alias="M3CLOUD_MISSION_UPLOAD_TIMEOUT_SECONDS",
+    )
 
     media_import_enabled: bool = Field(
         default=True,

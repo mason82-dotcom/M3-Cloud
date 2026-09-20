@@ -351,6 +351,10 @@ class LyrebirdMavlinkCollector:
         self._detection_frame: dict[str, int] = {}
         self._detection_targets: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self._heartbeat_task: asyncio.Task[None] | None = None
+        self._message_waiters: dict[
+            str,
+            list[tuple[Callable[[Any], bool], asyncio.Future[Any]]],
+        ] = defaultdict(list)
 
     def set_publisher(self, publisher: Callable[[str, dict[str, Any]], Awaitable[None]] | None) -> None:
         self._publisher = publisher
@@ -417,6 +421,107 @@ class LyrebirdMavlinkCollector:
     def route_status(self, host: str) -> dict[str, Any]:
         return {"system_id": self._system_by_host.get(host), "duplicate_system_id": self._duplicate_system.get(host)}
 
+    def message_waiter(
+        self,
+        host: str,
+        predicate: Callable[[Any], bool],
+    ) -> asyncio.Future[Any]:
+        future = asyncio.get_running_loop().create_future()
+        self._message_waiters[host].append((predicate, future))
+        return future
+
+    def remove_message_waiter(
+        self,
+        host: str,
+        future: asyncio.Future[Any],
+    ) -> None:
+        current = self._message_waiters.get(host, [])
+        self._message_waiters[host] = [
+            (predicate, item)
+            for predicate, item in current
+            if item is not future
+        ]
+
+    def _dispatch_message(self, host: str, message: Any) -> None:
+        current = self._message_waiters.get(host, [])
+        remaining: list[tuple[Callable[[Any], bool], asyncio.Future[Any]]] = []
+        for predicate, future in current:
+            if future.done():
+                continue
+            try:
+                matched = predicate(message)
+            except Exception:
+                matched = False
+            if matched:
+                future.set_result(message)
+            else:
+                remaining.append((predicate, future))
+        self._message_waiters[host] = remaining
+
+    def _mission_encoder(self, host: str) -> tuple[Any, bytearray, int]:
+        if self._transport is None:
+            raise RuntimeError("Lyrebird MAVLink collector is not running")
+        system_id = self._system_by_host.get(host)
+        if system_id is None or self._host_by_system.get(system_id) != host:
+            raise RuntimeError(f"No registered MAVLink route for {host}")
+
+        sink = bytearray()
+
+        class Sink:
+            def write(self, data: bytes) -> None:
+                sink.extend(data)
+
+        encoder = mavlink_common.MAVLink(
+            Sink(),
+            srcSystem=GCS_SYSTEM,
+            srcComponent=GCS_COMPONENT,
+        )
+        return encoder, sink, system_id
+
+    def send_mission_count(self, host: str, count: int) -> None:
+        encoder, sink, system_id = self._mission_encoder(host)
+        encoder.mission_count_send(
+            system_id,
+            AUTOPILOT_COMPONENT,
+            count,
+            0,
+        )
+        assert self._transport is not None
+        self._transport.sendto(
+            bytes(sink),
+            (host, settings.lyrebird_mavlink_peer_port),
+        )
+
+    def send_mission_item_int(self, host: str, item: dict[str, Any]) -> None:
+        encoder, sink, system_id = self._mission_encoder(host)
+
+        def number(name: str) -> float:
+            value = item.get(name)
+            return float("nan") if value is None else float(value)
+
+        encoder.mission_item_int_send(
+            system_id,
+            AUTOPILOT_COMPONENT,
+            int(item["seq"]),
+            int(item["frame"]),
+            int(item["command"]),
+            int(item.get("current", 0)),
+            int(item.get("autocontinue", 1)),
+            number("param1"),
+            number("param2"),
+            number("param3"),
+            number("param4"),
+            int(item["x"]),
+            int(item["y"]),
+            float(item["z"]),
+            int(item.get("mission_type", 0)),
+        )
+        assert self._transport is not None
+        self._transport.sendto(
+            bytes(sink),
+            (host, settings.lyrebird_mavlink_peer_port),
+        )
+
     def feed_datagram(self, data: bytes, host: str) -> None:
         allowed = {item.strip() for item in settings.lyrebird_hosts.split(",") if item.strip()}
         if host not in allowed:
@@ -464,6 +569,7 @@ class LyrebirdMavlinkCollector:
         for msg in messages:
             system_id, _ = self._identity(msg)
             if system_id != bound: continue
+            self._dispatch_message(host, msg)
             patch = normalize_mavlink_message(msg)
             if patch: _deep_merge(self._state[host], patch); changed = True
         if changed or heartbeat_system_id is not None: self._seen[host] = time.monotonic()

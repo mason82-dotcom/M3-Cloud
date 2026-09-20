@@ -1639,6 +1639,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             append("\"droneName\":\"${jsonEscape(droneName)}\",")
             append("\"aircraftSerialNumber\":\"${jsonEscape(droneSerialNumber)}\",")
             append("\"mavlinkSystemId\":${currentMavlinkSystemId()},")
+            val missionExecutor = MissionExecutor.fromPref(
+                sharedPreferences.getString(MavlinkEndpointConfig.PREF_MISSION_EXECUTOR, null)
+            )
+            append("\"missionExecutor\":\"${missionExecutor.prefValue}\",")
             append("\"videoSource\":\"${getVideoSourceMode().prefValue}\",")
             append("\"streamingMode\":\"${getStreamingMode().prefValue}\",")
             append("\"webrtcResolution\":\"${getWebRTCResolutionPreset().prefValue}\",")
@@ -1674,6 +1678,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             append("\"droneName\":\"identity\",")
             append("\"aircraftSerialNumber\":\"identity\",")
             append("\"mavlinkSystemId\":\"identity\",")
+            append("\"missionExecutor\":\"flight\",")
             append("\"detectedAircraft\":\"identity\",")
             append("\"controlProfile\":\"identity\",")
             append("\"videoSource\":\"video\",")

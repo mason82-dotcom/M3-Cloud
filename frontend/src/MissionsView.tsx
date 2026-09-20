@@ -14,6 +14,7 @@ import {
   fetchProjectSurveys,
   fetchVehicles,
   updateMission,
+  uploadMissionDeployment,
   missionDeploymentDownloadUrl,
   missionRevisionDownloadUrl,
 } from "./api";
@@ -351,6 +352,23 @@ export function MissionsView() {
     (vehicle) => vehicle.sn === selected?.aircraft_sn,
   );
 
+  const uploadHandoff = async (deployment: MissionDeployment) => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const updated = await uploadMissionDeployment(selected.id, deployment.id);
+      setDeployments((current) =>
+        current.map((item) => item.id === updated.id ? updated : item),
+      );
+      await load();
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const sealHandoff = async () => {
     if (!selected) return;
     setBusy(true);
@@ -515,9 +533,10 @@ export function MissionsView() {
         {selected ? (
           <>
             <div className="missionSafetyBanner">
-              <strong>Planning / observation only</strong>
+              <strong>Upload-only mission handoff</strong>
               <span>
-                M3-Cloud exposes no upload, start, pause, resume, land or abort action in R6.1.
+                M3-Cloud can store a sealed plan in Lyrebird when explicitly enabled. Start,
+                pause, resume, land, RTH and abort remain unavailable from M3-Cloud.
               </span>
             </div>
 
@@ -650,19 +669,32 @@ export function MissionsView() {
                       Seal current revision
                     </button>
                   </div>
-                  <div>
+                  <div className="missionDeployments">
                     {deployments.map((deployment) => (
-                      <a
-                        href={missionDeploymentDownloadUrl(selected.id, deployment.id)}
-                        key={deployment.id}
-                      >
-                        v{deployment.revision_version} · {deployment.package_sha256.slice(0, 8)}
-                        {deployment.package.wire ? ` · ${deployment.package.wire.items.length} wire items` : ""}
-                      </a>
+                      <div className="missionDeploymentRow" key={deployment.id}>
+                        <a
+                          href={missionDeploymentDownloadUrl(selected.id, deployment.id)}
+                        >
+                          v{deployment.revision_version} · {deployment.package_sha256.slice(0, 8)}
+                          {deployment.package.wire ? ` · ${deployment.package.wire.items.length} wire items` : ""}
+                        </a>
+                        <span>{deployment.upload_status}</span>
+                        <button
+                          disabled={busy || !deployment.upload_action_available}
+                          onClick={() => void uploadHandoff(deployment)}
+                          type="button"
+                        >
+                          Upload to Lyrebird
+                        </button>
+                        {deployment.upload_error ? (
+                          <small>{deployment.upload_error}</small>
+                        ) : null}
+                      </div>
                     ))}
                   </div>
                   <small>
-                    Audit/handoff only: package creation never uploads or starts the aircraft.
+                    Upload stores the exact sealed plan only. It never starts mission execution.
+                    Old handoff packages sealed before upload support remain audit-only.
                   </small>
                 </div>
 
