@@ -94,6 +94,11 @@ internal object CameraLiveSourceController {
         )
     }
 
+    /** Prime the listener/cache without blocking the caller. */
+    fun warmCache() {
+        ensureTracking()
+    }
+
     /**
      * Non-blocking live-source snapshot for frequently polled settings endpoints.
      *
