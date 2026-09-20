@@ -15,10 +15,14 @@ class SurveyCaptureRecordTest {
         eventEpochMs = 1_789_738_938_481L,
         mediaIndex = mediaIndex,
         lens = "WIDE",
-        latitudeDeg = 49.12345678,
-        longitudeDeg = 8.65432109,
+        latitudeDeg = 49.12345680,
+        longitudeDeg = 8.65432111,
         altitudeAslM = 143.278,
         altitudeAglM = 72.43,
+        positionSource = "RTK_FUSED",
+        flightControllerLatitudeDeg = 49.12345678,
+        flightControllerLongitudeDeg = 8.65432109,
+        flightControllerAltitudeM = 143.278,
         satelliteCount = 29,
         headingDeg = 132.7,
         aircraftRollDeg = -0.7,
@@ -31,6 +35,7 @@ class SurveyCaptureRecordTest {
         gimbalJointPitchDeg = -89.9,
         gimbalJointYawDeg = 0.1,
         rtkEnabled = true,
+        rtkConnected = true,
         rtkHealthy = true,
         rtkFix = "FIXED",
         rtkRawFix = "FIXED",
@@ -38,6 +43,9 @@ class SurveyCaptureRecordTest {
         rtkLatitudeDeg = 49.12345679,
         rtkLongitudeDeg = 8.65432110,
         rtkAltitudeM = 143.281,
+        rtkFusedLatitudeDeg = 49.12345680,
+        rtkFusedLongitudeDeg = 8.65432111,
+        rtkFusedAltitudeM = 143.284,
         rtkStdLatitudeM = 0.014,
         rtkStdLongitudeM = 0.012,
         rtkStdAltitudeM = stdAltitude,
@@ -46,11 +54,15 @@ class SurveyCaptureRecordTest {
     )
 
     @Test
-    fun recordKeepsFlightAndRawRtkPositionsSeparate() {
+    fun recordKeepsResolvedFcRawRtkAndFusedRtkPositionsSeparate() {
         val fields = record().toLogFields()
 
-        assertEquals(49.12345678, fields["latitude"])
+        assertEquals(49.12345680, fields["latitude"])
+        assertEquals("RTK_FUSED", fields["positionSource"])
+        assertEquals(49.12345678, fields["flightControllerLatitude"])
         assertEquals(49.12345679, fields["rtkLatitude"])
+        assertEquals(49.12345680, fields["rtkFusedLatitude"])
+        assertEquals(true, fields["rtkConnected"])
         assertEquals("FIXED", fields["rtkFix"])
         assertEquals(183L, fields["rtkAgeMs"])
         assertEquals("WIDE", fields["lens"])
