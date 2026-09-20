@@ -1752,12 +1752,26 @@ object DroneController {
     private const val RTH_ALTITUDE_SET_MAX_ATTEMPTS = 2
     private const val RTH_ALTITUDE_SET_RETRY_DELAY_MS = 500L
 
+    private enum class FlightLimitReadStatus(val wireValue: String) {
+        NOT_REPORTED("not_reported"),
+        CONFIRMED("confirmed"),
+        STALE("stale")
+    }
+
     @Volatile private var cachedRTHAltitude: Int = -1
-        @Volatile private var requestedRTHAltitude: Int = -1
+    @Volatile private var requestedRTHAltitude: Int = -1
     @Volatile private var cachedMaxFlightHeight: Int = -1
     @Volatile private var cachedMaxFlightDistance: Int = -1
-    @Volatile private var cachedDistanceLimitEnabled: Boolean = false
+    // Nullable internally so "aircraft reported false" is not conflated with "no value received".
+    @Volatile private var cachedDistanceLimitEnabled: Boolean? = null
+    @Volatile private var rthAltitudeReadStatus = FlightLimitReadStatus.NOT_REPORTED
+    @Volatile private var maxFlightHeightReadStatus = FlightLimitReadStatus.NOT_REPORTED
+    @Volatile private var maxFlightDistanceReadStatus = FlightLimitReadStatus.NOT_REPORTED
+    @Volatile private var distanceLimitEnabledReadStatus = FlightLimitReadStatus.NOT_REPORTED
     @Volatile private var flightLimitListenersRegistered: Boolean = false
+    @Volatile private var lastFlightLimitRefreshMs: Long = 0L
+
+    private const val FLIGHT_LIMIT_REFRESH_MIN_INTERVAL_MS = 1_000L
 
     // .get(default) only reads KeyManager's cache and never triggers a live fetch, so these
     // stayed at their -1/false fallback forever even with the aircraft connected. Register
@@ -1771,11 +1785,53 @@ object DroneController {
     // LB_RTH_ALT. Each listener is therefore paired with one live fetch to seed the cache; the
     // listener then keeps it current.
     private fun setupFlightLimitListeners() {
-        if (flightLimitListenersRegistered) return
-        goHomeHeightKey.listen(this) { newValue: Int? -> cachedRTHAltitude = newValue ?: -1 }
-        maxFlightHeightKey.listen(this) { newValue: Int? -> cachedMaxFlightHeight = newValue ?: -1 }
-        maxFlightDistanceKey.listen(this) { newValue: Int? -> cachedMaxFlightDistance = newValue ?: -1 }
-        distanceLimitEnabledKey.listen(this) { newValue: Boolean? -> cachedDistanceLimitEnabled = newValue ?: false }
+        if (flightLimitListenersRegistered) {
+            refreshFlightLimitsIfNeeded()
+            return
+        }
+
+        goHomeHeightKey.listen(this) { newValue: Int? ->
+            if (newValue != null) {
+                cachedRTHAltitude = newValue
+                rthAltitudeReadStatus = FlightLimitReadStatus.CONFIRMED
+            } else {
+                // MSDK may emit a transient null while the key is temporarily unavailable.
+                // Never destroy a value the aircraft already confirmed.
+                rthAltitudeReadStatus =
+                    if (cachedRTHAltitude >= 0) FlightLimitReadStatus.STALE
+                    else FlightLimitReadStatus.NOT_REPORTED
+            }
+        }
+        maxFlightHeightKey.listen(this) { newValue: Int? ->
+            if (newValue != null) {
+                cachedMaxFlightHeight = newValue
+                maxFlightHeightReadStatus = FlightLimitReadStatus.CONFIRMED
+            } else {
+                maxFlightHeightReadStatus =
+                    if (cachedMaxFlightHeight >= 0) FlightLimitReadStatus.STALE
+                    else FlightLimitReadStatus.NOT_REPORTED
+            }
+        }
+        maxFlightDistanceKey.listen(this) { newValue: Int? ->
+            if (newValue != null) {
+                cachedMaxFlightDistance = newValue
+                maxFlightDistanceReadStatus = FlightLimitReadStatus.CONFIRMED
+            } else {
+                maxFlightDistanceReadStatus =
+                    if (cachedMaxFlightDistance >= 0) FlightLimitReadStatus.STALE
+                    else FlightLimitReadStatus.NOT_REPORTED
+            }
+        }
+        distanceLimitEnabledKey.listen(this) { newValue: Boolean? ->
+            if (newValue != null) {
+                cachedDistanceLimitEnabled = newValue
+                distanceLimitEnabledReadStatus = FlightLimitReadStatus.CONFIRMED
+            } else {
+                distanceLimitEnabledReadStatus =
+                    if (cachedDistanceLimitEnabled != null) FlightLimitReadStatus.STALE
+                    else FlightLimitReadStatus.NOT_REPORTED
+            }
+        }
         flightLimitListenersRegistered = true
         seedFlightLimits()
     }
@@ -1788,22 +1844,83 @@ object DroneController {
      * confident wrong answer.
      */
     private fun seedFlightLimits() {
+        lastFlightLimitRefreshMs = System.currentTimeMillis()
+
         goHomeHeightKey.get(
-            { value -> value?.let { cachedRTHAltitude = it } },
-            { error -> Log.w("DroneController", "Could not read RTH altitude: ${error.description()}") }
+            { value ->
+                if (value != null) {
+                    cachedRTHAltitude = value
+                    rthAltitudeReadStatus = FlightLimitReadStatus.CONFIRMED
+                }
+            },
+            { error ->
+                rthAltitudeReadStatus =
+                    if (cachedRTHAltitude >= 0) FlightLimitReadStatus.STALE
+                    else FlightLimitReadStatus.NOT_REPORTED
+                Log.w("DroneController", "Could not read RTH altitude: ${error.description()}")
+            }
         )
         maxFlightHeightKey.get(
-            { value -> value?.let { cachedMaxFlightHeight = it } },
-            { error -> Log.w("DroneController", "Could not read max flight height: ${error.description()}") }
+            { value ->
+                if (value != null) {
+                    cachedMaxFlightHeight = value
+                    maxFlightHeightReadStatus = FlightLimitReadStatus.CONFIRMED
+                }
+            },
+            { error ->
+                maxFlightHeightReadStatus =
+                    if (cachedMaxFlightHeight >= 0) FlightLimitReadStatus.STALE
+                    else FlightLimitReadStatus.NOT_REPORTED
+                Log.w("DroneController", "Could not read max flight height: ${error.description()}")
+            }
         )
         maxFlightDistanceKey.get(
-            { value -> value?.let { cachedMaxFlightDistance = it } },
-            { error -> Log.w("DroneController", "Could not read max flight distance: ${error.description()}") }
+            { value ->
+                if (value != null) {
+                    cachedMaxFlightDistance = value
+                    maxFlightDistanceReadStatus = FlightLimitReadStatus.CONFIRMED
+                }
+            },
+            { error ->
+                maxFlightDistanceReadStatus =
+                    if (cachedMaxFlightDistance >= 0) FlightLimitReadStatus.STALE
+                    else FlightLimitReadStatus.NOT_REPORTED
+                Log.w("DroneController", "Could not read max flight distance: ${error.description()}")
+            }
         )
         distanceLimitEnabledKey.get(
-            { value -> value?.let { cachedDistanceLimitEnabled = it } },
-            { error -> Log.w("DroneController", "Could not read distance limit: ${error.description()}") }
+            { value ->
+                if (value != null) {
+                    cachedDistanceLimitEnabled = value
+                    distanceLimitEnabledReadStatus = FlightLimitReadStatus.CONFIRMED
+                }
+            },
+            { error ->
+                distanceLimitEnabledReadStatus =
+                    if (cachedDistanceLimitEnabled != null) FlightLimitReadStatus.STALE
+                    else FlightLimitReadStatus.NOT_REPORTED
+                Log.w("DroneController", "Could not read distance limit: ${error.description()}")
+            }
         )
+    }
+
+    /**
+     * Retry a transiently unavailable flight-limit key, but never hammer KeyManager from a
+     * polling ground station. A confirmed snapshot needs no refresh; stale/not-reported values
+     * are retried at most once per second.
+     */
+    @Synchronized
+    private fun refreshFlightLimitsIfNeeded() {
+        val needsRefresh =
+            rthAltitudeReadStatus != FlightLimitReadStatus.CONFIRMED ||
+                maxFlightHeightReadStatus != FlightLimitReadStatus.CONFIRMED ||
+                maxFlightDistanceReadStatus != FlightLimitReadStatus.CONFIRMED ||
+                distanceLimitEnabledReadStatus != FlightLimitReadStatus.CONFIRMED
+        if (!needsRefresh) return
+
+        val now = System.currentTimeMillis()
+        if (now - lastFlightLimitRefreshMs < FLIGHT_LIMIT_REFRESH_MIN_INTERVAL_MS) return
+        seedFlightLimits()
     }
 
     fun getRTHAltitude(): Int {
@@ -1817,11 +1934,13 @@ object DroneController {
         return cachedRTHAltitude.takeIf { it >= 0 } ?: requestedRTHAltitude
     }
 
-    /** confirmed, pending, or not_reported when the DJI key has not answered yet. */
-    fun getRTHAltitudeStatus(): String = when {
-        cachedRTHAltitude >= 0 -> "confirmed"
-        requestedRTHAltitude >= 0 -> "pending"
-        else -> "not_reported"
+    /** confirmed, stale, pending, or not_reported. */
+    fun getRTHAltitudeStatus(): String {
+        setupFlightLimitListeners()
+        return when {
+            requestedRTHAltitude >= 0 && cachedRTHAltitude != requestedRTHAltitude -> "pending"
+            else -> rthAltitudeReadStatus.wireValue
+        }
     }
 
     /**
@@ -1839,6 +1958,7 @@ object DroneController {
                 altitude,
                 {
                     cachedRTHAltitude = altitude
+                    rthAltitudeReadStatus = FlightLimitReadStatus.CONFIRMED
                     requestedRTHAltitude = -1
                     ToastUtils.showToast("RTH altitude set to $altitude m")
                     onResult?.invoke(true)
@@ -1872,6 +1992,11 @@ object DroneController {
         return cachedMaxFlightHeight
     }
 
+    fun getMaxFlightHeightStatus(): String {
+        setupFlightLimitListeners()
+        return maxFlightHeightReadStatus.wireValue
+    }
+
     fun setMaxFlightHeight(height: Int) {
         maxFlightHeightKey.set(height)
         ToastUtils.showToast("Max flight height set to $height m")
@@ -1882,6 +2007,11 @@ object DroneController {
         return cachedMaxFlightDistance
     }
 
+    fun getMaxFlightDistanceStatus(): String {
+        setupFlightLimitListeners()
+        return maxFlightDistanceReadStatus.wireValue
+    }
+
     fun setMaxFlightDistance(distance: Int) {
         maxFlightDistanceKey.set(distance)
         ToastUtils.showToast("Max flight distance set to $distance m")
@@ -1889,7 +2019,12 @@ object DroneController {
 
     fun getDistanceLimitEnabled(): Boolean {
         setupFlightLimitListeners()
-        return cachedDistanceLimitEnabled
+        return cachedDistanceLimitEnabled ?: false
+    }
+
+    fun getDistanceLimitEnabledStatus(): String {
+        setupFlightLimitListeners()
+        return distanceLimitEnabledReadStatus.wireValue
     }
 
     fun setDistanceLimitEnabled(enabled: Boolean) {
