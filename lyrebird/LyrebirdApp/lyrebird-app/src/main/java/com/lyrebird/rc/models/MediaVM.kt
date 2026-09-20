@@ -88,16 +88,17 @@ class MediaVM : DJIViewModel() {
             })
     }
 
-    // Pull the file list and BLOCK until the camera signals the refresh is done — either the
-    // MediaFileListState reaches UP_TO_DATE or the pull's own completion callback fires, whichever
-    // comes first. Returns the fresh list straight from the media manager. Event-driven: the wait
-    // ends on the SDK's completion signal, not a fixed delay. [timeoutMs] is only a safety cap so a
-    // stalled link can't block the worker forever. Call from a worker thread.
-    //
-    // [count] caps how many files to fetch (-1 = the whole card); pair with [orderType] = NEW_FIRST
-    // to fetch only the newest few, which is far cheaper than the whole list once the card is full.
-    // Order/list contents never affect this app's correctness (callers filter by fileIndex), so the
-    // defaults reproduce the original full-list pull.
+    /**
+     * Pull the media list and block until MSDK reports MediaFileListState.UP_TO_DATE.
+     *
+     * The action callback's onSuccess means the pull request itself succeeded; it is not the
+     * documented signal that the refreshed list is ready to consume. Returning on that callback
+     * could expose the previous list and make a just-captured file look unresolved.
+     *
+     * Failure and timeout return an empty list instead of a stale snapshot. Call from a worker
+     * thread. [count] = -1 requests the whole card; NEW_FIRST with a finite count is preferred
+     * for survey reconciliation.
+     */
     fun pullAndAwait(
         timeoutMs: Long,
         count: Int = -1,
@@ -105,29 +106,45 @@ class MediaVM : DJIViewModel() {
     ): List<MediaFile> {
         val manager = MediaDataCenter.getInstance().mediaManager
         val latch = CountDownLatch(1)
+        val failure = java.util.concurrent.atomic.AtomicReference<IDJIError?>(null)
         val stateListener = MediaFileListStateListener { state ->
             if (state == MediaFileListState.UP_TO_DATE) latch.countDown()
         }
         manager.addMediaFileListStateListener(stateListener)
+        var completed = false
         try {
-            // Issue the pull on the main looper (matches how the rest of the app drives the SDK),
-            // then block the calling worker on the latch.
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 val builder = PullMediaFileListParam.Builder().mediaFileIndex(-1).count(count)
                 if (orderType != null) builder.orderType(orderType)
                 manager.pullMediaFileListFromCamera(
                     builder.build(),
                     object : CommonCallbacks.CompletionCallback {
-                        override fun onSuccess() { latch.countDown() }
-                        override fun onFailure(error: IDJIError) { latch.countDown() }
+                        override fun onSuccess() {
+                            // Request accepted. Wait for UP_TO_DATE before reading the list.
+                        }
+
+                        override fun onFailure(error: IDJIError) {
+                            failure.set(error)
+                            latch.countDown()
+                        }
                     }
                 )
             }
-            latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+            completed = latch.await(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
+            return emptyList()
         } finally {
             manager.removeMediaFileListStateListener(stateListener)
+        }
+
+        failure.get()?.let {
+            LogUtils.e(logTag, "media list pull failed: ${it.description()}")
+            return emptyList()
+        }
+        if (!completed) {
+            LogUtils.e(logTag, "media list pull timed out after ${timeoutMs}ms")
+            return emptyList()
         }
         return manager.mediaFileListData?.data ?: emptyList()
     }
@@ -224,6 +241,29 @@ class MediaVM : DJIViewModel() {
         })
     }
 
+    /**
+     * Low-level shutter only. The caller is responsible for preparing a valid photo mode/profile.
+     * Keeping this primitive separate prevents a shutter helper from silently overwriting an
+     * M3E/M3T/M3M-specific capture configuration.
+     */
+    fun triggerPhoto(callback: CommonCallbacks.CompletionCallback) {
+        val index = componentIndex.value
+        if (index == null) {
+            CallbackUtils.onFailure(callback, DJICommonError.FACTORY.build(DJICommonError.DISCONNECTED))
+            return
+        }
+        RxUtil.performActionWithOutResult(createKey(CameraKey.KeyStartShootPhoto, index))
+            .subscribe({ CallbackUtils.onSuccess(callback) }) { throwable: Throwable ->
+                CallbackUtils.onFailure(callback, (throwable as RxError).djiError)
+            }
+    }
+
+    /**
+     * UI compatibility helper: prepare ordinary PHOTO_NORMAL, then trigger one shutter.
+     *
+     * Autonomous/survey code should prepare its platform-specific profile first and call
+     * [triggerPhoto] so M3M multispectral or M3T thermal settings are not accidentally reset.
+     */
     fun takePhoto(callback: CommonCallbacks.CompletionCallback) {
         val index = componentIndex.value
         if (index == null) {
@@ -231,20 +271,16 @@ class MediaVM : DJIViewModel() {
             return
         }
         val modeKey = createKey<CameraMode>(CameraKey.KeyCameraMode, index)
-        val shoot = RxUtil.performActionWithOutResult(createKey(CameraKey.KeyStartShootPhoto, index))
-        // Switching VIDEO->PHOTO on the camera costs a couple of seconds. We no longer restore
-        // video after a capture, so the camera is usually already in PHOTO_NORMAL from a prior
-        // shot — skip the redundant mode set in that case and shoot straight away.
-        val capture =
-            if (KeyManager.getInstance().getValue(modeKey) == CameraMode.PHOTO_NORMAL) shoot
-            else RxUtil.setValue(modeKey, CameraMode.PHOTO_NORMAL).andThen(shoot)
-        capture
-            .subscribe({ CallbackUtils.onSuccess(callback) }
-            ) { throwable: Throwable ->
-                CallbackUtils.onFailure(
-                    callback,
-                    (throwable as RxError).djiError
-                )
+        val prepare =
+            if (KeyManager.getInstance().getValue(modeKey) == CameraMode.PHOTO_NORMAL) {
+                io.reactivex.rxjava3.core.Completable.complete()
+            } else {
+                RxUtil.setValue(modeKey, CameraMode.PHOTO_NORMAL)
+            }
+        prepare
+            .andThen(RxUtil.performActionWithOutResult(createKey(CameraKey.KeyStartShootPhoto, index)))
+            .subscribe({ CallbackUtils.onSuccess(callback) }) { throwable: Throwable ->
+                CallbackUtils.onFailure(callback, (throwable as RxError).djiError)
             }
     }
 
