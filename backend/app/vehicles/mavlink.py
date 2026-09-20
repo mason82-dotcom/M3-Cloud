@@ -215,7 +215,8 @@ def normalize_mavlink_message(msg: Any) -> dict[str, Any]:
             "relative_altitude_m": msg.relative_alt / 1000.0,
             "velocity_north_mps": msg.vx / 100.0,
             "velocity_east_mps": msg.vy / 100.0,
-            # MAVLink GLOBAL_POSITION_INT.vz is NED: positive down. Keep that fact explicit.\n            "velocity_down_mps": msg.vz / 100.0,
+            # MAVLink GLOBAL_POSITION_INT.vz is NED: positive down. Keep that fact explicit.
+            "velocity_down_mps": msg.vz / 100.0,
             "heading_deg": _heading_deg(msg.hdg),
         }
     if kind == "GPS_RAW_INT":
