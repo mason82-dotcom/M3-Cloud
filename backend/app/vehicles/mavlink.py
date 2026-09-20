@@ -2,17 +2,112 @@ from __future__ import annotations
 
 import asyncio
 import math
+import struct
 import time
 from collections import defaultdict
 from typing import Any
 
 from pymavlink.dialects.v20 import common as mavlink_common
+from pymavlink.generator.mavcrc import x25crc
 
 from app.config import settings
 
 AUTOPILOT_COMPONENT = 1
 GCS_SYSTEM = 255
 GCS_COMPONENT = 190
+MAVLINK2_MAGIC = 0xFD
+
+LYREBIRD_STATUS_ID = 42100
+LYREBIRD_STATUS_STRUCT = "<IiiffIIIHHHhhHHHBBB24s"
+LYREBIRD_STATUS_SIZE = 75
+LYREBIRD_STATUS_CRC_EXTRA = 196
+LYREBIRD_CONFIG_ID = 42101
+LYREBIRD_CONFIG_STRUCT = "<HHB20s16s12s"
+LYREBIRD_CONFIG_SIZE = 53
+LYREBIRD_CONFIG_CRC_EXTRA = 201
+
+LB_FLAG_MANUAL_OVERRIDE = 1
+LB_FLAG_READY_TO_TAKEOFF = 2
+LB_FLAG_HOME_SET = 4
+LB_FLAG_LRF_TARGET_VALID = 8
+LB_CONFIG_FLAG_HAS_THERMAL = 1
+
+def _trim(raw: bytes) -> str:
+    return raw.split(b"\x00", 1)[0].decode("utf-8", "replace").strip()
+
+def _checksum_ok(frame: bytes, crc_extra: int) -> bool:
+    if len(frame) < 12 or frame[0] != MAVLINK2_MAGIC:
+        return False
+    payload_length = frame[1]
+    end = 10 + payload_length
+    if len(frame) < end + 2:
+        return False
+    crc = x25crc(frame[1:end])
+    crc.accumulate(bytes([crc_extra]))
+    return crc.crc == (frame[end] | frame[end + 1] << 8)
+
+def _mavlink2_frames(data: bytes):
+    """Yield complete MAVLink-2 frames from a UDP datagram, including signed frames."""
+    offset = 0
+    while offset + 12 <= len(data):
+        if data[offset] != MAVLINK2_MAGIC:
+            offset += 1
+            continue
+        payload_length = data[offset + 1]
+        signed = bool(data[offset + 2] & 0x01)
+        size = 10 + payload_length + 2 + (13 if signed else 0)
+        if offset + size > len(data):
+            return
+        yield data[offset:offset + size]
+        offset += size
+
+def decode_lyrebird_frame(frame: bytes) -> dict[str, Any]:
+    if len(frame) < 12 or frame[0] != MAVLINK2_MAGIC:
+        return {}
+    message_id = int.from_bytes(frame[7:10], "little")
+    payload = frame[10:10 + frame[1]]
+    if message_id == LYREBIRD_CONFIG_ID:
+        if not _checksum_ok(frame, LYREBIRD_CONFIG_CRC_EXTRA):
+            return {}
+        http_port, telemetry_port, flags, name, ip, video = struct.unpack(
+            LYREBIRD_CONFIG_STRUCT, payload.ljust(LYREBIRD_CONFIG_SIZE, b"\x00")
+        )
+        return {"lyrebird": {"config": {
+            "drone_name": _trim(name), "ip_address": _trim(ip),
+            "http_port": http_port, "telemetry_port": telemetry_port,
+            "video_mode": _trim(video), "has_thermal": bool(flags & LB_CONFIG_FLAG_HAS_THERMAL),
+        }}}
+    if message_id != LYREBIRD_STATUS_ID or not _checksum_ok(frame, LYREBIRD_STATUS_CRC_EXTRA):
+        return {}
+    values = struct.unpack(LYREBIRD_STATUS_STRUCT, payload.ljust(LYREBIRD_STATUS_SIZE, b"\x00"))
+    (_boot, lrf_lat, lrf_lon, lrf_alt, max_radius, waypoint_seq, yaw_seq, altitude_seq,
+     go_home_s, land_s, total_s, gimbal_pitch, gimbal_roll, zoom_fl, optical_fl, hybrid_fl,
+     battery_home, battery_land, flags, reason) = values
+    patch: dict[str, Any] = {
+        "safety": {
+            "manual_override": bool(flags & LB_FLAG_MANUAL_OVERRIDE),
+            "ready_to_takeoff": bool(flags & LB_FLAG_READY_TO_TAKEOFF),
+            "takeoff_block_reason": _trim(reason) or None,
+        },
+        "home_set": bool(flags & LB_FLAG_HOME_SET),
+        "gimbal": {"joint_pitch_deg": gimbal_pitch / 100.0, "joint_roll_deg": gimbal_roll / 100.0},
+        "camera": {
+            "zoom_focal_length_mm": zoom_fl or None,
+            "optical_focal_length_mm": optical_fl or None,
+            "hybrid_focal_length_mm": hybrid_fl or None,
+        },
+        "flight_budget": {
+            "max_radius_returnable_m": max_radius,
+            "time_to_home_s": go_home_s, "time_to_land_s": land_s, "total_flight_time_s": total_s,
+            "battery_to_home_percent": battery_home, "battery_to_land_percent": battery_land,
+        },
+        "reach": {"waypoint_seq": waypoint_seq, "yaw_seq": yaw_seq, "altitude_seq": altitude_seq},
+    }
+    if flags & LB_FLAG_LRF_TARGET_VALID:
+        patch.setdefault("lrf", {})["target"] = {
+            "latitude": lrf_lat / 1e7, "longitude": lrf_lon / 1e7, "altitude_m": lrf_alt
+        }
+    return patch
 
 def _heading_deg(value: int) -> float | None:
     if value == 65535:
@@ -69,6 +164,22 @@ def normalize_mavlink_message(msg: Any) -> dict[str, Any]:
     if kind == "RC_CHANNELS":
         rssi = int(msg.rssi)
         return {"controller": {"airlink_rssi_raw": None if rssi == 255 else rssi}}
+    if kind == "DISTANCE_SENSOR":
+        return {"lrf": {"distance_m": msg.current_distance / 100.0}}
+    if kind == "CAMERA_CAPTURE_STATUS":
+        return {"camera": {"recording": int(msg.video_status) == 1}}
+    if kind == "GIMBAL_DEVICE_ATTITUDE_STATUS":
+        q = tuple(float(v) for v in msg.q)
+        if len(q) == 4:
+            w, x, y, z = q
+            roll = math.atan2(2 * (w*x + y*z), 1 - 2 * (x*x + y*y))
+            pitch = math.asin(max(-1.0, min(1.0, 2 * (w*y - z*x))))
+            yaw = math.atan2(2 * (w*z + x*y), 1 - 2 * (y*y + z*z))
+            gimbal = {"roll_deg": math.degrees(roll), "pitch_deg": math.degrees(pitch), "yaw_deg": math.degrees(yaw)}
+            delta_yaw = getattr(msg, "delta_yaw", None)
+            if delta_yaw is not None and math.isfinite(float(delta_yaw)):
+                gimbal["joint_yaw_deg"] = math.degrees(float(delta_yaw))
+            return {"gimbal": gimbal}
     return {}
 
 def _deep_merge(base: dict[str, Any], update: dict[str, Any]) -> None:
@@ -124,6 +235,13 @@ class LyrebirdMavlinkCollector:
             parser = mavlink_common.MAVLink(None)
             parser.robust_parsing = True
             self._parsers[host] = parser
+        # The common dialect intentionally cannot decode Lyrebird's private message ids.
+        # Decode those from their MAVLink-2 frames first; lyrebird.xml remains the wire contract.
+        for frame in _mavlink2_frames(data):
+            patch = decode_lyrebird_frame(frame)
+            if patch:
+                _deep_merge(self._state[host], patch)
+                self._seen[host] = time.monotonic()
         for msg in parser.parse_buffer(data) or []:
             header = msg.get_header()
             if getattr(header, "srcComponent", None) == AUTOPILOT_COMPONENT or msg.get_type() in {
