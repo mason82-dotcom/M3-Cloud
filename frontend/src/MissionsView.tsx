@@ -686,6 +686,20 @@ export function MissionsView() {
                         >
                           Upload to Lyrebird
                         </button>
+                        {deployment.upload_status === "UPLOADED" ? (
+                          <small className="missionUploadVerified">
+                            verified · host {String(deployment.upload_details.host ?? "—")} ·
+                            sys {String(deployment.upload_details.system_id ?? "—")} ·
+                            executor {String(deployment.upload_details.executor ?? "—")} ·
+                            read-back {String(deployment.upload_details.readback_item_count ?? "—")} items ·
+                            fingerprint {String(deployment.upload_details.readback_runtime_mission_id ?? "—")}
+                          </small>
+                        ) : null}
+                        {deployment.upload_status === "UPLOAD_UNVERIFIED" ? (
+                          <small className="missionUploadUnverified">
+                            Aircraft acknowledged the upload, but read-back verification failed.
+                          </small>
+                        ) : null}
                         {deployment.upload_error ? (
                           <small>{deployment.upload_error}</small>
                         ) : null}
