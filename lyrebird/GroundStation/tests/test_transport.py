@@ -366,11 +366,16 @@ def test_shared_router_routes_commands_to_the_registered_aircraft_endpoint():
         channel_a._send_frame(channel_a._frame_command(CMD_NAV_TAKEOFF, [0] * 7))
         channel_b._send_frame(channel_b._frame_command(CMD_NAV_TAKEOFF, [0] * 7))
 
-        assert [address for _, address in sent] == [
+        commands = [
+            (frame, address)
+            for frame, address in sent
+            if _decode(frame).get_type() == "COMMAND_LONG"
+        ]
+        assert [address for _, address in commands] == [
             ("10.0.0.1", 14550),
             ("10.0.0.2", 14550),
         ]
-        assert [_decode(frame).target_system for frame, _ in sent] == [41, 42]
+        assert [_decode(frame).target_system for frame, _ in commands] == [41, 42]
     finally:
         channel_a.close()
         channel_b.close()
