@@ -350,7 +350,9 @@ object Payload {
     // Fire one shutter and return the thermal, wide-visual (RGB) and zoom MediaFiles from it.
     // Internal helper for captureThermal. Blocking, call from a worker thread.
     private fun takeThermalAndVisual(mediaVM: MediaVM): ThermalCapture {
-        val newFiles = captureNewMediaFiles(mediaVM)
+        val caps = cameraCapabilities()
+        val profile = CameraCaptureConfigurator.thermalProfile(caps)
+        val newFiles = captureNewMediaFiles(mediaVM, profile)
         if (newFiles.isEmpty()) return ThermalCapture(null, null, null)
 
         val variants = LinkedHashMap<String, MediaFile>()
@@ -418,7 +420,9 @@ object Payload {
      * exposure intact; legacy callers that need one representative file can call [capturePhoto].
      */
     fun captureExposure(mediaVM: MediaVM): CapturedExposure? {
-        val files = captureNewMediaFiles(mediaVM)
+        val capabilities = cameraCapabilities()
+        val profile = CameraCaptureConfigurator.defaultDirectProfile(capabilities)
+        val files = captureNewMediaFiles(mediaVM, profile)
         if (files.isEmpty()) return null
         val cameraType = activeCameraType()?.name ?: "UNKNOWN"
         return CapturedExposure(
@@ -457,7 +461,10 @@ object Payload {
     // Fault barrier: the DJI SDK does not document an exception hierarchy for these calls, so a
     // narrower catch would let an unanticipated type escape. This boundary must degrade, not throw.
     @Suppress("TooGenericExceptionCaught")
-    private fun captureNewMediaFiles(mediaVM: MediaVM): List<MediaFile> {
+    private fun captureNewMediaFiles(
+        mediaVM: MediaVM,
+        profile: CameraCaptureProfile? = null
+    ): List<MediaFile> {
         try {
             setupNewMediaListener()
             val keyBaseline = (keyNewlyGeneratedMediaFile.get() ?: latestGeneratedMediaInfo)?.index
@@ -470,7 +477,7 @@ object Payload {
             mediaEventQueue.clear()
             collectingEvents = true
 
-            if (!tripShutter(mediaVM)) return emptyList()
+            if (!tripShutter(mediaVM, profile)) return emptyList()
 
             val overallDeadline = System.currentTimeMillis() + CAPTURE_OVERALL_TIMEOUT_MS
 
@@ -491,23 +498,56 @@ object Payload {
     }
 
     /** Trip the shutter on the main thread and wait for the SDK callback. False if it failed or timed out. */
-    private fun tripShutter(mediaVM: MediaVM): Boolean {
+    private fun tripShutter(
+        mediaVM: MediaVM,
+        profile: CameraCaptureProfile?
+    ): Boolean {
         var photoError: String? = null
         val photoLatch = CountDownLatch(1)
+
         mainHandler.post {
-            mediaVM.takePhoto(object : CommonCallbacks.CompletionCallback {
-                override fun onSuccess() {
-                    photoLatch.countDown()
+            fun trigger() {
+                mediaVM.triggerPhoto(object : CommonCallbacks.CompletionCallback {
+                    override fun onSuccess() {
+                        photoLatch.countDown()
+                    }
+
+                    override fun onFailure(error: IDJIError) {
+                        photoError = error.description()
+                        Log.e(TAG, "Photo capture failed: $photoError")
+                        photoLatch.countDown()
+                    }
+                })
+            }
+
+            if (profile == null) {
+                // Legacy/non-M3 payloads retain their existing normal-photo preparation.
+                mediaVM.takePhoto(object : CommonCallbacks.CompletionCallback {
+                    override fun onSuccess() {
+                        photoLatch.countDown()
+                    }
+
+                    override fun onFailure(error: IDJIError) {
+                        photoError = error.description()
+                        Log.e(TAG, "Photo capture failed: $photoError")
+                        photoLatch.countDown()
+                    }
+                })
+            } else {
+                CameraCaptureConfigurator.preparePhoto(profile) { prepared ->
+                    if (!prepared.success) {
+                        photoError = prepared.detail
+                        Log.e(TAG, "Camera profile preparation failed: ${prepared.detail}")
+                        photoLatch.countDown()
+                    } else {
+                        trigger()
+                    }
                 }
-                override fun onFailure(error: IDJIError) {
-                    photoError = error.description()
-                    Log.e(TAG, "Photo capture failed: $photoError")
-                    photoLatch.countDown()
-                }
-            })
+            }
         }
-        if (!photoLatch.await(8, TimeUnit.SECONDS)) {
-            Log.e(TAG, "Timeout waiting for shutter")
+
+        if (!photoLatch.await(12, TimeUnit.SECONDS)) {
+            Log.e(TAG, "Timeout preparing camera/tripping shutter")
             return false
         }
         return photoError == null
