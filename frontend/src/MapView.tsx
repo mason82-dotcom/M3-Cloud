@@ -61,6 +61,8 @@ export function MapView({
     () => featureCollection(devices, telemetry),
     [devices, telemetry],
   );
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -82,7 +84,7 @@ export function MapView({
     map.on("load", () => {
       map.addSource(MAP_SOURCE_ID, {
         type: "geojson",
-        data,
+        data: dataRef.current,
       });
 
       map.addLayer({
