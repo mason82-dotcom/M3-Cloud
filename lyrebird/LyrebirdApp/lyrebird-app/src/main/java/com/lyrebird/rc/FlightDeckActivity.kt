@@ -533,6 +533,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
      * both pull the same DJI media pipeline, but the SDK serialises the pulls themselves.
      */
     private val ftpExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
+    private val cameraSettingsExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var webRTCStreamer: WebRTCStreamer? = null
     private var videoSettingRestartScheduled = false
     private var lyrebirdSettingsDialog: Dialog? = null
@@ -809,6 +810,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
     @Volatile
     private var aircraftConnected = false
+
+    @Volatile
+    private var cameraLiveSourceRestoreInFlight = false
 
     // ==================== Initial-loading overlay ====================
 
@@ -1909,6 +1913,17 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         // Warm the media list on connect so the first photo capture isn't cold (the first
         // whole-card fetch is slow and otherwise blows past the capture client's timeout).
         if (isConnected) {
+            // Prime settings state immediately on connect so the first HTTP snapshot does not
+            // manufacture -1/not_reported values while async DJI reads are only just starting.
+            DroneController.warmFlightLimitState()
+            CameraLiveSourceController.warmCache()
+            // The camera may still be finishing its own startup/default-mode transition. Reapply
+            // this aircraft's persisted operator source after that settles.
+            mainHandler.postDelayed(
+                { restorePreferredCameraLiveSourceAsync("aircraft-connect") },
+                7_000L
+            )
+
             // Initial-loading overlay: the aircraft is here, so take it down — but keep it up for
             // at least loadingMinVisibleMs so the launch flash isn't a one-frame flicker.
             mainHandler.removeCallbacks(hideLoadingOverlayRunnable)
@@ -4929,6 +4944,12 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private fun configureDefaultCameraRecording() {
         setDefaultVideoMode()
         preferSdCardStorage(KeyManager.getInstance().getValue(cameraStorageInfosKey))
+        // M3M can fall back to RGB while its camera mode is initialized. Restore the persisted
+        // per-aircraft live-view choice after the mode/storage configuration has settled.
+        mainHandler.postDelayed(
+            { restorePreferredCameraLiveSourceAsync("default-camera-config") },
+            500L
+        )
     }
 
     /**
@@ -5286,6 +5307,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             mavlinkEndpoint = null
             captureExecutor.shutdownNow()
             ftpExecutor.shutdownNow()
+            cameraSettingsExecutor.shutdownNow()
             mavlinkFtpServer?.shutdown()
             mavlinkFtpServer = null
             // Unregister the settings backup listener and stop its writer: the SharedPreferences
@@ -5424,6 +5446,49 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         return true
     }
 
+    private fun restorePreferredCameraLiveSourceAsync(reason: String) {
+        if (!aircraftConnected || cameraSettingsExecutor.isShutdown) return
+
+        val preferred = sharedPreferences
+            .getString(PREF_CAMERA_LIVE_SOURCE, "")
+            .orEmpty()
+            .trim()
+            .uppercase()
+        if (preferred.isBlank() || cameraLiveSourceRestoreInFlight) return
+
+        cameraLiveSourceRestoreInFlight = true
+        cameraSettingsExecutor.execute {
+            try {
+                val current = CameraLiveSourceController.readCurrent()
+                if (current.readStatus == "OK" && current.source == preferred) {
+                    Log.i(TAG, "Camera live source already $preferred ($reason)")
+                    return@execute
+                }
+
+                val result = CameraLiveSourceController.setAndReadback(preferred)
+                if (
+                    result.setStatus == "OK" &&
+                    result.readStatus == "OK" &&
+                    result.source == preferred
+                ) {
+                    Log.i(
+                        TAG,
+                        "Restored preferred camera live source $preferred ($reason)"
+                    )
+                } else {
+                    Log.w(
+                        TAG,
+                        "Could not restore preferred camera live source $preferred ($reason): " +
+                            "set=${result.setStatus} read=${result.readStatus} " +
+                            "actual=${result.source} error=${result.error}"
+                    )
+                }
+            } finally {
+                cameraLiveSourceRestoreInFlight = false
+            }
+        }
+    }
+
     override fun setPreferredCameraLiveSource(value: String): Boolean {
         val normalized = value.trim().uppercase()
         val source = CameraVideoStreamSourceType.values()
@@ -5471,6 +5536,12 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                             }
                             Log.i(TAG, "Applied per-drone settings profile for $droneSerialNumber")
                         }
+                        // Whether a stored profile was applied or the current prefs already belonged
+                        // to this serial, restore its explicit camera live-view preference.
+                        mainHandler.postDelayed(
+                            { restorePreferredCameraLiveSourceAsync("aircraft-profile") },
+                            500L
+                        )
                     }
                     applyAutomaticDroneName()
                     if (!configuredMavlinkSystemIdIsManual() && previousSystemId != currentMavlinkSystemId()) {
