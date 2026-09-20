@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
-import type { GeoJSONSource, Map } from "maplibre-gl";
+import type { GeoJSONSource, Map, StyleSpecification } from "maplibre-gl";
 import type { FeatureCollection, Point } from "geojson";
 
 import type { Device, Telemetry } from "./types";
@@ -14,6 +14,41 @@ interface MapViewProps {
 const MAP_SOURCE_ID = "m3-aircraft";
 const MAP_POINT_LAYER = "m3-aircraft-points";
 const MAP_LABEL_LAYER = "m3-aircraft-labels";
+
+const PRIMARY_STYLE =
+  import.meta.env.VITE_MAP_STYLE_URL ??
+  "https://demotiles.maplibre.org/style.json";
+
+const FALLBACK_TILE_URL =
+  import.meta.env.VITE_MAP_FALLBACK_TILE_URL ??
+  "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+const FALLBACK_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    "fallback-raster": {
+      type: "raster",
+      tiles: [FALLBACK_TILE_URL],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors",
+      maxzoom: 19,
+    },
+  },
+  layers: [
+    {
+      id: "fallback-background",
+      type: "background",
+      paint: {
+        "background-color": "#151a20",
+      },
+    },
+    {
+      id: "fallback-raster",
+      type: "raster",
+      source: "fallback-raster",
+    },
+  ],
+};
 
 function featureCollection(
   devices: Device[],
@@ -50,6 +85,56 @@ function featureCollection(
   };
 }
 
+function ensureAircraftLayers(
+  map: Map,
+  data: FeatureCollection<Point>,
+): void {
+  if (!map.getSource(MAP_SOURCE_ID)) {
+    map.addSource(MAP_SOURCE_ID, {
+      type: "geojson",
+      data,
+    });
+  }
+
+  if (!map.getLayer(MAP_POINT_LAYER)) {
+    map.addLayer({
+      id: MAP_POINT_LAYER,
+      type: "circle",
+      source: MAP_SOURCE_ID,
+      paint: {
+        "circle-radius": 8,
+        "circle-stroke-width": 2,
+        "circle-stroke-color": "#ffffff",
+        "circle-color": [
+          "case",
+          ["boolean", ["get", "online"], false],
+          "#28c76f",
+          "#7f8791",
+        ],
+      },
+    });
+  }
+
+  if (!map.getLayer(MAP_LABEL_LAYER)) {
+    map.addLayer({
+      id: MAP_LABEL_LAYER,
+      type: "symbol",
+      source: MAP_SOURCE_ID,
+      layout: {
+        "text-field": ["get", "model"],
+        "text-size": 11,
+        "text-offset": [0, 1.4],
+        "text-anchor": "top",
+      },
+      paint: {
+        "text-color": "#ffffff",
+        "text-halo-color": "#101317",
+        "text-halo-width": 1.5,
+      },
+    });
+  }
+}
+
 export function MapView({
   devices,
   telemetry,
@@ -57,6 +142,7 @@ export function MapView({
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
+  const [fallbackActive, setFallbackActive] = useState(false);
 
   const data = useMemo(
     () => featureCollection(devices, telemetry),
@@ -70,56 +156,31 @@ export function MapView({
       return;
     }
 
+    let fallbackActivated = false;
+    let styleLoaded = false;
+
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style:
-        import.meta.env.VITE_MAP_STYLE_URL ??
-        "https://demotiles.maplibre.org/style.json",
+      style: PRIMARY_STYLE,
       center: [8.5, 49.1],
       zoom: 7,
     });
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
 
-    map.on("load", () => {
-      map.addSource(MAP_SOURCE_ID, {
-        type: "geojson",
-        data: dataRef.current,
-      });
+    map.on("style.load", () => {
+      styleLoaded = true;
+      ensureAircraftLayers(map, dataRef.current);
+    });
 
-      map.addLayer({
-        id: MAP_POINT_LAYER,
-        type: "circle",
-        source: MAP_SOURCE_ID,
-        paint: {
-          "circle-radius": 8,
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#ffffff",
-          "circle-color": [
-            "case",
-            ["boolean", ["get", "online"], false],
-            "#28c76f",
-            "#7f8791",
-          ],
-        },
-      });
+    map.on("error", () => {
+      if (styleLoaded || fallbackActivated) {
+        return;
+      }
 
-      map.addLayer({
-        id: MAP_LABEL_LAYER,
-        type: "symbol",
-        source: MAP_SOURCE_ID,
-        layout: {
-          "text-field": ["get", "model"],
-          "text-size": 11,
-          "text-offset": [0, 1.4],
-          "text-anchor": "top",
-        },
-        paint: {
-          "text-color": "#ffffff",
-          "text-halo-color": "#101317",
-          "text-halo-width": 1.5,
-        },
-      });
+      fallbackActivated = true;
+      setFallbackActive(true);
+      map.setStyle(FALLBACK_STYLE);
     });
 
     mapRef.current = map;
@@ -161,5 +222,12 @@ export function MapView({
     });
   }, [selectedSn, telemetry]);
 
-  return <div className="map" ref={containerRef} />;
+  return (
+    <>
+      {fallbackActive ? (
+        <div className="map-fallback-badge">MAP FALLBACK</div>
+      ) : null}
+      <div className="map" ref={containerRef} />
+    </>
+  );
 }

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import asdict, dataclass
 from typing import Any
 
 from redis.asyncio import Redis
 
+from app.config import settings
 from app.dji.protocol import Envelope
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -147,6 +152,13 @@ class DeviceRegistry:
         }
         new_children = {child.sn for child in children}
 
+        previous: dict[str, dict[str, Any] | None] = {}
+        for sn in {gateway_sn, *old_children, *new_children}:
+            raw = await self.redis.get(self.device_key(sn))
+            previous[sn] = json.loads(raw) if raw else None
+
+        offline_records: list[dict[str, Any]] = []
+
         pipeline = self.redis.pipeline(transaction=True)
         pipeline.set(self.gateway_key(gateway_sn), json.dumps(asdict(gateway)))
         pipeline.set(self.device_key(gateway_sn), json.dumps(asdict(gateway)))
@@ -155,11 +167,12 @@ class DeviceRegistry:
             pipeline.set(self.device_key(child.sn), json.dumps(asdict(child)))
 
         for offline_sn in old_children - new_children:
-            raw = await self.redis.get(self.device_key(offline_sn))
-            if raw:
-                record = json.loads(raw)
+            record = previous.get(offline_sn)
+            if record:
+                record = dict(record)
                 record["online"] = False
                 record["updated_at_ms"] = int(time.time() * 1000)
+                offline_records.append(record)
                 pipeline.set(self.device_key(offline_sn), json.dumps(record))
 
         pipeline.delete(children_key)
@@ -167,7 +180,62 @@ class DeviceRegistry:
             pipeline.sadd(children_key, *sorted(new_children))
 
         await pipeline.execute()
+
+        await self._publish_transition_if_needed(
+            previous.get(gateway_sn),
+            asdict(gateway),
+        )
+        for child in children:
+            await self._publish_transition_if_needed(
+                previous.get(child.sn),
+                asdict(child),
+            )
+        for record in offline_records:
+            await self._publish_live(
+                {
+                    "type": "device_offline",
+                    "timestamp": record["updated_at_ms"],
+                    "device": record,
+                }
+            )
+
+        await self._publish_live(
+            {
+                "type": "topology",
+                "timestamp": gateway.updated_at_ms,
+                "gateway_sn": gateway_sn,
+                "devices": [
+                    asdict(gateway),
+                    *[asdict(child) for child in children],
+                ],
+            }
+        )
         return gateway, children
+
+    async def _publish_transition_if_needed(
+        self,
+        previous: dict[str, Any] | None,
+        current: dict[str, Any],
+    ) -> None:
+        if previous is not None and previous.get("online") is True:
+            return
+        await self._publish_live(
+            {
+                "type": "device_online",
+                "timestamp": current["updated_at_ms"],
+                "device": current,
+            }
+        )
+
+    async def _publish_live(self, event: dict[str, Any]) -> None:
+        try:
+            await self.redis.publish(
+                settings.live_redis_channel,
+                json.dumps(event),
+            )
+        except Exception:
+            # Live UI fan-out must never prevent DJI topology acknowledgement.
+            logger.warning("Failed to publish live topology event", exc_info=True)
 
     async def list_devices(self) -> list[dict[str, Any]]:
         devices: list[dict[str, Any]] = []

@@ -106,6 +106,9 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-}
+        VITE_MAP_FALLBACK_TILE_URL: ${VITE_MAP_FALLBACK_TILE_URL:-}
     restart: unless-stopped
     depends_on:
       - backend

@@ -66,3 +66,13 @@ WebSocket updates from `/ws/live`.
 
 The default map style is MapLibre's public demo style. Set `VITE_MAP_STYLE_URL` at frontend
 build time when using a self-hosted or project-specific style.
+
+
+### Map fallback
+
+MapLibre remains the only map engine. The browser first loads `VITE_MAP_STYLE_URL` (or the
+MapLibre demo style when unset). If the primary style fails before it is ready, M3-Cloud switches
+to a simple raster fallback defined by `VITE_MAP_FALLBACK_TILE_URL`.
+
+The public OpenStreetMap tile URL in `.env.example` is suitable for light development use only.
+For production deployments configure a self-hosted or commercial tile endpoint.

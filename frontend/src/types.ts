@@ -47,3 +47,19 @@ export interface TelemetryEvent {
   timestamp: number;
   state: Telemetry;
 }
+
+
+export interface DeviceStatusEvent {
+  type: "device_online" | "device_offline";
+  timestamp: number;
+  device: Device;
+}
+
+export interface TopologyEvent {
+  type: "topology";
+  timestamp: number;
+  gateway_sn: string;
+  devices: Device[];
+}
+
+export type LiveEvent = TelemetryEvent | DeviceStatusEvent | TopologyEvent;

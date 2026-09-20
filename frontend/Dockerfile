@@ -2,6 +2,11 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
+ARG VITE_MAP_STYLE_URL
+ARG VITE_MAP_FALLBACK_TILE_URL
+ENV VITE_MAP_STYLE_URL=${VITE_MAP_STYLE_URL}
+ENV VITE_MAP_FALLBACK_TILE_URL=${VITE_MAP_FALLBACK_TILE_URL}
+
 COPY frontend/package.json ./
 RUN npm install --no-audit --no-fund
 

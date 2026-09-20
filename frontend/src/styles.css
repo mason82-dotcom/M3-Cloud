@@ -243,3 +243,19 @@ button {
     margin-bottom: 0;
   }
 }
+
+
+.map-fallback-badge {
+  position: absolute;
+  z-index: 8;
+  top: 14px;
+  left: 14px;
+  border: 1px solid #725e38;
+  border-radius: 7px;
+  background: rgb(49 40 24 / 90%);
+  padding: 6px 8px;
+  color: #e7ca87;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}

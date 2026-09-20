@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchDevices, fetchTelemetry } from "./api";
 import { FleetSidebar } from "./FleetSidebar";
-import { useLiveTelemetry } from "./live";
+import { useLiveEvents } from "./live";
 import { MapView } from "./MapView";
-import type { Device, Telemetry, TelemetryEvent } from "./types";
+import type { Device, LiveEvent, Telemetry } from "./types";
 
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -58,26 +58,59 @@ export default function App() {
     };
   }, []);
 
-  const handleTelemetry = useCallback((event: TelemetryEvent) => {
-    setTelemetry((current) => ({
-      ...current,
-      [event.device_sn]: event.state,
-    }));
+  const upsertDevice = useCallback((device: Device) => {
+    setDevices((current) => {
+      const index = current.findIndex((item) => item.sn === device.sn);
+      if (index < 0) {
+        return [...current, device];
+      }
 
-    setDevices((current) =>
-      current.map((device) =>
-        device.sn === event.device_sn
-          ? { ...device, online: true }
-          : device,
-      ),
-    );
+      const next = [...current];
+      next[index] = {
+        ...next[index],
+        ...device,
+      };
+      return next;
+    });
   }, []);
+
+  const handleLiveEvent = useCallback(
+    (event: LiveEvent) => {
+      if (event.type === "telemetry") {
+        setTelemetry((current) => ({
+          ...current,
+          [event.device_sn]: event.state,
+        }));
+
+        setDevices((current) =>
+          current.map((device) =>
+            device.sn === event.device_sn
+              ? { ...device, online: true }
+              : device,
+          ),
+        );
+        return;
+      }
+
+      if (event.type === "device_online" || event.type === "device_offline") {
+        upsertDevice(event.device);
+        return;
+      }
+
+      if (event.type === "topology") {
+        for (const device of event.devices) {
+          upsertDevice(device);
+        }
+      }
+    },
+    [upsertDevice],
+  );
 
   const handleConnection = useCallback((connected: boolean) => {
     setLiveConnected(connected);
   }, []);
 
-  useLiveTelemetry(handleTelemetry, handleConnection);
+  useLiveEvents(handleLiveEvent, handleConnection);
 
   const aircraft = useMemo(
     () => devices.filter((device) => device.role === "aircraft"),

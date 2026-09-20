@@ -1,10 +1,17 @@
 import { useEffect } from "react";
 
 import { liveWebSocketUrl } from "./api";
-import type { TelemetryEvent } from "./types";
+import type { LiveEvent } from "./types";
 
-export function useLiveTelemetry(
-  onTelemetry: (event: TelemetryEvent) => void,
+const LIVE_EVENT_TYPES = new Set([
+  "telemetry",
+  "device_online",
+  "device_offline",
+  "topology",
+]);
+
+export function useLiveEvents(
+  onEvent: (event: LiveEvent) => void,
   onConnection: (connected: boolean) => void,
 ): void {
   useEffect(() => {
@@ -35,9 +42,10 @@ export function useLiveTelemetry(
           typeof payload === "object" &&
           payload !== null &&
           "type" in payload &&
-          payload.type === "telemetry"
+          typeof payload.type === "string" &&
+          LIVE_EVENT_TYPES.has(payload.type)
         ) {
-          onTelemetry(payload as TelemetryEvent);
+          onEvent(payload as LiveEvent);
         }
       };
 
@@ -62,5 +70,5 @@ export function useLiveTelemetry(
       }
       socket?.close();
     };
-  }, [onConnection, onTelemetry]);
+  }, [onConnection, onEvent]);
 }
