@@ -708,6 +708,7 @@ function renderSettingsValues(card, name, s) {
   const ro = [
     ['Drone name', s.droneName],
     ['Detected aircraft', s.detectedAircraft],
+    ['Aircraft variant', s.aircraftVariant || 'UNKNOWN'],
     ['Control profile', s.controlProfile],
     ['Video source', s.videoSource],
     ['Streaming mode', s.streamingMode],
