@@ -44,33 +44,18 @@ services:
       - emqx_data:/opt/emqx/data
       - emqx_log:/opt/emqx/log
 
-  minio:
-    image: ${MINIO_IMAGE:-minio/minio:latest}
+  seaweedfs:
+    image: ${SEAWEEDFS_IMAGE:-chrislusf/seaweedfs:4.31}
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: ["server", "-s3"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-m3cloud}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-minio}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-m3cloud}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-change-me-minio}
+      S3_BUCKET: m3-media,m3-waylines,m3-results
     volumes:
-      - minio_data:/data
+      - object_storage_data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
-
-  minio-init:
-    image: ${MINIO_MC_IMAGE:-minio/mc:latest}
-    depends_on:
-      - minio
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-m3cloud}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-minio}
-    entrypoint: >
-      /bin/sh -c '
-      until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do sleep 2; done;
-      mc mb --ignore-existing local/m3-media;
-      mc mb --ignore-existing local/m3-waylines;
-      mc mb --ignore-existing local/m3-results;
-      '
+      - "8333:8333"
 
   backend:
     build:
@@ -80,7 +65,7 @@ services:
       M3CLOUD_ENVIRONMENT: ${M3CLOUD_ENVIRONMENT:-development}
       M3CLOUD_POSTGRES_DSN: postgresql+asyncpg://${POSTGRES_USER:-m3cloud}:${POSTGRES_PASSWORD:-change-me-postgres}@postgres:5432/${POSTGRES_DB:-m3cloud}
       M3CLOUD_REDIS_URL: redis://redis:6379/0
-      M3CLOUD_MINIO_ENDPOINT: http://minio:9000
+      M3CLOUD_MINIO_ENDPOINT: http://seaweedfs:8333
       M3CLOUD_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-m3cloud}
       M3CLOUD_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me-minio}
       M3CLOUD_EMQX_HOST: emqx
@@ -129,7 +114,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
+      seaweedfs:
         condition: service_started
       emqx:
         condition: service_started
@@ -156,4 +141,4 @@ volumes:
   redis_data:
   emqx_data:
   emqx_log:
-  minio_data:
+  object_storage_data:
