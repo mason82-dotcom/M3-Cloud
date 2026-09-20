@@ -150,3 +150,45 @@ async def test_recent_visible_file_is_not_marked_missing(tmp_path: Path) -> None
         )
     assert asset is not None
     assert asset.present is True
+
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_present_duplicate_is_promoted_when_original_disappears(tmp_path: Path) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(MediaAsset))
+        await session.commit()
+
+    root = tmp_path / "media"
+    original = root / "M3E" / "site" / "DJI_0001_W.JPG"
+    copy = root / "backup" / "DJI_0001_W.JPG"
+    original.parent.mkdir(parents=True)
+    copy.parent.mkdir(parents=True)
+    original.write_bytes(b"same-original-bytes")
+    copy.write_bytes(b"same-original-bytes")
+
+    importer = MediaImporter(session_factory, root=str(root), min_age_seconds=0)
+    await importer.scan()
+
+    async with session_factory() as session:
+        initial = (
+            await session.scalars(
+                select(MediaAsset).where(MediaAsset.present.is_(True))
+            )
+        ).all()
+    assert sum(asset.duplicate_of is None for asset in initial) == 1
+    assert sum(asset.duplicate_of is not None for asset in initial) == 1
+
+    canonical = next(asset for asset in initial if asset.duplicate_of is None)
+    (root / canonical.relative_path).unlink()
+
+    result = await importer.scan()
+    assert result.marked_missing == 1
+    assert result.duplicates == 0
+
+    async with session_factory() as session:
+        remaining = await session.scalar(
+            select(MediaAsset).where(MediaAsset.present.is_(True))
+        )
+    assert remaining is not None
+    assert remaining.duplicate_of is None
