@@ -124,3 +124,23 @@ def test_private_rtk_status_old_base_payload_remains_decodable():
     assert decoded["rtk"]["fix"]=="STALE"
     assert decoded["rtk"]["raw_fix"] is None
     assert decoded["rtk"]["source"] is None
+
+
+def test_lyrebird_status_uint16_unknown_budget_is_null():
+    # Field-level decoder semantics: UINT16_MAX is an unavailable DJI estimate,
+    # not 65535 seconds of real flight budget.
+    import app.vehicles.mavlink as ml
+    payload=struct.pack(
+        ml.LYREBIRD_STATUS_STRUCT,
+        1, 0, 0, 0.0, 0.0, 0, 0, 0,
+        0xFFFF, 12, 0xFFFF,
+        0, 0, 24, 240, 240, 0, 0, 0, b""
+    )
+    values=struct.unpack(ml.LYREBIRD_STATUS_STRUCT,payload)
+    go_home_s, land_s, total_s=values[8],values[9],values[10]
+    decoded={
+        "time_to_home_s": None if go_home_s == 0xFFFF else go_home_s,
+        "time_to_land_s": None if land_s == 0xFFFF else land_s,
+        "total_flight_time_s": None if total_s == 0xFFFF else total_s,
+    }
+    assert decoded=={"time_to_home_s":None,"time_to_land_s":12,"total_flight_time_s":None}
