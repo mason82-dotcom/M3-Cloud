@@ -78,79 +78,149 @@ internal object CameraCaptureConfigurator {
         val modeKey: DJIKey<CameraMode> = KeyTools.createKey(CameraKey.KeyCameraMode, index)
         val captureKey: DJIKey<CameraStreamSettingsInfo> =
             KeyTools.createKey(CameraKey.KeyCaptureCameraStreamSettings, index)
+        val liveSourceKey: DJIKey<CameraVideoStreamSourceType> =
+            KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, index)
 
-        modeKey.set(
-            CameraMode.PHOTO_NORMAL,
-            onSuccess = {
-                val settings = CameraStreamSettingsInfo()
-                    .setRequestCurrentScreen(false)
-                    .setCameraVideoStreamSources(ArrayList(requestedSources))
-                captureKey.set(
-                    settings,
-                    onSuccess = {
-                        // Verify against a fresh MSDK read, not the synchronous key cache. M3M
-                        // field testing showed that stream-setting keys can be absent/stale in
-                        // the local cache even though the camera has accepted the write.
+        fun restoreLiveSourceThenComplete(
+            previousSource: CameraVideoStreamSourceType?,
+            detail: String
+        ) {
+            if (previousSource == null) {
+                callback(CameraPrepareResult(true, profile, detail))
+                return
+            }
+
+            KeyManager.getInstance().setValue(
+                liveSourceKey,
+                previousSource,
+                object : CommonCallbacks.CompletionCallback {
+                    override fun onSuccess() {
                         KeyManager.getInstance().getValue(
-                            captureKey,
-                            object : CommonCallbacks.CompletionCallbackWithParam<CameraStreamSettingsInfo> {
-                                override fun onSuccess(readback: CameraStreamSettingsInfo?) {
-                                    val expected = profile.storedSourceNames.toSet()
-                                    val actual = readback?.cameraVideoStreamSources
-                                        .orEmpty()
-                                        .map { it.name }
-                                        .toSet()
-                                    if (actual == expected) {
-                                        callback(
-                                            CameraPrepareResult(
-                                                true,
-                                                profile,
-                                                "PHOTO_NORMAL; sources=${expected.sorted()}"
-                                            )
-                                        )
+                            liveSourceKey,
+                            object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
+                                override fun onSuccess(readback: CameraVideoStreamSourceType?) {
+                                    val suffix = if (readback == previousSource) {
+                                        "; liveSource=${previousSource.name}"
                                     } else {
-                                        callback(
-                                            CameraPrepareResult(
-                                                false,
-                                                profile,
-                                                "Capture source readback mismatch: expected=$expected actual=$actual"
-                                            )
-                                        )
+                                        "; liveSource restore mismatch: expected=${previousSource.name} actual=${readback?.name}"
                                     }
+                                    callback(CameraPrepareResult(true, profile, detail + suffix))
                                 }
 
                                 override fun onFailure(error: IDJIError) {
                                     callback(
                                         CameraPrepareResult(
-                                            false,
+                                            true,
                                             profile,
-                                            "Capture-stream readback failed: ${error.description()}"
+                                            "$detail; liveSource restore readback failed: ${error.description()}"
                                         )
                                     )
                                 }
                             }
                         )
-                    },
-                    onFailure = { error ->
+                    }
+
+                    override fun onFailure(error: IDJIError) {
                         callback(
                             CameraPrepareResult(
-                                false,
+                                true,
                                 profile,
-                                "Capture-stream setting failed: ${error.description()}"
+                                "$detail; liveSource restore failed: ${error.description()}"
                             )
                         )
                     }
-                )
-            },
-            onFailure = { error ->
-                callback(
-                    CameraPrepareResult(
-                        false,
-                        profile,
-                        "PHOTO_NORMAL failed: ${error.description()}"
+                }
+            )
+        }
+
+        fun configurePhoto(previousSource: CameraVideoStreamSourceType?) {
+            modeKey.set(
+                CameraMode.PHOTO_NORMAL,
+                onSuccess = {
+                    val settings = CameraStreamSettingsInfo()
+                        .setRequestCurrentScreen(false)
+                        .setCameraVideoStreamSources(ArrayList(requestedSources))
+                    captureKey.set(
+                        settings,
+                        onSuccess = {
+                            // Verify against a fresh MSDK read, not the synchronous key cache.
+                            KeyManager.getInstance().getValue(
+                                captureKey,
+                                object : CommonCallbacks.CompletionCallbackWithParam<CameraStreamSettingsInfo> {
+                                    override fun onSuccess(readback: CameraStreamSettingsInfo?) {
+                                        val expected = profile.storedSourceNames.toSet()
+                                        val actual = readback?.cameraVideoStreamSources
+                                            .orEmpty()
+                                            .map { it.name }
+                                            .toSet()
+                                        if (actual == expected) {
+                                            restoreLiveSourceThenComplete(
+                                                previousSource,
+                                                "PHOTO_NORMAL; sources=${expected.sorted()}"
+                                            )
+                                        } else {
+                                            callback(
+                                                CameraPrepareResult(
+                                                    false,
+                                                    profile,
+                                                    "Capture source readback mismatch: expected=$expected actual=$actual"
+                                                )
+                                            )
+                                        }
+                                    }
+
+                                    override fun onFailure(error: IDJIError) {
+                                        callback(
+                                            CameraPrepareResult(
+                                                false,
+                                                profile,
+                                                "Capture-stream readback failed: ${error.description()}"
+                                            )
+                                        )
+                                    }
+                                }
+                            )
+                        },
+                        onFailure = { error ->
+                            callback(
+                                CameraPrepareResult(
+                                    false,
+                                    profile,
+                                    "Capture-stream setting failed: ${error.description()}"
+                                )
+                            )
+                        }
                     )
-                )
+                },
+                onFailure = { error ->
+                    callback(
+                        CameraPrepareResult(
+                            false,
+                            profile,
+                            "PHOTO_NORMAL failed: ${error.description()}"
+                        )
+                    )
+                }
+            )
+        }
+
+        // Read the operator-selected source before changing camera mode. M3M field testing shows
+        // VIDEO_NORMAL -> PHOTO_NORMAL resets the live source to RGB_CAMERA; restoring the prior
+        // source after photo configuration preserves NDVI/G/R/RE/NIR selection without changing
+        // which sources are actually written to storage.
+        KeyManager.getInstance().getValue(
+            liveSourceKey,
+            object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
+                override fun onSuccess(source: CameraVideoStreamSourceType?) {
+                    configurePhoto(source)
+                }
+
+                override fun onFailure(error: IDJIError) {
+                    // Live-source preservation is secondary to capture preparation.
+                    configurePhoto(null)
+                }
             }
         )
     }
+
 }
