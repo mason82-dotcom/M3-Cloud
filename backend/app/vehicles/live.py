@@ -94,6 +94,7 @@ class LyrebirdLiveBridge:
                 caps = await client.get(
                     f"http://{host}:{settings.lyrebird_http_port}/get/camera/capabilities",
                     timeout=settings.lyrebird_timeout_seconds,
+                    headers={"Connection": "close"},
                 )
                 if caps.is_success:
                     value = caps.json()
@@ -103,6 +104,7 @@ class LyrebirdLiveBridge:
                 identity = await client.get(
                     f"http://{host}:{settings.lyrebird_http_port}/config/settings",
                     timeout=settings.lyrebird_timeout_seconds,
+                    headers={"Connection": "close"},
                 )
                 if identity.is_success:
                     value = identity.json()
