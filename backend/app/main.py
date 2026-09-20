@@ -1,13 +1,35 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Response, status
 
+from app.api_devices import router as devices_router
 from app.config import settings
+from app.dji.service import DJIService
 from app.health import readiness
+from app.redis_client import redis_client
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    dji_service = DJIService.create(redis_client)
+    app.state.dji_service = dji_service
+
+    if settings.dji_mqtt_enabled:
+        await dji_service.transport.start()
+
+    try:
+        yield
+    finally:
+        if settings.dji_mqtt_enabled:
+            await dji_service.transport.stop()
 
 
 app = FastAPI(
     title="M3-Cloud",
-    version="0.1.0",
+    version="0.2.0",
+    lifespan=lifespan,
 )
+app.include_router(devices_router)
 
 
 @app.get("/")

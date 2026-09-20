@@ -49,6 +49,23 @@ class Settings(BaseSettings):
         validation_alias="M3CLOUD_EMQX_PORT",
     )
 
+    dji_mqtt_enabled: bool = Field(
+        default=False,
+        validation_alias="M3CLOUD_DJI_MQTT_ENABLED",
+    )
+    dji_mqtt_client_id: str = Field(
+        default="m3-cloud",
+        validation_alias="M3CLOUD_DJI_MQTT_CLIENT_ID",
+    )
+    dji_mqtt_username: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_MQTT_USERNAME",
+    )
+    dji_mqtt_password: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_MQTT_PASSWORD",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

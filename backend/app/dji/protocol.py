@@ -1,1 +1,85 @@
-"""DJI Cloud API protocol handling."""
+from __future__ import annotations
+
+import json
+import time
+from dataclasses import dataclass
+from typing import Any, Mapping
+
+
+@dataclass(frozen=True)
+class Envelope:
+    tid: str
+    bid: str
+    timestamp: int
+    method: str
+    data: dict[str, Any]
+
+
+class ProtocolError(ValueError):
+    """Raised when a DJI MQTT payload does not match the common envelope."""
+
+
+def parse_envelope(payload: bytes | str | Mapping[str, Any]) -> Envelope:
+    if isinstance(payload, bytes):
+        payload = payload.decode("utf-8")
+    if isinstance(payload, str):
+        try:
+            decoded: Any = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise ProtocolError(f"invalid JSON: {exc.msg}") from exc
+    else:
+        decoded = dict(payload)
+
+    if not isinstance(decoded, dict):
+        raise ProtocolError("DJI payload must be a JSON object")
+
+    try:
+        tid = decoded["tid"]
+        bid = decoded["bid"]
+        timestamp = decoded["timestamp"]
+        method = decoded["method"]
+        data = decoded["data"]
+    except KeyError as exc:
+        raise ProtocolError(f"missing envelope field: {exc.args[0]}") from exc
+
+    if not isinstance(tid, str) or not tid:
+        raise ProtocolError("tid must be a non-empty string")
+    if not isinstance(bid, str) or not bid:
+        raise ProtocolError("bid must be a non-empty string")
+    if not isinstance(timestamp, int):
+        raise ProtocolError("timestamp must be an integer")
+    if not isinstance(method, str) or not method:
+        raise ProtocolError("method must be a non-empty string")
+    if not isinstance(data, dict):
+        raise ProtocolError("data must be an object")
+
+    return Envelope(
+        tid=tid,
+        bid=bid,
+        timestamp=timestamp,
+        method=method,
+        data=data,
+    )
+
+
+def make_reply(
+    envelope: Envelope,
+    *,
+    result: int = 0,
+    timestamp_ms: int | None = None,
+) -> dict[str, Any]:
+    """Build the common DJI reply envelope while preserving request correlation IDs."""
+
+    return {
+        "tid": envelope.tid,
+        "bid": envelope.bid,
+        "timestamp": timestamp_ms if timestamp_ms is not None else int(time.time() * 1000),
+        "method": envelope.method,
+        "data": {
+            "result": result,
+        },
+    }
+
+
+def encode_json(payload: Mapping[str, Any]) -> bytes:
+    return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
