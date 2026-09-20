@@ -5,7 +5,7 @@ import math
 import struct
 import time
 from collections import defaultdict
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from pymavlink.dialects.v20 import common as mavlink_common
 from pymavlink.generator.mavcrc import x25crc
@@ -198,11 +198,26 @@ class _Protocol(asyncio.DatagramProtocol):
 class LyrebirdMavlinkCollector:
     """Shared MAVLink-2 UDP collector keyed by configured Lyrebird host address."""
     def __init__(self) -> None:
+        self._publisher: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
+        self._publish_tasks: set[asyncio.Task[None]] = set()
         self._transport: asyncio.DatagramTransport | None = None
         self._parsers: dict[str, Any] = {}
         self._state: dict[str, dict[str, Any]] = defaultdict(dict)
         self._seen: dict[str, float] = {}
         self._heartbeat_task: asyncio.Task[None] | None = None
+
+    def set_publisher(self, publisher: Callable[[str, dict[str, Any]], Awaitable[None]] | None) -> None:
+        self._publisher = publisher
+
+    def _schedule_publish(self, host: str) -> None:
+        if self._publisher is None:
+            return
+        snapshot = self.snapshot(host)
+        if snapshot is None:
+            return
+        task = asyncio.create_task(self._publisher(host, snapshot))
+        self._publish_tasks.add(task)
+        task.add_done_callback(self._publish_tasks.discard)
 
     async def start(self) -> None:
         if not settings.lyrebird_enabled or self._transport is not None:
@@ -225,6 +240,9 @@ class LyrebirdMavlinkCollector:
         if self._transport is not None:
             self._transport.close()
             self._transport = None
+        if self._publish_tasks:
+            await asyncio.gather(*tuple(self._publish_tasks), return_exceptions=True)
+            self._publish_tasks.clear()
 
     def feed_datagram(self, data: bytes, host: str) -> None:
         allowed = {item.strip() for item in settings.lyrebird_hosts.split(",") if item.strip()}
@@ -251,6 +269,7 @@ class LyrebirdMavlinkCollector:
                 if patch:
                     _deep_merge(self._state[host], patch)
                     self._seen[host] = time.monotonic()
+                    self._schedule_publish(host)
 
     def snapshot(self, host: str) -> dict[str, Any] | None:
         seen = self._seen.get(host)

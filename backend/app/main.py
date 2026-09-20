@@ -14,6 +14,7 @@ from app.api_operations import router as operations_router
 from app.redis_client import redis_client
 from app.api_vehicles import router as vehicles_router
 from app.vehicles.mavlink import lyrebird_mavlink_collector
+from app.vehicles.live import LyrebirdLiveBridge
 
 
 @asynccontextmanager
@@ -32,9 +33,12 @@ async def lifespan(app: FastAPI):
     app.state.dji_service = dji_service
     app.state.flight_recorder = flight_recorder
     app.state.live_hub = live_hub
+    lyrebird_live = LyrebirdLiveBridge(redis_client, lyrebird_mavlink_collector)
+    app.state.lyrebird_live = lyrebird_live
 
     await live_hub.start()
     await lyrebird_mavlink_collector.start()
+    await lyrebird_live.start()
 
     if settings.dji_mqtt_enabled:
         await dji_service.transport.start()
@@ -44,6 +48,7 @@ async def lifespan(app: FastAPI):
     finally:
         if settings.dji_mqtt_enabled:
             await dji_service.transport.stop()
+        await lyrebird_live.stop()
         await lyrebird_mavlink_collector.stop()
         await live_hub.stop()
 

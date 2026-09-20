@@ -80,7 +80,13 @@ function mergeDeep(base,patch){
 }
 function applyLiveEvent(event){
  if(!event||typeof event!=='object')return;
- if(event.type==='telemetry'&&event.device_sn&&event.state){
+ if(event.type==='vehicle_telemetry'&&event.vehicle){
+  const incoming=event.vehicle; const key=incoming.id||event.vehicle_id;
+  const i=state.vehicles.findIndex(v=>(v.id||v.sn)===key);
+  if(i>=0)state.vehicles[i]={...state.vehicles[i],...incoming,telemetry:mergeDeep(state.vehicles[i].telemetry,incoming.telemetry)};
+  else state.vehicles.push(incoming);
+  render();
+ }else if(event.type==='telemetry'&&event.device_sn&&event.state){
   const i=state.vehicles.findIndex(v=>(v.sn||v.device_sn||v.id)===event.device_sn);
   if(i>=0)state.vehicles[i]={...state.vehicles[i],online:true,telemetry:mergeDeep(state.vehicles[i].telemetry,event.state)};
   else state.vehicles.push({id:event.device_sn,sn:event.device_sn,name:event.device_sn,model:'DJI',source:'dji_cloud',online:true,telemetry:event.state});
