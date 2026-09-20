@@ -120,10 +120,12 @@ internal object Mav {
     const val STATE_UNINIT = 0
     const val STATE_STANDBY = 3
     const val STATE_ACTIVE = 4
+    const val STATE_CRITICAL = 5
 
     // EXTENDED_SYS_STATE (message id 245 in the MAVLink 2 dialect). landed_state is QGC's source
     // of the flying state, so it must be reported or the Fly View never offers Land/RTL — those
     // buttons require the vehicle to be flying, and without this message it never is.
+    const val VTOL_STATE_UNDEFINED = 0
     const val VTOL_STATE_MC = 3
     const val LANDED_STATE_ON_GROUND = 1
     const val LANDED_STATE_IN_AIR = 2

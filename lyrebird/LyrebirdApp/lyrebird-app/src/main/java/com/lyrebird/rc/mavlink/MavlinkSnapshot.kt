@@ -67,8 +67,21 @@ internal data class MavlinkSnapshot(
     val rtkStdLongitudeM: Double? = null,
     val rtkStdAltitudeM: Double? = null,
 
+    val flightControllerConnected: Boolean = false,
+    val isFlying: Boolean = false,
+    val isFailsafe: Boolean = false,
+    val compassHealthy: Boolean = true,
+
+    val batteryConnected: Boolean = false,
     /** Battery charge 0..100, or [INVALID_BATTERY] when the SDK has not reported one yet. */
     val batteryPercent: Int = INVALID_BATTERY,
+    val batteryVoltageMv: Int = -1,
+    /** DJI sign convention: negative while discharging, positive while charging. */
+    val batteryCurrentMa: Int = Int.MIN_VALUE,
+    val batteryTemperatureC: Double = Double.NaN,
+    val batteryChargeRemainingMah: Int = -1,
+    val batteryFullChargeCapacityMah: Int = -1,
+    val batteryCellVoltagesMv: List<Int> = emptyList(),
     /** Seconds of flight remaining, or 0 meaning "no estimate provided" per BATTERY_STATUS. */
     val remainingFlightTimeS: Int = 0,
 

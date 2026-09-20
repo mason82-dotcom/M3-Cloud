@@ -707,8 +707,18 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private val cameraOpticalFocalLengthKey: DJIKey<Int> = CameraKey.KeyCameraOpticalZoomFocalLength.create()
     private val cameraHybridFocalLengthKey: DJIKey<Int> = CameraKey.KeyCameraHybridZoomFocalLength.create()
     private val batteryKey: DJIKey<Int> = BatteryKey.KeyChargeRemainingInPercent.create()
+    private val batteryConnectionKey: DJIKey<Boolean> = BatteryKey.KeyConnection.create()
+    private val batteryVoltageKey: DJIKey<Int> = BatteryKey.KeyVoltage.create()
+    private val batteryCurrentKey: DJIKey<Int> = BatteryKey.KeyCurrent.create()
+    private val batteryTemperatureKey: DJIKey<Double> = BatteryKey.KeyBatteryTemperature.create()
+    private val batteryChargeRemainingKey: DJIKey<Int> = BatteryKey.KeyChargeRemaining.create()
+    private val batteryFullChargeCapacityKey: DJIKey<Int> = BatteryKey.KeyFullChargeCapacity.create()
+    private val batteryCellVoltagesKey: DJIKey<List<Int>> = BatteryKey.KeyCellVoltages.create()
     private val flightModeKey: DJIKey<FlightMode> = FlightControllerKey.KeyFlightMode.create()
     private val isFlyingKey: DJIKey<Boolean> = FlightControllerKey.KeyIsFlying.create()
+    private val areMotorsOnKey: DJIKey<Boolean> = FlightControllerKey.KeyAreMotorsOn.create()
+    private val isFailSafeKey: DJIKey<Boolean> = FlightControllerKey.KeyIsFailSafe.create()
+    private val compassHasErrorKey: DJIKey<Boolean> = FlightControllerKey.KeyCompassHasError.create()
 
     // Aircraft idle (low-power / eco) detection.
     // DJI exposes no arming/eco key here (KeyAreMotorsOn is unreliable — it reports true/null in
@@ -5559,6 +5569,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private fun getCameraOpticalFocalLength(): Int = cameraOpticalFocalLengthKey.get(-1)
     private fun getCameraHybridFocalLength(): Int = cameraHybridFocalLengthKey.get(-1)
     private fun getBatteryLevel(): Int = batteryKey.get(-1)
+    private fun getBatteryCellVoltages(): List<Int> =
+        batteryCellVoltagesKey.get(emptyList()).filter { it > 0 }
+
     private fun getFlightMode(): FlightMode = flightModeKey.get(FlightMode.UNKNOWN)
 
     /**
@@ -5849,7 +5862,19 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             rtkStdLatitudeM = rtk.stdLatitudeM,
             rtkStdLongitudeM = rtk.stdLongitudeM,
             rtkStdAltitudeM = rtk.stdAltitudeM,
+            flightControllerConnected = flightControllerConnectionKey.get(false),
+            isFlying = isFlyingKey.get(false),
+            isFailsafe = isFailSafeKey.get(false),
+            compassHealthy = !compassHasErrorKey.get(false),
+
+            batteryConnected = batteryConnectionKey.get(false),
             batteryPercent = getBatteryLevel(),
+            batteryVoltageMv = batteryVoltageKey.get(-1),
+            batteryCurrentMa = batteryCurrentKey.get(Int.MIN_VALUE),
+            batteryTemperatureC = batteryTemperatureKey.get(Double.NaN),
+            batteryChargeRemainingMah = batteryChargeRemainingKey.get(-1),
+            batteryFullChargeCapacityMah = batteryFullChargeCapacityKey.get(-1),
+            batteryCellVoltagesMv = getBatteryCellVoltages(),
             remainingFlightTimeS = goHomeAssessmentProcessor.value.remainingFlightTime,
             homeLatitudeDeg = homeLocation.latitude,
             homeLongitudeDeg = homeLocation.longitude,
@@ -5859,7 +5884,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                 ?: (position.altitudeAmslM - position.altitudeRelativeTakeoffM),
             homeSet = isHomeSet(),
             flightMode = getFlightMode().name,
-            motorsRunning = isFlyingKey.get(false),
+            // KeyAreMotorsOn is the direct motor state. isFlying is kept as a fallback because
+            // some DJI products briefly fail to publish the motor key during state transitions.
+            motorsRunning = areMotorsOnKey.get(false) || isFlyingKey.get(false),
             manualOverrideActive = DroneController.isManualOverrideActive,
             armedCommanded = armedCommanded,
             // The sequencer flies through virtual stick, so the mode DJI reports (OFFBOARD) would

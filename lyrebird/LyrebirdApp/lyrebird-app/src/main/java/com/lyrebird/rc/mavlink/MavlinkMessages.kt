@@ -54,12 +54,13 @@ internal object MavlinkMessages {
         }
         if (mode.guided) baseMode = baseMode or Mav.MODE_FLAG_GUIDED_ENABLED
         if (mode.manualInput) baseMode = baseMode or Mav.MODE_FLAG_MANUAL_INPUT_ENABLED
-        if (snapshot.satelliteCount > GPS_STABILIZED_SATELLITES) {
+        if (snapshot.flightControllerConnected) {
             baseMode = baseMode or Mav.MODE_FLAG_STABILIZE_ENABLED
         }
 
         val systemStatus = when {
-            snapshot.motorsRunning -> Mav.STATE_ACTIVE
+            snapshot.isFailsafe -> Mav.STATE_CRITICAL
+            snapshot.motorsRunning || snapshot.isFlying -> Mav.STATE_ACTIVE
             snapshot.flightMode == "UNKNOWN" -> Mav.STATE_UNINIT
             else -> Mav.STATE_STANDBY
         }
@@ -78,13 +79,13 @@ internal object MavlinkMessages {
     fun extendedSysState(snapshot: MavlinkSnapshot): ByteArray {
         val mode = modeOf(snapshot)
         val landedState = when {
-            !snapshot.motorsRunning -> Mav.LANDED_STATE_ON_GROUND
-            mode == MavlinkFlightMode.LAND -> Mav.LANDED_STATE_LANDING
-            mode == MavlinkFlightMode.TAKEOFF -> Mav.LANDED_STATE_TAKEOFF
-            else -> Mav.LANDED_STATE_IN_AIR
+            mode == MavlinkFlightMode.LAND && snapshot.isFlying -> Mav.LANDED_STATE_LANDING
+            mode == MavlinkFlightMode.TAKEOFF && snapshot.motorsRunning -> Mav.LANDED_STATE_TAKEOFF
+            snapshot.isFlying -> Mav.LANDED_STATE_IN_AIR
+            else -> Mav.LANDED_STATE_ON_GROUND
         }
         return PayloadWriter()
-            .u8(Mav.VTOL_STATE_MC)
+            .u8(Mav.VTOL_STATE_UNDEFINED)
             .u8(landedState)
             .build()
     }
@@ -109,22 +110,31 @@ internal object MavlinkMessages {
      * battery_remaining(i8)
      */
     fun sysStatus(snapshot: MavlinkSnapshot): ByteArray {
-        var sensors = Mav.SENSOR_3D_GYRO or Mav.SENSOR_3D_ACCEL or Mav.SENSOR_3D_MAG or
+        val sensors = Mav.SENSOR_3D_GYRO or Mav.SENSOR_3D_ACCEL or Mav.SENSOR_3D_MAG or
             Mav.SENSOR_ABSOLUTE_PRESSURE or Mav.SENSOR_ATTITUDE_STABILIZATION or
             Mav.SENSOR_YAW_POSITION or Mav.SENSOR_Z_ALTITUDE_CONTROL or
-            Mav.SENSOR_XY_POSITION_CONTROL or Mav.SENSOR_BATTERY
-        val gpsHealthy = snapshot.satelliteCount >= GPS_FIX_3D_SATELLITES
-        sensors = sensors or Mav.SENSOR_GPS
+            Mav.SENSOR_XY_POSITION_CONTROL or Mav.SENSOR_BATTERY or Mav.SENSOR_GPS
 
-        val health = if (gpsHealthy) sensors else sensors and Mav.SENSOR_GPS.inv()
+        var health = sensors
+        if (!snapshot.flightControllerConnected) {
+            health = health and (
+                Mav.SENSOR_3D_GYRO or Mav.SENSOR_3D_ACCEL or Mav.SENSOR_3D_MAG or
+                    Mav.SENSOR_ABSOLUTE_PRESSURE or Mav.SENSOR_ATTITUDE_STABILIZATION or
+                    Mav.SENSOR_YAW_POSITION or Mav.SENSOR_Z_ALTITUDE_CONTROL or
+                    Mav.SENSOR_XY_POSITION_CONTROL or Mav.SENSOR_GPS
+                ).inv()
+        }
+        if (!snapshot.compassHealthy) health = health and Mav.SENSOR_3D_MAG.inv()
+        if (gpsFixType(snapshot) < GPS_FIX_TYPE_3D) health = health and Mav.SENSOR_GPS.inv()
+        if (!snapshot.batteryConnected) health = health and Mav.SENSOR_BATTERY.inv()
 
         return PayloadWriter()
             .u32(sensors.toLong())
             .u32(sensors.toLong())
             .u32(health.toLong())
             .u16(0) // load: not measured
-            .u16(0) // voltage_battery: not read from the SDK yet, 0 = unknown
-            .i16(-1) // current_battery: unknown
+            .u16(batteryVoltageMv(snapshot))
+            .i16(batteryCurrentCentiAmp(snapshot))
             .u16(0) // drop_rate_comm
             .u16(0) // errors_comm
             .u16(0).u16(0).u16(0).u16(0)
@@ -230,20 +240,65 @@ internal object MavlinkMessages {
      * `remainingFlightTime` has a standard home at all, and it could not have been added under
      * MAVLink 1.
      */
-    fun batteryStatus(snapshot: MavlinkSnapshot): ByteArray =
-        PayloadWriter()
-            .i32(-1) // current_consumed: unknown
-            .i32(-1) // energy_consumed: unknown
-            .i16(MavlinkSnapshot.INT16_UNKNOWN) // temperature: unknown
-            // Per-cell voltages are not read from the SDK; UINT16_MAX is the documented "unknown".
-            .u16Array(MavlinkSnapshot.UINT16_UNKNOWN, VOLTAGE_CELLS)
-            .i16(-1) // current_battery: unknown
-            .u8(0) // id
+    fun batteryStatus(snapshot: MavlinkSnapshot): ByteArray {
+        val writer = PayloadWriter()
+            .i32(batteryConsumedMah(snapshot))
+            .i32(-1) // energy_consumed: not exposed
+            .i16(batteryTemperatureCdeg(snapshot))
+
+        repeat(VOLTAGE_CELLS) { index ->
+            writer.u16(
+                snapshot.batteryCellVoltagesMv.getOrNull(index)
+                    ?.takeIf { it > 0 }
+                    ?.coerceAtMost(MavlinkSnapshot.UINT16_UNKNOWN - 1)
+                    ?: MavlinkSnapshot.UINT16_UNKNOWN
+            )
+        }
+
+        return writer
+            .i16(batteryCurrentCentiAmp(snapshot))
+            .u8(0) // id: integrated aircraft battery / first battery
             .u8(0) // battery_function: UNKNOWN
-            .u8(0) // type: UNKNOWN
+            .u8(0) // type: chemistry not asserted
             .i8(snapshot.batteryPercent.coerceIn(MavlinkSnapshot.INVALID_BATTERY, PERCENT_MAX))
             .i32(snapshot.remainingFlightTimeS.coerceAtLeast(0))
             .build()
+    }
+
+    private fun batteryVoltageMv(snapshot: MavlinkSnapshot): Int =
+        snapshot.batteryVoltageMv
+            .takeIf { snapshot.batteryConnected && it > 0 }
+            ?.coerceAtMost(MavlinkSnapshot.UINT16_UNKNOWN - 1)
+            ?: MavlinkSnapshot.UINT16_UNKNOWN
+
+    /**
+     * DJI reports discharge current as negative mA. MAVLink/PX4 consumers conventionally expose
+     * discharge as positive cA, so invert and convert. Charging/zero current is reported as 0
+     * rather than colliding with MAVLink's -1 unknown sentinel.
+     */
+    private fun batteryCurrentCentiAmp(snapshot: MavlinkSnapshot): Int {
+        if (!snapshot.batteryConnected || snapshot.batteryCurrentMa == Int.MIN_VALUE) return -1
+        if (snapshot.batteryCurrentMa >= 0) return 0
+        return ((-snapshot.batteryCurrentMa) / 10.0)
+            .roundToInt()
+            .coerceIn(0, Short.MAX_VALUE.toInt())
+    }
+
+    private fun batteryTemperatureCdeg(snapshot: MavlinkSnapshot): Int {
+        if (!snapshot.batteryConnected || !snapshot.batteryTemperatureC.isFinite()) {
+            return MavlinkSnapshot.INT16_UNKNOWN
+        }
+        return (snapshot.batteryTemperatureC * 100.0)
+            .roundToInt()
+            .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+    }
+
+    private fun batteryConsumedMah(snapshot: MavlinkSnapshot): Int {
+        val full = snapshot.batteryFullChargeCapacityMah
+        val remaining = snapshot.batteryChargeRemainingMah
+        if (!snapshot.batteryConnected || full <= 0 || remaining < 0) return -1
+        return (full - remaining).coerceAtLeast(0)
+    }
 
     /**
      * latitude(i32), longitude(i32), altitude(i32), x(f), y(f), z(f), q(f[4]),
