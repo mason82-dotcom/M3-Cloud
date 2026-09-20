@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any
 
 import httpx
@@ -21,6 +22,8 @@ class LyrebirdLiveBridge:
         self._tcp: dict[str, dict[str, Any]] = {}
         self._config: dict[str, dict[str, Any]] = {}
         self._camera_caps: dict[str, dict[str, Any]] = {}
+        self._tcp_seen: dict[str, float] = {}
+        self._http_seen: dict[str, float] = {}
 
     async def start(self) -> None:
         if not settings.lyrebird_enabled:
@@ -50,10 +53,35 @@ class LyrebirdLiveBridge:
                 config = cfg.json() if cfg.is_success else {}
                 camera = caps.json() if caps.is_success else {}
                 if isinstance(config, dict): self._config[host] = config
+                if isinstance(config, dict) and config: self._http_seen[host] = time.monotonic()
                 if isinstance(camera, dict): self._camera_caps[host] = camera
             except (httpx.HTTPError, ValueError):
                 pass
         return self._config.get(host, {"droneName": host}), self._camera_caps.get(host, {})
+
+    def health(self) -> dict[str, Any]:
+        now = time.monotonic()
+        hosts: dict[str, Any] = {}
+        states: list[str] = []
+        for host in [x.strip() for x in settings.lyrebird_hosts.split(",") if x.strip()]:
+            mav = self.collector.snapshot(host)
+            tcp_age = now - self._tcp_seen[host] if host in self._tcp_seen else None
+            http_age = now - self._http_seen[host] if host in self._http_seen else None
+            mav_ok = mav is not None
+            tcp_ok = tcp_age is not None and tcp_age <= settings.lyrebird_mavlink_ttl_seconds
+            http_ok = http_age is not None and http_age <= 30.0
+            if mav_ok and tcp_ok: status = "ONLINE"
+            elif mav_ok or tcp_ok: status = "DEGRADED"
+            elif http_ok: status = "STALE"
+            else: status = "OFFLINE"
+            states.append(status)
+            hosts[host] = {"status": status, "mavlink": mav_ok, "tcp": tcp_ok, "http": http_ok}
+        overall = "OFFLINE"
+        for candidate in ("ONLINE", "DEGRADED", "STALE"):
+            if candidate in states:
+                overall = candidate
+                break
+        return {"ok": overall in {"ONLINE", "DEGRADED"}, "status": overall, "hosts": hosts}
 
     async def _publish(self, host: str, telemetry: dict[str, Any]) -> None:
         config, caps = await self._identity(host)
@@ -91,6 +119,7 @@ class LyrebirdLiveBridge:
                                 merged[key] = value
                         current = merged
                     self._tcp[host] = current
+                    self._tcp_seen[host] = time.monotonic()
                     mavlink = self.collector.snapshot(host)
                     await self._publish(host, merge_transport_telemetry(mavlink, current) or current)
             except (OSError, ConnectionError, UnicodeDecodeError, json.JSONDecodeError):

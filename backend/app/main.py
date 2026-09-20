@@ -12,7 +12,6 @@ from app.health import readiness
 from app.live import LiveTelemetryHub, router as live_router
 from app.api_operations import router as operations_router
 from app.redis_client import redis_client
-from app.api_vehicles import router as vehicles_router
 from app.vehicles.mavlink import lyrebird_mavlink_collector
 from app.vehicles.live import LyrebirdLiveBridge
 
@@ -35,6 +34,7 @@ async def lifespan(app: FastAPI):
     app.state.live_hub = live_hub
     lyrebird_live = LyrebirdLiveBridge(redis_client, lyrebird_mavlink_collector)
     app.state.lyrebird_live = lyrebird_live
+    app.state.lyrebird_mavlink_collector = lyrebird_mavlink_collector
 
     await live_hub.start()
     await lyrebird_mavlink_collector.start()
@@ -62,7 +62,6 @@ app.include_router(devices_router)
 app.include_router(flights_router)
 app.include_router(live_router)
 app.include_router(operations_router)
-app.include_router(vehicles_router)
 
 
 @app.get("/")
