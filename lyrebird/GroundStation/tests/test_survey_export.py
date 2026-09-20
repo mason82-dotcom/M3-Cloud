@@ -30,7 +30,7 @@ CSV_FIELDS = [
 
 
 def _row(name, *, size=10, resolved=True, quality="FIXED"):
-    return {field: "" for field in CSV_FIELDS} | {
+    return dict.fromkeys(CSV_FIELDS, "") | {
         "file_name": name,
         "file_size_bytes": str(size),
         "file_type": "JPEG",
@@ -86,14 +86,14 @@ class FakeDrone:
         self.summary = summary
         self.downloaded: list[str] = []
 
-    def getLatestSurveyInfo(self):
+    def getLatestSurveyInfo(self):  # noqa: N802
         return {
             "available": True,
             "capturesName": self.captures.name,
             "summaryName": self.summary.name,
         }
 
-    def downloadLatestSurveyReports(self, out_dir="."):
+    def downloadLatestSurveyReports(self, out_dir="."):  # noqa: N802
         target = Path(out_dir)
         target.mkdir(parents=True, exist_ok=True)
         captures = target / self.captures.name
@@ -102,7 +102,7 @@ class FakeDrone:
         summary.write_bytes(self.summary.read_bytes())
         return {"captures": str(captures), "summary": str(summary)}
 
-    def downloadByName(self, file_name, save_path=None, out_dir="."):
+    def downloadByName(self, file_name, save_path=None, out_dir="."):  # noqa: N802
         self.downloaded.append(file_name)
         Path(save_path).write_bytes(b"x" * 10)
         return save_path
