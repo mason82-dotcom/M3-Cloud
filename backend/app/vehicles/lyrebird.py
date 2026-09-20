@@ -108,6 +108,9 @@ class LyrebirdVehicleProvider:
         writer = None
         try:
             reader, writer = await asyncio.wait_for(asyncio.open_connection(host, settings.lyrebird_telemetry_port), timeout=settings.lyrebird_timeout_seconds)
+            if self._mavlink_collector is not None:
+                writer.write(b"MODE=GAP\n")
+                await asyncio.wait_for(writer.drain(), timeout=settings.lyrebird_timeout_seconds)
             line = await asyncio.wait_for(reader.readline(), timeout=settings.lyrebird_timeout_seconds)
             raw = json.loads(line.decode("utf-8"))
             return normalize_telemetry(raw) if isinstance(raw, dict) else None

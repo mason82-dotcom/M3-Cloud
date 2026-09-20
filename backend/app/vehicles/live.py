@@ -75,7 +75,7 @@ class LyrebirdLiveBridge:
             elif http_ok: status = "STALE"
             else: status = "OFFLINE"
             states.append(status)
-            hosts[host] = {"status": status, "mavlink": mav_ok, "tcp": tcp_ok, "http": http_ok}
+            hosts[host] = {"status": status, "mavlink": mav_ok, "tcp": tcp_ok, "http": http_ok, "tcp_mode": "gap"}
         overall = "OFFLINE"
         for candidate in ("ONLINE", "DEGRADED", "STALE"):
             if candidate in states:
@@ -102,6 +102,10 @@ class LyrebirdLiveBridge:
             writer = None
             try:
                 reader, writer = await asyncio.open_connection(host, settings.lyrebird_telemetry_port)
+                # Match Lyrebird Transport.BOTH: MAVLink owns standard telemetry, TCP sends only gaps.
+                # Older aircraft safely ignore this unknown request and continue with full snapshots.
+                writer.write(b"MODE=GAP\n")
+                await writer.drain()
                 while True:
                     line = await reader.readline()
                     if not line:
