@@ -424,7 +424,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         private val WEBRTC_FPS_OPTIONS = intArrayOf(5, 10, 15, 20, 25, 30)
     }
 
-    @Volatile private var restoringCameraLiveSource = false
 
     private enum class StreamResolutionPreset(
         val prefValue: String,
@@ -5403,100 +5402,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         return true
     }
 
-    private fun schedulePreferredCameraLiveSourceRestore() {
-        // DJI can publish RGB_CAMERA again while the camera pipeline is still starting.
-        // Reconcile the saved operator choice at bounded points; each pass re-reads prefs.
-        listOf(400L, 1_500L, 4_000L).forEach { delayMs ->
-            mainHandler.postDelayed({ restorePreferredCameraLiveSource() }, delayMs)
-        }
-    }
-
-    private fun restorePreferredCameraLiveSource(attemptsRemaining: Int = 2) {
-        val preferredName = sharedPreferences.getString(PREF_CAMERA_LIVE_SOURCE, null)
-            ?.trim()
-            .orEmpty()
-        val preferred = CameraVideoStreamSourceType.values()
-            .firstOrNull { it.name == preferredName }
-
-        if (preferred == null) {
-            return
-        }
-
-        val rangeKey: DJIKey<List<CameraVideoStreamSourceType>> =
-            KeyTools.createKey(CameraKey.KeyCameraVideoStreamSourceRange, ComponentIndexType.LEFT_OR_MAIN)
-        val sourceKey: DJIKey<CameraVideoStreamSourceType> =
-            KeyTools.createKey(CameraKey.KeyCameraVideoStreamSource, ComponentIndexType.LEFT_OR_MAIN)
-
-        restoringCameraLiveSource = true
-        KeyManager.getInstance().getValue(
-            rangeKey,
-            object : CommonCallbacks.CompletionCallbackWithParam<List<CameraVideoStreamSourceType>> {
-                override fun onSuccess(range: List<CameraVideoStreamSourceType>?) {
-                    if (preferred !in range.orEmpty()) {
-                        Log.w(TAG, "Saved camera live source $preferredName unsupported by current camera")
-                        restoringCameraLiveSource = false
-                        return
-                    }
-
-                    KeyManager.getInstance().setValue(
-                        sourceKey,
-                        preferred,
-                        object : CommonCallbacks.CompletionCallback {
-                            override fun onSuccess() {
-                                mainHandler.postDelayed({
-                                    KeyManager.getInstance().getValue(
-                                        sourceKey,
-                                        object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
-                                            override fun onSuccess(current: CameraVideoStreamSourceType?) {
-                                                if (current == preferred) {
-                                                    Log.i(TAG, "Restored camera live source: $preferredName")
-                                                } else {
-                                                    Log.w(
-                                                        TAG,
-                                                        "Camera live source changed after restore: expected=$preferredName actual=${current?.name}"
-                                                    )
-                                                }
-                                                restoringCameraLiveSource = false
-                                            }
-
-                                            override fun onFailure(error: IDJIError) {
-                                                Log.w(
-                                                    TAG,
-                                                    "Camera live-source restore readback failed: ${error.description()}"
-                                                )
-                                                restoringCameraLiveSource = false
-                                            }
-                                        }
-                                    )
-                                }, 250L)
-                            }
-
-                            override fun onFailure(error: IDJIError) {
-                                retryRestoreCameraLiveSource(error.description(), attemptsRemaining)
-                            }
-                        }
-                    )
-                }
-
-                override fun onFailure(error: IDJIError) {
-                    retryRestoreCameraLiveSource(error.description(), attemptsRemaining)
-                }
-            }
-        )
-    }
-
-    private fun retryRestoreCameraLiveSource(reason: String, attemptsRemaining: Int) {
-        if (attemptsRemaining > 1) {
-            mainHandler.postDelayed(
-                { restorePreferredCameraLiveSource(attemptsRemaining - 1) },
-                300L
-            )
-        } else {
-            Log.w(TAG, "Camera live-source restore unavailable: $reason")
-            restoringCameraLiveSource = false
-        }
-    }
-
     // ==================== Utility Methods ====================
 
 
@@ -5530,7 +5435,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                             }
                             Log.i(TAG, "Applied per-drone settings profile for $droneSerialNumber")
                         }
-                        schedulePreferredCameraLiveSourceRestore()
                     }
                     applyAutomaticDroneName()
                     if (!configuredMavlinkSystemIdIsManual() && previousSystemId != currentMavlinkSystemId()) {
