@@ -21,12 +21,14 @@ from app.missions.uploader import MissionUploader, recover_interrupted_uploads
 from app.processing.service import ProcessingManager
 from app.api_operations import router as operations_router
 from app.redis_client import redis_client
+from app.storage import ensure_storage_buckets
 from app.vehicles.mavlink import lyrebird_mavlink_collector
 from app.vehicles.live import LyrebirdLiveBridge
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    ensure_storage_buckets()
     interrupted_uploads = await recover_interrupted_uploads(session_factory)
     app.state.recovered_mission_uploads = interrupted_uploads
 
