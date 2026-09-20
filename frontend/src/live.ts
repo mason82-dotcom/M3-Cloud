@@ -5,6 +5,7 @@ import type { LiveEvent } from "./types";
 
 const LIVE_EVENT_TYPES = new Set([
   "telemetry",
+  "vehicle_telemetry",
   "device_online",
   "device_offline",
   "topology",
@@ -20,15 +21,11 @@ export function useLiveEvents(
     let stopped = false;
 
     const connect = () => {
-      if (stopped) {
-        return;
-      }
+      if (stopped) return;
 
       socket = new WebSocket(liveWebSocketUrl());
 
-      socket.onopen = () => {
-        onConnection(true);
-      };
+      socket.onopen = () => onConnection(true);
 
       socket.onmessage = (message) => {
         let payload: unknown;
@@ -52,22 +49,18 @@ export function useLiveEvents(
       socket.onclose = () => {
         onConnection(false);
         if (!stopped) {
-          retryTimer = window.setTimeout(connect, 2000);
+          retryTimer = window.setTimeout(connect, 1500);
         }
       };
 
-      socket.onerror = () => {
-        socket?.close();
-      };
+      socket.onerror = () => socket?.close();
     };
 
     connect();
 
     return () => {
       stopped = true;
-      if (retryTimer !== null) {
-        window.clearTimeout(retryTimer);
-      }
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
       socket?.close();
     };
   }, [onConnection, onEvent]);

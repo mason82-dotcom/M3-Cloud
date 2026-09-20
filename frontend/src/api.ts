@@ -1,4 +1,4 @@
-import type { Vehicle } from "./types";
+import type { SystemHealth, Vehicle } from "./types";
 
 export async function fetchVehicles(): Promise<Vehicle[]> {
   const response = await fetch("/api/v1/vehicles");
@@ -12,6 +12,14 @@ export async function fetchVehicles(): Promise<Vehicle[]> {
     return envelope.items ?? envelope.vehicles ?? [];
   }
   return [];
+}
+
+export async function fetchSystemHealth(): Promise<SystemHealth> {
+  const response = await fetch("/api/v1/system/health");
+  if (!response.ok) {
+    throw new Error(`Health request failed: ${response.status}`);
+  }
+  return response.json() as Promise<SystemHealth>;
 }
 
 export function liveWebSocketUrl(): string {

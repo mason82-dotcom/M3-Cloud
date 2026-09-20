@@ -17,6 +17,9 @@ export interface AircraftPositioning {
   gps_satellites?: number | null;
   rtk_satellites?: number | null;
   rtk_stale?: boolean;
+  rtk_fixed?: boolean | null;
+  convergence?: string | null;
+  quality?: number | null;
   rtk?: RtkState;
 }
 
@@ -26,7 +29,78 @@ export interface AircraftState {
   armed?: boolean | null;
   is_flying?: boolean | null;
   failsafe?: boolean | null;
+  landed_state?: number | null;
+  home?: {
+    latitude?: number | null;
+    longitude?: number | null;
+    distance_m?: number | null;
+  };
   positioning?: AircraftPositioning;
+}
+
+export interface PayloadState {
+  platform?: string;
+  rgb?: boolean;
+  wide?: boolean;
+  zoom?: boolean;
+  thermal?: boolean;
+  multispectral?: boolean;
+  lrf?: boolean;
+  capture_profiles?: string[];
+  camera?: {
+    camera_type?: string | null;
+    firmware_version?: string | null;
+    camera_mode?: string | number | null;
+    live_view_source?: string | null;
+    capture_stored_sources?: string[];
+    [key: string]: unknown;
+  };
+}
+
+export interface BatteryState {
+  capacity_percent?: number | null;
+  remain_flight_time_s?: number | null;
+}
+
+export interface Telemetry {
+  aircraft_state?: AircraftState;
+  source_sn?: string;
+  gateway_sn?: string | null;
+  source_timestamp_ms?: number;
+  last_seen_ms?: number;
+  source?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  relative_altitude_m?: number | null;
+  ellipsoid_height_m?: number | null;
+  amsl_altitude_m?: number | null;
+  horizontal_speed_mps?: number | null;
+  vertical_speed_mps?: number | null;
+  velocity_down_mps?: number | null;
+  heading_deg?: number | null;
+  mode_code?: number | null;
+  gps_satellites?: number | null;
+  position_state?: {
+    code?: number | null;
+    convergence?: string | null;
+    quality?: number | null;
+    gps_satellites?: number | null;
+    rtk_satellites?: number | null;
+  };
+  battery?: BatteryState;
+  attitude?: {
+    yaw_deg?: number | null;
+    roll_deg?: number | null;
+    pitch_deg?: number | null;
+  };
+  gimbal?: Record<string, unknown>;
+  controller?: Record<string, unknown>;
+  safety?: Record<string, unknown>;
+  payload?: PayloadState;
+  lrf?: Record<string, unknown>;
+  rtk?: RtkState;
+  home_set?: boolean | null;
+  [key: string]: unknown;
 }
 
 export interface Vehicle {
@@ -42,48 +116,12 @@ export interface Vehicle {
   telemetry?: Telemetry | null;
 }
 
-export interface PositionState {
-  code: number | null;
-  convergence: "NOT_STARTED" | "CONVERGING" | "CONVERGED" | "FAILED" | "UNKNOWN";
-  quality: number | null;
-  gps_satellites: number | null;
-  rtk_satellites: number | null;
-}
-
-export interface BatteryState {
-  capacity_percent?: number;
-  remain_flight_time_s?: number;
-}
-
-export interface Telemetry {
-  aircraft_state?: AircraftState;
-  source_sn: string;
-  gateway_sn?: string | null;
-  last_seen_ms: number;
-  source_timestamp_ms: number;
-  latitude?: number;
-  longitude?: number;
-  relative_altitude_m?: number;
-  ellipsoid_height_m?: number;
-  horizontal_speed_mps?: number;
-  vertical_speed_mps?: number;
-  mode_code?: number;
-  position_state?: PositionState;
-  battery?: BatteryState;
-  attitude?: {
-    yaw_deg?: number;
-    roll_deg?: number;
-    pitch_deg?: number;
-  };
-}
-
 export interface TelemetryEvent {
   type: "telemetry";
   device_sn: string;
   timestamp: number;
   state: Telemetry;
 }
-
 
 export interface VehicleTelemetryEvent {
   type: "vehicle_telemetry";
@@ -113,4 +151,19 @@ export interface TopologyEvent {
   devices?: unknown[];
 }
 
-export type LiveEvent = TelemetryEvent | VehicleTelemetryEvent | DeviceStatusEvent | TopologyEvent;
+export interface ComponentHealth {
+  ok?: boolean;
+  status?: string;
+  [key: string]: unknown;
+}
+
+export interface SystemHealth {
+  ok: boolean;
+  components: Record<string, ComponentHealth | string | boolean | null>;
+}
+
+export type LiveEvent =
+  | TelemetryEvent
+  | VehicleTelemetryEvent
+  | DeviceStatusEvent
+  | TopologyEvent;
