@@ -5,6 +5,8 @@ import type {
   MediaAsset,
   MediaGroup,
   MediaImportStatus,
+  ProcessingJob,
+  ProcessingProfile,
   SystemHealth,
   Vehicle,
 } from "./types";
@@ -99,6 +101,40 @@ export async function scanMediaImport(): Promise<Record<string, unknown>> {
     throw new Error(`Media import scan failed: ${response.status}`);
   }
   return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function fetchProcessingProfiles(): Promise<ProcessingProfile[]> {
+  const response = await fetch("/api/v1/processing/profiles");
+  if (!response.ok) {
+    throw new Error(`Processing profile request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingProfile[]>;
+}
+
+export async function fetchProcessingJobs(): Promise<ProcessingJob[]> {
+  const response = await fetch("/api/v1/processing/jobs");
+  if (!response.ok) {
+    throw new Error(`Processing jobs request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingJob[]>;
+}
+
+export async function createWebODMJob(input: {
+  name: string;
+  input_prefix: string;
+  platform?: string;
+  profile: string;
+}): Promise<ProcessingJob> {
+  const response = await fetch("/api/v1/processing/webodm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `WebODM job request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingJob>;
 }
 
 export async function fetchSystemHealth(): Promise<SystemHealth> {

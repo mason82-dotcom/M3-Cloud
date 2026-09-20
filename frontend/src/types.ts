@@ -252,6 +252,36 @@ export interface MediaImportStatus {
   } | null;
 }
 
+export interface ProcessingProfile {
+  key: string;
+  title: string;
+  purpose: string;
+  options: Array<{ name: string; value: unknown }>;
+}
+
+export interface ProcessingJob {
+  id: string;
+  kind: string;
+  status: string;
+  name: string;
+  input_prefix: string;
+  platform?: string | null;
+  media_kinds: string[];
+  options: Array<{ name: string; value: unknown }>;
+  image_count: number;
+  uploaded_count: number;
+  progress: number;
+  remote_project_id?: number | null;
+  remote_task_id?: number | null;
+  remote_status?: number | null;
+  available_assets: string[];
+  error?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  updated_at: string;
+  finished_at?: string | null;
+}
+
 export interface ComponentHealth {
   ok?: boolean;
   status?: string;

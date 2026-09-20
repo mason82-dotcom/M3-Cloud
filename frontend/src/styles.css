@@ -720,3 +720,218 @@ button { font: inherit; }
     border-bottom: 1px solid var(--line);
   }
 }
+
+
+.processingView {
+  display: grid;
+  gap: 10px;
+}
+
+.processingCreate,
+.processingJobs {
+  min-height: auto;
+}
+
+.processingForm {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.5fr) minmax(180px, 1fr) minmax(220px, 1fr) auto;
+  gap: 8px;
+  padding: 12px;
+}
+
+.processingForm label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.processingForm select,
+.processingForm input,
+.processingForm button,
+.processingJobs .panelHead button {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0e151e;
+  color: var(--text);
+  padding: 8px 9px;
+}
+
+.processingForm button,
+.processingJobs .panelHead button {
+  cursor: pointer;
+  align-self: end;
+  background: var(--panel2);
+}
+
+.processingForm button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.processingDataset {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  padding: 0 12px 12px;
+}
+
+.processingDataset span {
+  padding: 8px;
+  border: 1px solid #1d2935;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.processingDataset b {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 10px;
+  text-transform: none;
+}
+
+.processingProfile {
+  margin: 0 12px 12px;
+  border-left: 3px solid var(--accent);
+  background: #0e151e;
+  padding: 9px 10px;
+}
+
+.processingProfile strong,
+.processingProfile span {
+  display: block;
+}
+
+.processingProfile strong {
+  font-size: 10px;
+}
+
+.processingProfile span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.processingJobList {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.processingJob {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0e151e;
+  padding: 10px;
+}
+
+.processingJobHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.processingJobHead strong,
+.processingJobHead small {
+  display: block;
+}
+
+.processingJobHead strong {
+  font-size: 11px;
+}
+
+.processingJobHead small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+.processingProgress {
+  height: 5px;
+  margin: 10px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #1d2935;
+}
+
+.processingProgress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width .25s linear;
+}
+
+.processingMetrics {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.processingMetrics span {
+  color: var(--muted);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.processingMetrics b {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 9px;
+  text-transform: none;
+}
+
+.processingAssets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.processingAssets span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: #b7c5d4;
+  font-size: 8px;
+}
+
+.processingError {
+  margin-top: 9px;
+  border: 1px solid #633838;
+  border-radius: 6px;
+  background: #351b1b;
+  color: #ffbcbc;
+  padding: 7px;
+  font-size: 9px;
+}
+
+@media (max-width: 1050px) {
+  .processingForm {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .processingMetrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 650px) {
+  .processingForm,
+  .processingDataset {
+    grid-template-columns: 1fr;
+  }
+
+  .processingMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

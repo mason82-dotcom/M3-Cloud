@@ -5,6 +5,7 @@ import { FlightHistoryView } from "./FlightHistory";
 import { useLiveEvents } from "./live";
 import { MapView } from "./MapView";
 import { MediaView } from "./MediaView";
+import { ProcessingView } from "./ProcessingView";
 import type {
   ComponentHealth,
   LiveEvent,
@@ -617,6 +618,12 @@ export default function App() {
           </section>
         ) : null}
 
+        {activeView === "processing" ? (
+          <section className="view active">
+            <ProcessingView />
+          </section>
+        ) : null}
+
         {activeView === "system" ? (
           <section className="view active">
             <div className="systemGrid">
@@ -630,7 +637,7 @@ export default function App() {
           </section>
         ) : null}
 
-        {!["operations", "live", "flights", "media", "system"].includes(activeView) ? (
+        {!["operations", "live", "flights", "media", "processing", "system"].includes(activeView) ? (
           <section className="view active">
             <div className="placeholder">
               <h2>{nav[1]}</h2>
