@@ -273,7 +273,8 @@ def normalize_mavlink_message(msg: Any) -> dict[str, Any]:
         remaining = int(msg.battery_remaining)
         return {"battery": {"capacity_percent": None if remaining < 0 else remaining}}
     if kind == "VFR_HUD":
-        # Lyrebird sends VFR_HUD.alt from altitudeAslM and climb positive-up.\n        return {"amsl_altitude_m": float(msg.alt), "climb_rate_mps": float(msg.climb)}
+        # Lyrebird sends VFR_HUD.alt from altitudeAslM and climb positive-up.
+        return {"amsl_altitude_m": float(msg.alt), "climb_rate_mps": float(msg.climb)}
     if kind == "MISSION_CURRENT":
         return {"mission": {"current_seq": int(msg.seq), "state": int(getattr(msg, "mission_state", 0))}}
     if kind == "MISSION_ITEM_REACHED":
