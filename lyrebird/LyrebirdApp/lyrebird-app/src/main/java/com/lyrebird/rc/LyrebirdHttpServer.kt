@@ -9,6 +9,7 @@ import dji.sdk.keyvalue.value.common.LocationCoordinate3D
 import android.util.Log
 import android.widget.Switch
 import com.lyrebird.rc.controller.CameraCapabilityProbe
+import com.lyrebird.rc.controller.CameraLiveSourceController
 import com.lyrebird.rc.controller.ControlAuthority
 import com.lyrebird.rc.controller.DroneController
 import com.lyrebird.rc.controller.Payload
@@ -118,6 +119,9 @@ internal class LyrebirdHttpCommandHandler(
             "/send/RTH" to {
                 DroneController.startReturnToHome()
                 "Return to home command sent."
+            },
+            "/send/camera/live-source" to { postData ->
+                CameraLiveSourceController.setAndReadback(postData).toJson()
             },
             "/send/stick" to { postData ->
                 if (DroneController.shouldRejectAutonomousCommand("stick")) {
@@ -843,6 +847,7 @@ internal class SimpleHttpServer(
                 }
                 "/config/settings" -> host.readSettingsJson()
                 "/get/camera/capabilities" -> CameraCapabilityProbe.snapshot().toJson()
+                "/get/camera/live-source" -> CameraLiveSourceController.readCurrent().toJson()
                 "/get/survey/latest" -> LyrebirdFlightLogger.latestSurveyInfoJson()
                 else -> "Use POST for commands. Telemetry available on port $TELEMETRY_PORT. " +
                     "Config available at GET /config; settings at GET /config/settings"
