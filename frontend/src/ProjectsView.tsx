@@ -5,6 +5,7 @@ import {
   assignMediaDatasetSurvey,
   createProject,
   createSurvey,
+  createSurveyFromDataset,
   fetchFlights,
   fetchMediaDatasets,
   fetchProcessingJobs,
@@ -39,6 +40,7 @@ export function ProjectsView() {
   const [projectName, setProjectName] = useState("");
   const [surveyName, setSurveyName] = useState("");
   const [surveyKind, setSurveyKind] = useState("MAPPING");
+  const [datasetSeedId, setDatasetSeedId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -170,6 +172,23 @@ export function ProjectsView() {
     }
   };
 
+  const submitSurveyFromDataset = async () => {
+    if (!projectId || !datasetSeedId) return;
+
+    setBusy(true);
+    try {
+      const created = await createSurveyFromDataset(projectId, datasetSeedId);
+      setDatasetSeedId("");
+      await Promise.all([loadBase(), refreshSurveys()]);
+      setSurveyId(created.id);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submitSurvey = async () => {
     if (!projectId) return;
     const name = surveyName.trim();
@@ -293,6 +312,31 @@ export function ProjectsView() {
           </select>
           <button disabled={busy || !projectId || !surveyName.trim()} onClick={() => void submitSurvey()} type="button">
             Add
+          </button>
+        </div>
+
+        <div className="surveyFromDataset">
+          <label>
+            Survey from dataset
+            <select
+              disabled={!projectId || busy || unassignedDatasets.length === 0}
+              value={datasetSeedId}
+              onChange={(event) => setDatasetSeedId(event.target.value)}
+            >
+              <option value="">Select unassigned dataset…</option>
+              {unassignedDatasets.map((dataset) => (
+                <option key={dataset.id as string} value={dataset.id as string}>
+                  {dataset.platform} · {dataset.prefix}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            disabled={!projectId || !datasetSeedId || busy}
+            onClick={() => void submitSurveyFromDataset()}
+            type="button"
+          >
+            Create from dataset
           </button>
         </div>
 

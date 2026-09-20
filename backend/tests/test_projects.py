@@ -7,10 +7,12 @@ from app.api_projects import (
     ProjectCreate,
     SurveyAssignment,
     SurveyCreate,
+    SurveyFromDatasetCreate,
     assign_dataset_survey,
     assign_flight_survey,
     create_project,
     create_survey,
+    create_survey_from_dataset,
     survey_lineage,
 )
 from app.database import session_factory
@@ -153,3 +155,78 @@ async def test_project_survey_assignments_and_processing_inheritance(tmp_path) -
         stored = await session.get(ProcessingJob, job.id)
         assert stored is not None
         assert stored.survey_id == survey_id
+
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_create_survey_from_dataset_infers_kind_and_links_flight() -> None:
+    async with session_factory() as session:
+        await session.execute(delete(ProcessingJob))
+        await session.execute(delete(MediaDatasetRecord))
+        await session.execute(delete(MediaAsset))
+        await session.execute(delete(Flight))
+        await session.execute(delete(Survey))
+        await session.execute(delete(Project))
+        await session.commit()
+
+    project = await create_project(ProjectCreate(name="Thermal project"))
+    project_id = __import__("uuid").UUID(project["id"])
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as session:
+        flight = Flight(
+            aircraft_sn="M3T-TEST",
+            gateway_sn=None,
+            dji_track_id=None,
+            survey_id=None,
+            status="COMPLETED",
+            started_at=now,
+            ended_at=now,
+            duration_s=0.0,
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        session.add(flight)
+        await session.flush()
+
+        dataset = MediaDatasetRecord(
+            prefix="M3T/inspection-roof",
+            platform="M3T",
+            flight_id=flight.id,
+            survey_id=None,
+            title=None,
+            capture_started_at=now,
+            capture_ended_at=now,
+            flight_assignment_source="AUTO",
+            flight_match_status="MATCHED_TIME_GPS",
+            flight_match_candidates=[str(flight.id)],
+            flight_match_details={},
+            present=True,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(dataset)
+        await session.commit()
+        await session.refresh(dataset)
+        dataset_id = dataset.id
+        flight_id = flight.id
+
+    survey = await create_survey_from_dataset(
+        project_id,
+        dataset_id,
+        SurveyFromDatasetCreate(),
+    )
+
+    assert survey["name"] == "inspection-roof"
+    assert survey["kind"] == "THERMAL"
+    assert survey["dataset_count"] == 1
+    assert survey["flight_count"] == 1
+
+    async with session_factory() as session:
+        stored_dataset = await session.get(MediaDatasetRecord, dataset_id)
+        stored_flight = await session.get(Flight, flight_id)
+        assert stored_dataset is not None
+        assert stored_flight is not None
+        assert str(stored_dataset.survey_id) == survey["id"]
+        assert str(stored_flight.survey_id) == survey["id"]

@@ -1844,3 +1844,40 @@ button { font: inherit; }
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+.surveyFromDataset {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border-bottom: 1px solid var(--line);
+  background: rgb(79 195 182 / 4%);
+}
+
+.surveyFromDataset label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.surveyFromDataset select,
+.surveyFromDataset button {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0e151e;
+  color: var(--text);
+  padding: 7px 8px;
+  font-size: 10px;
+}
+
+.surveyFromDataset button {
+  background: var(--panel2);
+  cursor: pointer;
+}
+
+.surveyFromDataset button:disabled {
+  cursor: default;
+  opacity: .45;
+}

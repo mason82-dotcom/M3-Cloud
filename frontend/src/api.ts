@@ -79,6 +79,26 @@ export async function createSurvey(
   return response.json() as Promise<Survey>;
 }
 
+export async function createSurveyFromDataset(
+  projectId: string,
+  datasetId: string,
+  input: { name?: string; description?: string } = {},
+): Promise<Survey> {
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/surveys/from-dataset/${encodeURIComponent(datasetId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Survey from dataset failed: ${response.status}`);
+  }
+  return response.json() as Promise<Survey>;
+}
+
 export async function fetchSurveyLineage(
   surveyId: string,
 ): Promise<SurveyLineage> {

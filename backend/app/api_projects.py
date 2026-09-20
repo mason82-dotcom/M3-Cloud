@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, status
@@ -60,6 +61,11 @@ class SurveyUpdate(BaseModel):
 
 class SurveyAssignment(BaseModel):
     survey_id: uuid.UUID | None
+
+
+class SurveyFromDatasetCreate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=4000)
 
 
 def _project(project: Project, survey_count: int = 0) -> dict[str, Any]:
@@ -483,3 +489,93 @@ async def survey_lineage(survey_id: uuid.UUID) -> dict[str, Any]:
                 for job in jobs
             ],
         }
+
+
+def _survey_kind_for_platform(platform: str) -> str:
+    return {
+        "M3E": "MAPPING",
+        "M3T": "THERMAL",
+        "M3M": "MULTISPECTRAL",
+    }.get(platform.upper(), "GENERIC")
+
+
+@router.post(
+    "/projects/{project_id}/surveys/from-dataset/{dataset_id}",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_survey_from_dataset(
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    body: SurveyFromDatasetCreate | None = None,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as session:
+        project = await session.get(Project, project_id)
+        if project is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
+            )
+
+        dataset = await session.get(MediaDatasetRecord, dataset_id)
+        if dataset is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Media dataset not found",
+            )
+        if dataset.survey_id is not None:
+            existing = await session.get(Survey, dataset.survey_id)
+            if existing is not None:
+                return await _survey_payload(session, existing)
+
+        requested_name = body.name.strip() if body and body.name else ""
+        default_name = PurePosixPath(dataset.prefix).name or dataset.platform
+        name = requested_name or dataset.title or default_name
+
+        collision = await session.scalar(
+            select(Survey).where(
+                Survey.project_id == project_id,
+                Survey.name == name,
+            )
+        )
+        if collision is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Survey name already exists in project",
+            )
+
+        survey = Survey(
+            project_id=project_id,
+            name=name,
+            kind=_survey_kind_for_platform(dataset.platform),
+            description=body.description if body else None,
+            status="ACTIVE",
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(survey)
+        await session.flush()
+
+        dataset.survey_id = survey.id
+        dataset.updated_at = now
+
+        if dataset.flight_id is not None:
+            flight = await session.get(Flight, dataset.flight_id)
+            if flight is not None and flight.survey_id is None:
+                flight.survey_id = survey.id
+
+        await session.execute(
+            update(ProcessingJob)
+            .where(
+                ProcessingJob.input_prefix == dataset.prefix,
+                ProcessingJob.platform == dataset.platform,
+                ProcessingJob.survey_id.is_(None),
+            )
+            .values(survey_id=survey.id, updated_at=now)
+        )
+
+        project.updated_at = now
+        await session.commit()
+        await session.refresh(survey)
+        return await _survey_payload(session, survey)
