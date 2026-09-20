@@ -49,11 +49,12 @@ internal object SurveyReportWriter {
 
     fun classify(record: SurveyCaptureRecord): SurveyRtkQuality {
         val fix = record.rtkFix.uppercase()
+        val usableLink = record.rtkEnabled && record.rtkConnected && record.rtkHealthy
         return when {
             fix == "STALE" -> SurveyRtkQuality.STALE
-            record.rtkHealthy && fix in setOf("FIXED", "FIXED_POINT", "RTK_FIXED") ->
+            usableLink && fix in setOf("FIXED", "FIXED_POINT", "RTK_FIXED") ->
                 SurveyRtkQuality.FIXED
-            record.rtkHealthy && fix in setOf("FLOAT", "RTK_FLOAT") ->
+            usableLink && fix in setOf("FLOAT", "RTK_FLOAT") ->
                 SurveyRtkQuality.FLOAT
             else -> SurveyRtkQuality.MISSING
         }
@@ -144,9 +145,12 @@ internal object SurveyReportWriter {
     private fun toCsv(rows: List<SurveyResolvedCapture>): String {
         val header = listOf(
             "seq", "event_time_ms", "media_index", "file_name", "file_size_bytes", "file_type",
-            "media_resolved", "lens", "rtk_quality", "rtk_fix", "rtk_healthy", "rtk_age_ms",
-            "latitude", "longitude", "altitude_asl_m", "altitude_agl_m",
+            "media_resolved", "lens", "rtk_quality", "rtk_fix",
+            "rtk_enabled", "rtk_connected", "rtk_healthy", "rtk_age_ms",
+            "latitude", "longitude", "altitude_asl_m", "altitude_agl_m", "position_source",
+            "fc_latitude", "fc_longitude", "fc_altitude_m",
             "rtk_latitude", "rtk_longitude", "rtk_altitude_m",
+            "rtk_fused_latitude", "rtk_fused_longitude", "rtk_fused_altitude_m",
             "rtk_std_latitude_m", "rtk_std_longitude_m", "rtk_std_altitude_m",
             "heading_deg", "aircraft_roll_deg", "aircraft_pitch_deg", "aircraft_yaw_deg",
             "gimbal_roll_deg", "gimbal_pitch_deg", "gimbal_yaw_deg",
@@ -170,15 +174,24 @@ internal object SurveyReportWriter {
                         c.lens,
                         row.rtkQuality.name,
                         c.rtkFix,
+                        c.rtkEnabled,
+                        c.rtkConnected,
                         c.rtkHealthy,
                         c.rtkAgeMs.takeUnless { it == Long.MAX_VALUE },
                         c.latitudeDeg,
                         c.longitudeDeg,
                         c.altitudeAslM,
                         c.altitudeAglM,
+                        c.positionSource,
+                        c.flightControllerLatitudeDeg,
+                        c.flightControllerLongitudeDeg,
+                        c.flightControllerAltitudeM,
                         c.rtkLatitudeDeg,
                         c.rtkLongitudeDeg,
                         c.rtkAltitudeM,
+                        c.rtkFusedLatitudeDeg,
+                        c.rtkFusedLongitudeDeg,
+                        c.rtkFusedAltitudeM,
                         c.rtkStdLatitudeM,
                         c.rtkStdLongitudeM,
                         c.rtkStdAltitudeM,
