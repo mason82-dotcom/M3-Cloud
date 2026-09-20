@@ -128,3 +128,46 @@ def test_provider_serializes_rc_http_identity_reads(monkeypatch):
     monkeypatch.setattr("app.vehicles.lyrebird.settings.lyrebird_enabled", True)
     monkeypatch.setattr("app.vehicles.lyrebird.settings.lyrebird_hosts", "192.168.178.45")
     asyncio.run(run())
+
+
+def test_provider_reads_identity_before_tcp(monkeypatch):
+    import asyncio
+    from app.vehicles.lyrebird import LyrebirdVehicleProvider
+
+    events = []
+
+    class Response:
+        def __init__(self, payload):
+            self._payload = payload
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return self._payload
+
+    class OrderedClient:
+        async def get(self, url, timeout):
+            if url.endswith("/config"):
+                events.append("config")
+                return Response({"droneName": "field", "aircraftSerialNumber": "1581F-M3M"})
+            if url.endswith("/get/camera/capabilities"):
+                events.append("camera")
+                return Response({"cameraType": "M3M", "platform": "M3M", "connected": True})
+            if url.endswith("/config/settings"):
+                events.append("settings")
+                return Response({"aircraftSerialNumber": "1581F-M3M"})
+            raise AssertionError(url)
+
+    async def run():
+        provider = LyrebirdVehicleProvider(client=OrderedClient())
+        async def tcp(host):
+            events.append("tcp")
+            return None
+        provider._read_telemetry = tcp
+        vehicles = await provider.list_vehicles()
+        assert len(vehicles) == 1
+        assert vehicles[0].model == "M3M"
+
+    monkeypatch.setattr("app.vehicles.lyrebird.settings.lyrebird_enabled", True)
+    monkeypatch.setattr("app.vehicles.lyrebird.settings.lyrebird_hosts", "192.168.178.45")
+    asyncio.run(run())
+    assert events == ["config", "camera", "settings", "tcp"]
