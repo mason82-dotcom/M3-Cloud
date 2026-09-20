@@ -238,3 +238,115 @@ async def test_dataset_gps_requires_flight_track_for_auto_assignment() -> None:
     assert match.flight_id is None
     assert match.candidate_ids == (flight_id,)
     assert match.details["candidates"][0]["spatial_status"] == "NO_FLIGHT_GPS"
+
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_timed_gps_rejects_location_seen_only_later_in_same_flight() -> None:
+    async with session_factory() as session:
+        await session.execute(delete(TelemetrySample))
+        await session.execute(delete(Flight))
+        await session.commit()
+
+        flight = Flight(
+            aircraft_sn="M3E-TIMED-GPS",
+            status="COMPLETED",
+            started_at=datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 20, 12, 5, tzinfo=timezone.utc),
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        session.add(flight)
+        await session.flush()
+        session.add_all(
+            [
+                TelemetrySample(
+                    flight_id=flight.id,
+                    recorded_at=datetime(2026, 9, 20, 12, 1, tzinfo=timezone.utc),
+                    source_timestamp_ms=1_800_000_000_000,
+                    source="lyrebird",
+                    position=WKTElement("POINT Z (8.0 49.0 150)", srid=4326),
+                ),
+                TelemetrySample(
+                    flight_id=flight.id,
+                    recorded_at=datetime(2026, 9, 20, 12, 4, tzinfo=timezone.utc),
+                    source_timestamp_ms=1_800_000_180_000,
+                    source="lyrebird",
+                    position=WKTElement("POINT Z (8.1 49.1 150)", srid=4326),
+                ),
+            ]
+        )
+        await session.commit()
+
+        # The image GPS is near the 12:04 track point, but its image timestamp is 12:01.
+        # Whole-track proximity alone would pass; time-coupled GPS must reject it.
+        match = await match_flight_by_capture_window(
+            session,
+            capture_started_at=datetime(2026, 9, 20, 12, 1, tzinfo=timezone.utc),
+            capture_ended_at=datetime(2026, 9, 20, 12, 1, 30, tzinfo=timezone.utc),
+            margin_seconds=30,
+            capture_points=[
+                (datetime(2026, 9, 20, 12, 1, tzinfo=timezone.utc), 49.1, 8.1),
+            ],
+            max_distance_m=100,
+            min_gps_fraction=0.8,
+            max_sample_time_delta_seconds=5,
+        )
+
+    assert match.status == "GPS_REJECTED"
+    candidate = match.details["candidates"][0]
+    assert candidate["validation_mode"] == "TIMED_GPS"
+    assert candidate["timed_points_paired"] == 1
+    assert candidate["median_time_delta_s"] == 0.0
+    assert candidate["median_distance_m"] > 1000
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_timed_gps_requires_nearby_flight_sample_in_time() -> None:
+    async with session_factory() as session:
+        await session.execute(delete(TelemetrySample))
+        await session.execute(delete(Flight))
+        await session.commit()
+
+        flight = Flight(
+            aircraft_sn="M3E-TIME-GAP",
+            status="COMPLETED",
+            started_at=datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 20, 12, 5, tzinfo=timezone.utc),
+            distance_m=0.0,
+            rtk_converged_samples=0,
+            rtk_total_samples=0,
+        )
+        session.add(flight)
+        await session.flush()
+        session.add(
+            TelemetrySample(
+                flight_id=flight.id,
+                recorded_at=datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc),
+                source_timestamp_ms=1_800_000_000_000,
+                source="dji_cloud",
+                position=WKTElement("POINT Z (8.0 49.0 150)", srid=4326),
+            )
+        )
+        await session.commit()
+
+        match = await match_flight_by_capture_window(
+            session,
+            capture_started_at=datetime(2026, 9, 20, 12, 2, tzinfo=timezone.utc),
+            capture_ended_at=datetime(2026, 9, 20, 12, 2, tzinfo=timezone.utc),
+            margin_seconds=30,
+            capture_points=[
+                (datetime(2026, 9, 20, 12, 2, tzinfo=timezone.utc), 49.0, 8.0),
+            ],
+            max_distance_m=100,
+            min_gps_fraction=0.8,
+            max_sample_time_delta_seconds=5,
+        )
+
+    assert match.status == "GPS_REJECTED"
+    candidate = match.details["candidates"][0]
+    assert candidate["timed_points_sampled"] == 1
+    assert candidate["timed_points_paired"] == 0
+    assert candidate["median_time_delta_s"] == 120.0
+    assert candidate["median_distance_m"] is None

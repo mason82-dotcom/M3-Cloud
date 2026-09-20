@@ -77,6 +77,7 @@ class MediaImporter:
         auto_match_max_distance_m: float = 100.0,
         auto_match_min_gps_fraction: float = 0.8,
         auto_match_max_gps_samples: int = 64,
+        auto_match_max_sample_time_delta_seconds: float = 5.0,
     ):
         self.sessions = sessions
         self.root = Path(root)
@@ -90,6 +91,10 @@ class MediaImporter:
             min(1.0, auto_match_min_gps_fraction),
         )
         self.auto_match_max_gps_samples = max(1, auto_match_max_gps_samples)
+        self.auto_match_max_sample_time_delta_seconds = max(
+            0.0,
+            auto_match_max_sample_time_delta_seconds,
+        )
         self._scan_lock = asyncio.Lock()
         self.last_result: ImportScanResult | None = None
         self.last_error: str | None = None
@@ -489,15 +494,27 @@ class MediaImporter:
                         if asset.gps_latitude is not None
                         and asset.gps_longitude is not None
                     ]
+                    capture_points = [
+                        (
+                            asset.capture_time_utc,
+                            float(asset.gps_latitude),
+                            float(asset.gps_longitude),
+                        )
+                        for asset in dataset_assets
+                        if asset.gps_latitude is not None
+                        and asset.gps_longitude is not None
+                    ]
                     match = await match_flight_by_capture_window(
                         session,
                         capture_started_at=capture_started_at,
                         capture_ended_at=capture_ended_at,
                         margin_seconds=self.auto_match_margin_seconds,
                         gps_points=gps_points,
+                        capture_points=capture_points,
                         max_distance_m=self.auto_match_max_distance_m,
                         min_gps_fraction=self.auto_match_min_gps_fraction,
                         max_gps_samples=self.auto_match_max_gps_samples,
+                        max_sample_time_delta_seconds=self.auto_match_max_sample_time_delta_seconds,
                     )
                     record.flight_assignment_source = "AUTO"
                     record.flight_match_status = match.status

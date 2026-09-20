@@ -320,6 +320,7 @@ M3CLOUD_MEDIA_AUTO_MATCH_MARGIN_SECONDS=300
 M3CLOUD_MEDIA_AUTO_MATCH_MAX_DISTANCE_M=100
 M3CLOUD_MEDIA_AUTO_MATCH_MIN_GPS_FRACTION=0.8
 M3CLOUD_MEDIA_AUTO_MATCH_MAX_GPS_SAMPLES=64
+M3CLOUD_MEDIA_AUTO_MATCH_MAX_SAMPLE_TIME_DELTA_SECONDS=5
 ```
 
 Automatic assignment is performed only when exactly one flight contains the complete dataset
@@ -367,8 +368,11 @@ Automatic media-to-flight assignment is deliberately conservative and runs in tw
 1. The complete dataset capture-time interval must fit inside the flight interval plus
    `M3CLOUD_MEDIA_AUTO_MATCH_MARGIN_SECONDS`.
 2. If the media contains GPS metadata, sampled image positions are validated against the
-   persisted PostGIS flight track. By default at least 80% of the sampled image positions
-   must be within 100 m of the track.
+   persisted PostGIS flight track. When an image also has a capture timestamp, its GPS
+   position is compared with the temporally nearest persisted flight sample; the default
+   maximum time delta is 5 seconds. GPS without an individual capture time falls back to
+   nearest-track validation. By default at least 80% of sampled image positions must be
+   within 100 m of the applicable flight position/track.
 
 GPS never rescues a time-incompatible flight; it only confirms or rejects time candidates.
 The maximum number of image GPS positions used per validation is bounded by

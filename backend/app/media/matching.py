@@ -49,8 +49,12 @@ class CandidateEvidence:
     gps_points_sampled: int
     gps_points_within: int
     gps_within_fraction: float | None
+    timed_points_sampled: int
+    timed_points_paired: int
+    median_time_delta_s: float | None
     median_distance_m: float | None
     max_distance_m: float | None
+    validation_mode: str
     spatial_status: str
     spatial_pass: bool
 
@@ -145,10 +149,11 @@ async def _flight_track(
     flight_id: uuid.UUID,
     *,
     max_points: int = 1000,
-) -> list[tuple[float, float]]:
+) -> list[tuple[datetime, float, float]]:
     rows = (
         await session.execute(
             select(
+                TelemetrySample.recorded_at,
                 func.ST_Y(TelemetrySample.position).label("latitude"),
                 func.ST_X(TelemetrySample.position).label("longitude"),
             )
@@ -161,9 +166,9 @@ async def _flight_track(
     ).all()
 
     points = [
-        (float(latitude), float(longitude))
-        for latitude, longitude in rows
-        if latitude is not None and longitude is not None
+        (recorded_at, float(latitude), float(longitude))
+        for recorded_at, latitude, longitude in rows
+        if recorded_at is not None and latitude is not None and longitude is not None
     ]
     return _sample_evenly(points, max_points)
 
@@ -175,18 +180,29 @@ async def match_flight_by_capture_window(
     capture_ended_at: datetime | None,
     margin_seconds: float,
     gps_points: Sequence[tuple[float, float]] = (),
+    capture_points: Sequence[tuple[datetime | None, float, float]] = (),
     max_distance_m: float = 100.0,
     min_gps_fraction: float = 0.8,
     max_gps_samples: int = 64,
+    max_sample_time_delta_seconds: float = 5.0,
 ) -> FlightMatch:
     """Match a dataset to a flight using time first and GPS as conservative validation."""
 
+    validation_points = (
+        list(capture_points)
+        if capture_points
+        else [(None, latitude, longitude) for latitude, longitude in gps_points]
+    )
     base_details: dict[str, object] = {
         "strategy": "TIME_THEN_GPS",
         "time_margin_seconds": max(0.0, margin_seconds),
         "gps_max_distance_m": max(0.0, max_distance_m),
         "gps_min_fraction": max(0.0, min(1.0, min_gps_fraction)),
-        "gps_points_available": len(gps_points),
+        "gps_max_sample_time_delta_seconds": max(
+            0.0,
+            max_sample_time_delta_seconds,
+        ),
+        "gps_points_available": len(validation_points),
         "gps_points_sampled": 0,
         "candidates": [],
     }
@@ -220,7 +236,7 @@ async def match_flight_by_capture_window(
     if not ids:
         return FlightMatch("NO_MATCH", None, (), base_details)
 
-    sampled_gps = _sample_evenly(list(gps_points), max(1, max_gps_samples))
+    sampled_gps = _sample_evenly(validation_points, max(1, max_gps_samples))
     base_details["gps_points_sampled"] = len(sampled_gps)
 
     if not sampled_gps:
@@ -234,6 +250,8 @@ async def match_flight_by_capture_window(
     evidence: list[CandidateEvidence] = []
     passing: list[uuid.UUID] = []
 
+    time_tolerance = max(0.0, max_sample_time_delta_seconds)
+
     for flight in contained:
         track = await _flight_track(session, flight.id)
         if not track:
@@ -244,34 +262,98 @@ async def match_flight_by_capture_window(
                 gps_points_sampled=len(sampled_gps),
                 gps_points_within=0,
                 gps_within_fraction=None,
+                timed_points_sampled=sum(1 for captured_at, _, _ in sampled_gps if captured_at is not None),
+                timed_points_paired=0,
+                median_time_delta_s=None,
                 median_distance_m=None,
                 max_distance_m=None,
+                validation_mode="TIMED_GPS" if any(captured_at is not None for captured_at, _, _ in sampled_gps) else "TRACK_GPS",
                 spatial_status="NO_FLIGHT_GPS",
                 spatial_pass=False,
             )
             evidence.append(item)
             continue
 
-        distances = [
-            _distance_to_track_m(point, track)
-            for point in sampled_gps
-        ]
-        within = sum(1 for distance in distances if distance <= threshold)
-        fraction = within / len(distances)
+        track_coordinates = [(latitude, longitude) for _, latitude, longitude in track]
+        distances: list[float] = []
+        time_deltas: list[float] = []
+        within = 0
+        timed_sampled = 0
+        timed_paired = 0
+        untimed_sampled = 0
+
+        for captured_at, latitude, longitude in sampled_gps:
+            if captured_at is None:
+                untimed_sampled += 1
+                distance = _distance_to_track_m(
+                    (latitude, longitude),
+                    track_coordinates,
+                )
+                distances.append(distance)
+                if distance <= threshold:
+                    within += 1
+                continue
+
+            timed_sampled += 1
+            nearest = min(
+                track,
+                key=lambda item: abs((item[0] - captured_at).total_seconds()),
+            )
+            time_delta = abs((nearest[0] - captured_at).total_seconds())
+            time_deltas.append(time_delta)
+            if time_delta > time_tolerance:
+                continue
+
+            timed_paired += 1
+            distance = _haversine_m(
+                latitude,
+                longitude,
+                nearest[1],
+                nearest[2],
+            )
+            distances.append(distance)
+            if distance <= threshold:
+                within += 1
+
+        fraction = within / len(sampled_gps)
         spatial_pass = fraction >= required_fraction
         if spatial_pass:
             passing.append(flight.id)
+
+        finite_distances = [distance for distance in distances if math.isfinite(distance)]
+        if timed_sampled and untimed_sampled:
+            validation_mode = "TIMED_AND_TRACK_GPS"
+        elif timed_sampled:
+            validation_mode = "TIMED_GPS"
+        else:
+            validation_mode = "TRACK_GPS"
 
         evidence.append(
             CandidateEvidence(
                 flight_id=str(flight.id),
                 aircraft_sn=flight.aircraft_sn,
                 track_points=len(track),
-                gps_points_sampled=len(distances),
+                gps_points_sampled=len(sampled_gps),
                 gps_points_within=within,
                 gps_within_fraction=round(fraction, 6),
-                median_distance_m=round(statistics.median(distances), 3),
-                max_distance_m=round(max(distances), 3),
+                timed_points_sampled=timed_sampled,
+                timed_points_paired=timed_paired,
+                median_time_delta_s=(
+                    round(statistics.median(time_deltas), 3)
+                    if time_deltas
+                    else None
+                ),
+                median_distance_m=(
+                    round(statistics.median(finite_distances), 3)
+                    if finite_distances
+                    else None
+                ),
+                max_distance_m=(
+                    round(max(finite_distances), 3)
+                    if finite_distances
+                    else None
+                ),
+                validation_mode=validation_mode,
                 spatial_status="PASS" if spatial_pass else "REJECT",
                 spatial_pass=spatial_pass,
             )

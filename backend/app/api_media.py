@@ -286,6 +286,17 @@ async def auto_match_dataset_flight(
             and asset.gps_latitude is not None
             and asset.gps_longitude is not None
         ]
+        capture_points = [
+            (
+                asset.capture_time_utc,
+                float(asset.gps_latitude),
+                float(asset.gps_longitude),
+            )
+            for asset in assets
+            if dataset_prefix(asset.relative_path) == dataset.prefix
+            and asset.gps_latitude is not None
+            and asset.gps_longitude is not None
+        ]
 
         match = await match_flight_by_capture_window(
             session,
@@ -293,9 +304,11 @@ async def auto_match_dataset_flight(
             capture_ended_at=dataset.capture_ended_at,
             margin_seconds=settings.media_auto_match_margin_seconds,
             gps_points=gps_points,
+            capture_points=capture_points,
             max_distance_m=settings.media_auto_match_max_distance_m,
             min_gps_fraction=settings.media_auto_match_min_gps_fraction,
             max_gps_samples=settings.media_auto_match_max_gps_samples,
+            max_sample_time_delta_seconds=settings.media_auto_match_max_sample_time_delta_seconds,
         )
         dataset.flight_assignment_source = "AUTO"
         dataset.flight_match_status = match.status

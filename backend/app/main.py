@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
             auto_match_max_distance_m=settings.media_auto_match_max_distance_m,
             auto_match_min_gps_fraction=settings.media_auto_match_min_gps_fraction,
             auto_match_max_gps_samples=settings.media_auto_match_max_gps_samples,
+            auto_match_max_sample_time_delta_seconds=settings.media_auto_match_max_sample_time_delta_seconds,
         )
         media_watcher = MediaImportWatcher(
             media_importer,

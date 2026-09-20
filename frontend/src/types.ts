@@ -330,8 +330,12 @@ export interface MediaFlightMatchCandidate {
   gps_points_sampled: number;
   gps_points_within: number;
   gps_within_fraction?: number | null;
+  timed_points_sampled?: number;
+  timed_points_paired?: number;
+  median_time_delta_s?: number | null;
   median_distance_m?: number | null;
   max_distance_m?: number | null;
+  validation_mode?: string;
   spatial_status: string;
   spatial_pass: boolean;
 }
@@ -342,6 +346,7 @@ export interface MediaFlightMatchDetails {
   time_margin_seconds?: number;
   gps_max_distance_m?: number;
   gps_min_fraction?: number;
+  gps_max_sample_time_delta_seconds?: number;
   gps_points_available?: number;
   gps_points_sampled?: number;
   candidates?: MediaFlightMatchCandidate[];

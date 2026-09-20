@@ -150,6 +150,10 @@ class Settings(BaseSettings):
         default=64,
         validation_alias="M3CLOUD_MEDIA_AUTO_MATCH_MAX_GPS_SAMPLES",
     )
+    media_auto_match_max_sample_time_delta_seconds: float = Field(
+        default=5.0,
+        validation_alias="M3CLOUD_MEDIA_AUTO_MATCH_MAX_SAMPLE_TIME_DELTA_SECONDS",
+    )
     media_import_handoff_root: str = Field(
         default="",
         validation_alias="M3CLOUD_MEDIA_IMPORT_HANDOFF_ROOT",

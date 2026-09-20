@@ -302,6 +302,12 @@ export function MediaView() {
                       {candidate.median_distance_m != null
                         ? ` · median ${candidate.median_distance_m.toFixed(1)} m`
                         : ""}
+                      {candidate.timed_points_sampled
+                        ? ` · time-paired ${candidate.timed_points_paired ?? 0}/${candidate.timed_points_sampled}`
+                        : ""}
+                      {candidate.median_time_delta_s != null
+                        ? ` · Δt ${candidate.median_time_delta_s.toFixed(1)} s`
+                        : ""}
                     </small>
                   ))}
                 </div>
