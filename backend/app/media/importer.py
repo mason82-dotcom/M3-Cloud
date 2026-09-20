@@ -81,6 +81,27 @@ class MediaImporter:
             scan_started_ns = time.time_ns()
 
             try:
+                if not self.root.exists():
+                    finished = datetime.now(timezone.utc)
+                    result = ImportScanResult(
+                        root=str(self.root),
+                        scanned=0,
+                        added=0,
+                        updated=0,
+                        unchanged=0,
+                        duplicates=0,
+                        skipped_unstable=0,
+                        marked_missing=0,
+                        started_at=started,
+                        finished_at=finished,
+                    )
+                    self.last_result = result
+                    self.last_error = "IMPORT_ROOT_UNAVAILABLE"
+                    return result
+
+                if not self.root.is_dir():
+                    raise NotADirectoryError(self.root)
+
                 raw = await asyncio.to_thread(self._discover_candidates)
                 classifications = reconcile_group_platforms(
                     [(item.relative_path, item.classification) for item in raw]
@@ -160,11 +181,6 @@ class MediaImporter:
         }
 
     def _discover_candidates(self) -> list[Candidate]:
-        if not self.root.exists():
-            return []
-        if not self.root.is_dir():
-            raise NotADirectoryError(self.root)
-
         now = time.time()
         preliminary: list[Candidate] = []
 
