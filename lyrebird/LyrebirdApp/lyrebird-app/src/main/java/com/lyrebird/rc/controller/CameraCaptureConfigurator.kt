@@ -11,48 +11,6 @@ import dji.sdk.keyvalue.value.common.ComponentIndexType
 import dji.v5.et.get
 import dji.v5.et.set
 
-/**
- * Product-specific still-capture profiles for the Mavic 3 family.
- *
- * The lists are deliberately explicit: an M3M multispectral exposure is not an M3E wide exposure
- * with extra files bolted on, and M3T thermal capture must never be enabled on M3E/M3M.
- */
-internal enum class CameraCaptureProfile(
-    val platform: CameraPlatform,
-    val storedSources: List<CameraVideoStreamSourceType>
-) {
-    M3E_MAPPING(
-        CameraPlatform.M3E,
-        listOf(CameraVideoStreamSourceType.WIDE_CAMERA)
-    ),
-    M3T_WIDE(
-        CameraPlatform.M3T,
-        listOf(CameraVideoStreamSourceType.WIDE_CAMERA)
-    ),
-    M3T_THERMAL(
-        CameraPlatform.M3T,
-        listOf(CameraVideoStreamSourceType.INFRARED_CAMERA)
-    ),
-    M3M_RGB(
-        CameraPlatform.M3M,
-        listOf(CameraVideoStreamSourceType.RGB_CAMERA)
-    ),
-    M3M_RGB_MULTISPECTRAL(
-        CameraPlatform.M3M,
-        listOf(
-            CameraVideoStreamSourceType.RGB_CAMERA,
-            CameraVideoStreamSourceType.NDVI_CAMERA,
-            CameraVideoStreamSourceType.MS_G_CAMERA,
-            CameraVideoStreamSourceType.MS_R_CAMERA,
-            CameraVideoStreamSourceType.MS_RE_CAMERA,
-            CameraVideoStreamSourceType.MS_NIR_CAMERA
-        )
-    );
-
-    val storedSourceNames: Set<String>
-        get() = storedSources.mapTo(linkedSetOf()) { it.name }
-}
-
 internal data class CameraPrepareResult(
     val success: Boolean,
     val profile: CameraCaptureProfile?,
@@ -62,27 +20,13 @@ internal data class CameraPrepareResult(
 internal object CameraCaptureConfigurator {
 
     fun defaultDirectProfile(capabilities: CameraPlatformCapabilities): CameraCaptureProfile? =
-        when (capabilities.platform) {
-            CameraPlatform.M3E -> CameraCaptureProfile.M3E_MAPPING
-            CameraPlatform.M3T -> CameraCaptureProfile.M3T_WIDE
-            CameraPlatform.M3M -> CameraCaptureProfile.M3M_RGB
-            else -> null
-        }
+        CameraCapturePolicy.defaultDirectProfile(capabilities)
 
     fun defaultSurveyProfile(capabilities: CameraPlatformCapabilities): CameraCaptureProfile? =
-        when (capabilities.platform) {
-            CameraPlatform.M3E -> CameraCaptureProfile.M3E_MAPPING
-            CameraPlatform.M3T -> CameraCaptureProfile.M3T_WIDE
-            CameraPlatform.M3M -> CameraCaptureProfile.M3M_RGB_MULTISPECTRAL
-            else -> null
-        }
+        CameraCapturePolicy.defaultSurveyProfile(capabilities)
 
     fun thermalProfile(capabilities: CameraPlatformCapabilities): CameraCaptureProfile? =
-        if (capabilities.platform == CameraPlatform.M3T && capabilities.supportsThermalCapture) {
-            CameraCaptureProfile.M3T_THERMAL
-        } else {
-            null
-        }
+        CameraCapturePolicy.thermalProfile(capabilities)
 
     /**
      * Prepare PHOTO_NORMAL and its stored lens sources, then verify the capture-source readback.
@@ -114,17 +58,19 @@ internal object CameraCaptureConfigurator {
         val sourceRangeKey: DJIKey<List<CameraVideoStreamSourceType>> =
             KeyTools.createKey(CameraKey.KeyCameraVideoStreamSourceRange, index)
         val supportedSources = sourceRangeKey.get(emptyList())
-        val missing = profile.storedSources.filterNot { it in supportedSources }
+        val supportedByName = supportedSources.associateBy { it.name }
+        val missing = profile.storedSourceNames.filterNot(supportedByName::containsKey)
         if (missing.isNotEmpty()) {
             callback(
                 CameraPrepareResult(
                     false,
                     profile,
-                    "Camera does not report capture source(s): ${missing.joinToString { it.name }}"
+                    "Camera does not report capture source(s): ${missing.joinToString()}"
                 )
             )
             return
         }
+        val requestedSources = profile.storedSourceNames.mapNotNull(supportedByName::get)
 
         val modeKey: DJIKey<CameraMode> = KeyTools.createKey(CameraKey.KeyCameraMode, index)
         val captureKey: DJIKey<CameraStreamSettingsInfo> =
@@ -135,14 +81,14 @@ internal object CameraCaptureConfigurator {
             onSuccess = {
                 val settings = CameraStreamSettingsInfo()
                     .setRequestCurrentScreen(false)
-                    .setCameraVideoStreamSources(ArrayList(profile.storedSources))
+                    .setCameraVideoStreamSources(ArrayList(requestedSources))
                 captureKey.set(
                     settings,
                     onSuccess = {
                         val readback = captureKey.get(CameraStreamSettingsInfo())
                             ?.cameraVideoStreamSources
                             .orEmpty()
-                        val expected = profile.storedSources.map { it.name }.toSet()
+                        val expected = profile.storedSourceNames.toSet()
                         val actual = readback.map { it.name }.toSet()
                         if (actual == expected) {
                             callback(
