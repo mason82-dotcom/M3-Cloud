@@ -13,6 +13,7 @@ import {
   fetchProjectSurveys,
   fetchSurveyLineage,
   processingResultDownloadUrl,
+  surveyManifestDownloadUrl,
 } from "./api";
 import type {
   FlightSummary,
@@ -368,7 +369,12 @@ export function ProjectsView() {
                 <h2>{selectedSurvey.name}</h2>
                 <p>{selectedSurvey.kind} · {selectedSurvey.status}</p>
               </div>
-              <span>{selectedSurvey.project_id}</span>
+              <div className="surveyTitleActions">
+                <span>{selectedSurvey.project_id}</span>
+                <a href={surveyManifestDownloadUrl(selectedSurvey.id)}>
+                  Download manifest
+                </a>
+              </div>
             </div>
 
             <div className="surveyLineageSummary">

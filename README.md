@@ -395,3 +395,40 @@ MANUAL             operator-selected association; automatic matching will not re
 The dataset API also exposes `flight_match_details`, including the configured distance
 threshold, GPS sampling coverage, per-candidate track-point count, fraction of image positions
 inside the threshold, median distance, maximum distance, and pass/reject status.
+
+
+## Projects and surveys
+
+M3-Cloud groups persistent work into Projects and Surveys without changing existing Flight,
+MediaDataset, or ProcessingJob identifiers.
+
+```text
+Project
+└── Survey
+    ├── Flight
+    ├── MediaDataset
+    └── ProcessingJob
+        ├── frozen ProcessingJobAsset inputs
+        └── ProcessingResult outputs
+```
+
+A Survey can be created manually or directly from an imported media dataset. M3E defaults to
+`MAPPING`, M3T to `THERMAL`, and M3M to `MULTISPECTRAL`. Existing explicit Survey
+assignments are never overwritten by automatic propagation.
+
+Relevant endpoints:
+
+```text
+GET  /api/v1/projects
+POST /api/v1/projects
+GET  /api/v1/projects/<project-id>/surveys
+POST /api/v1/projects/<project-id>/surveys
+POST /api/v1/projects/<project-id>/surveys/from-dataset/<dataset-id>
+GET  /api/v1/surveys/<survey-id>/lineage
+GET  /api/v1/surveys/<survey-id>/manifest
+GET  /api/v1/surveys/<survey-id>/manifest/download
+```
+
+The Survey manifest is a point-in-time lineage export. It includes current Flight and MediaDataset
+associations, original media hashes/metadata, immutable ProcessingJob input snapshots, and archived
+ProcessingResult hashes/object keys. It does not modify or copy external originals.

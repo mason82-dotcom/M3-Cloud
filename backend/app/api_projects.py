@@ -1,22 +1,29 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 
 from app.database import session_factory
+from app.media.datasets import dataset_prefix
+from app.media.metadata import asset_metadata_payload
 from app.models import (
     Flight,
+    MediaAsset,
     MediaDatasetRecord,
     ProcessingJob,
+    ProcessingJobAsset,
     ProcessingResult,
     Project,
     Survey,
+    TelemetrySample,
 )
 
 
@@ -584,3 +591,252 @@ async def create_survey_from_dataset(
         await session.commit()
         await session.refresh(survey)
         return await _survey_payload(session, survey)
+
+
+async def _survey_manifest_payload(
+    session,
+    survey: Survey,
+) -> dict[str, Any]:
+    project = await session.get(Project, survey.project_id)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    flights = (
+        await session.scalars(
+            select(Flight)
+            .where(Flight.survey_id == survey.id)
+            .order_by(Flight.started_at, Flight.id)
+        )
+    ).all()
+    datasets = (
+        await session.scalars(
+            select(MediaDatasetRecord)
+            .where(MediaDatasetRecord.survey_id == survey.id)
+            .order_by(MediaDatasetRecord.platform, MediaDatasetRecord.prefix)
+        )
+    ).all()
+    jobs = (
+        await session.scalars(
+            select(ProcessingJob)
+            .where(ProcessingJob.survey_id == survey.id)
+            .order_by(ProcessingJob.created_at, ProcessingJob.id)
+        )
+    ).all()
+
+    flight_items: list[dict[str, Any]] = []
+    for flight in flights:
+        source_rows = (
+            await session.execute(
+                select(TelemetrySample.source, func.count(TelemetrySample.id))
+                .where(TelemetrySample.flight_id == flight.id)
+                .group_by(TelemetrySample.source)
+                .order_by(TelemetrySample.source)
+            )
+        ).all()
+        flight_items.append(
+            {
+                "id": str(flight.id),
+                "aircraft_sn": flight.aircraft_sn,
+                "gateway_sn": flight.gateway_sn,
+                "dji_track_id": flight.dji_track_id,
+                "status": flight.status,
+                "started_at": flight.started_at.isoformat(),
+                "ended_at": flight.ended_at.isoformat() if flight.ended_at else None,
+                "duration_s": flight.duration_s,
+                "distance_m": flight.distance_m,
+                "max_relative_altitude_m": flight.max_relative_altitude_m,
+                "max_horizontal_speed_mps": flight.max_horizontal_speed_mps,
+                "min_battery_percent": flight.min_battery_percent,
+                "rtk_converged_samples": flight.rtk_converged_samples,
+                "rtk_total_samples": flight.rtk_total_samples,
+                "end_reason": flight.end_reason,
+                "telemetry_sources": {
+                    source: int(count)
+                    for source, count in source_rows
+                },
+            }
+        )
+
+    dataset_items: list[dict[str, Any]] = []
+    for dataset in datasets:
+        assets = (
+            await session.scalars(
+                select(MediaAsset)
+                .where(
+                    MediaAsset.platform == dataset.platform,
+                    MediaAsset.present.is_(True),
+                    MediaAsset.duplicate_of.is_(None),
+                )
+                .order_by(MediaAsset.relative_path)
+            )
+        ).all()
+        assets = [
+            asset
+            for asset in assets
+            if dataset_prefix(asset.relative_path) == dataset.prefix
+        ]
+
+        dataset_items.append(
+            {
+                "id": str(dataset.id),
+                "platform": dataset.platform,
+                "prefix": dataset.prefix,
+                "title": dataset.title,
+                "flight_id": str(dataset.flight_id) if dataset.flight_id else None,
+                "capture_started_at": (
+                    dataset.capture_started_at.isoformat()
+                    if dataset.capture_started_at
+                    else None
+                ),
+                "capture_ended_at": (
+                    dataset.capture_ended_at.isoformat()
+                    if dataset.capture_ended_at
+                    else None
+                ),
+                "flight_assignment_source": dataset.flight_assignment_source,
+                "flight_match_status": dataset.flight_match_status,
+                "flight_match_candidates": dataset.flight_match_candidates,
+                "flight_match_details": dataset.flight_match_details,
+                "present": dataset.present,
+                "assets": [
+                    {
+                        "id": str(asset.id),
+                        "relative_path": asset.relative_path,
+                        "filename": asset.filename,
+                        "media_kind": asset.media_kind,
+                        "capture_group": asset.capture_group,
+                        "size_bytes": asset.size_bytes,
+                        "sha256": asset.sha256,
+                        "capture_time_utc": (
+                            asset.capture_time_utc.isoformat()
+                            if asset.capture_time_utc
+                            else None
+                        ),
+                        "metadata": asset_metadata_payload(asset),
+                    }
+                    for asset in assets
+                ],
+            }
+        )
+
+    job_items: list[dict[str, Any]] = []
+    for job in jobs:
+        frozen = (
+            await session.scalars(
+                select(ProcessingJobAsset)
+                .where(ProcessingJobAsset.job_id == job.id)
+                .order_by(ProcessingJobAsset.ordinal)
+            )
+        ).all()
+        results = (
+            await session.scalars(
+                select(ProcessingResult)
+                .where(ProcessingResult.job_id == job.id)
+                .order_by(ProcessingResult.asset_name)
+            )
+        ).all()
+
+        job_items.append(
+            {
+                "id": str(job.id),
+                "kind": job.kind,
+                "status": job.status,
+                "name": job.name,
+                "input_prefix": job.input_prefix,
+                "platform": job.platform,
+                "flight_id": str(job.flight_id) if job.flight_id else None,
+                "media_kinds": job.media_kinds,
+                "options": job.options,
+                "remote_project_id": job.remote_project_id,
+                "remote_task_id": job.remote_task_id,
+                "created_at": job.created_at.isoformat(),
+                "started_at": job.started_at.isoformat() if job.started_at else None,
+                "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+                "inputs": [
+                    {
+                        "ordinal": item.ordinal,
+                        "media_asset_id": str(item.media_asset_id),
+                        "relative_path": item.relative_path,
+                        "size_bytes": item.size_bytes,
+                        "sha256": item.sha256,
+                        "media_kind": item.media_kind,
+                        "capture_group": item.capture_group,
+                        "capture_time_utc": (
+                            item.capture_time_utc.isoformat()
+                            if item.capture_time_utc
+                            else None
+                        ),
+                        "metadata": item.metadata_snapshot or {},
+                    }
+                    for item in frozen
+                ],
+                "results": [
+                    {
+                        "id": str(result.id),
+                        "asset_name": result.asset_name,
+                        "bucket": result.bucket,
+                        "object_key": result.object_key,
+                        "size_bytes": result.size_bytes,
+                        "sha256": result.sha256,
+                        "content_type": result.content_type,
+                        "details": result.details or {},
+                        "created_at": result.created_at.isoformat(),
+                    }
+                    for result in results
+                ],
+            }
+        )
+
+    return {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "project": _project(
+            project,
+            int(
+                await session.scalar(
+                    select(func.count(Survey.id)).where(
+                        Survey.project_id == project.id
+                    )
+                )
+                or 0
+            ),
+        ),
+        "survey": await _survey_payload(session, survey),
+        "flights": flight_items,
+        "datasets": dataset_items,
+        "processing_jobs": job_items,
+    }
+
+
+@router.get("/surveys/{survey_id}/manifest")
+async def survey_manifest(survey_id: uuid.UUID) -> dict[str, Any]:
+    async with session_factory() as session:
+        survey = await session.get(Survey, survey_id)
+        if survey is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Survey not found",
+            )
+        return await _survey_manifest_payload(session, survey)
+
+
+@router.get("/surveys/{survey_id}/manifest/download")
+async def download_survey_manifest(survey_id: uuid.UUID) -> Response:
+    manifest = await survey_manifest(survey_id)
+    payload = json.dumps(
+        manifest,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="m3-survey-manifest.json"',
+            "Content-Length": str(len(payload)),
+        },
+    )

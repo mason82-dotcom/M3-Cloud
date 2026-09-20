@@ -99,6 +99,10 @@ export async function createSurveyFromDataset(
   return response.json() as Promise<Survey>;
 }
 
+export function surveyManifestDownloadUrl(surveyId: string): string {
+  return `/api/v1/surveys/${encodeURIComponent(surveyId)}/manifest/download`;
+}
+
 export async function fetchSurveyLineage(
   surveyId: string,
 ): Promise<SurveyLineage> {

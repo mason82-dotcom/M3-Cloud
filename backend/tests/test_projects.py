@@ -14,6 +14,7 @@ from app.api_projects import (
     create_survey,
     create_survey_from_dataset,
     survey_lineage,
+    survey_manifest,
 )
 from app.database import session_factory
 from app.models import (
@@ -150,6 +151,16 @@ async def test_project_survey_assignments_and_processing_inheritance(tmp_path) -
     assert len(lineage["datasets"]) == 1
     assert len(lineage["processing_jobs"]) == 1
     assert lineage["processing_jobs"][0]["id"] == str(job.id)
+
+    manifest = await survey_manifest(survey_id)
+    assert manifest["schema_version"] == 1
+    assert manifest["project"]["name"] == "Site Alpha"
+    assert manifest["survey"]["id"] == str(survey_id)
+    assert len(manifest["datasets"]) == 1
+    assert len(manifest["datasets"][0]["assets"]) == 2
+    assert len(manifest["processing_jobs"]) == 1
+    assert len(manifest["processing_jobs"][0]["inputs"]) == 2
+    assert all(item["sha256"] for item in manifest["processing_jobs"][0]["inputs"])
 
     async with session_factory() as session:
         stored = await session.get(ProcessingJob, job.id)
