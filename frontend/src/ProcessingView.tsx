@@ -217,7 +217,7 @@ export function ProcessingView() {
   }, [compatibleProfiles, profile]);
 
   const submit = useCallback(async () => {
-    if (!prefix || !profile || !selectedDataset) return;
+    if (!prefix || !selectedProfile || !selectedDataset) return;
     setSubmitting(true);
     try {
       const job = await createWebODMJob({
@@ -227,7 +227,7 @@ export function ProcessingView() {
           selectedDataset.platform === "UNKNOWN"
             ? undefined
             : selectedDataset.platform,
-        profile,
+        profile: selectedProfile.key,
       });
       setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
       setError(null);
@@ -236,7 +236,7 @@ export function ProcessingView() {
     } finally {
       setSubmitting(false);
     }
-  }, [name, prefix, profile, selectedDataset]);
+  }, [name, prefix, selectedDataset, selectedProfile]);
 
   return (
     <div className="processingView">
@@ -282,7 +282,7 @@ export function ProcessingView() {
           </label>
 
           <button
-            disabled={submitting || !selectedDataset || !profile}
+            disabled={submitting || !selectedDataset || !selectedProfile}
             onClick={() => void submit()}
             type="button"
           >
