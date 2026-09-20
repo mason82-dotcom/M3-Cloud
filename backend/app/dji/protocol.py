@@ -134,3 +134,24 @@ def parse_property_message(payload: bytes | str | Mapping[str, Any]) -> Property
         from_sn=optional_text("from"),
         need_reply=bool(decoded.get("need_reply", False)),
     )
+
+
+def make_property_reply(
+    message: PropertyMessage,
+    *,
+    result: int = 0,
+    timestamp_ms: int | None = None,
+) -> dict[str, Any]:
+    """Build a DJI state/property acknowledgement when need_reply is set."""
+
+    reply: dict[str, Any] = {
+        "timestamp": timestamp_ms if timestamp_ms is not None else int(time.time() * 1000),
+        "data": {
+            "result": result,
+        },
+    }
+    if message.tid is not None:
+        reply["tid"] = message.tid
+    if message.bid is not None:
+        reply["bid"] = message.bid
+    return reply
