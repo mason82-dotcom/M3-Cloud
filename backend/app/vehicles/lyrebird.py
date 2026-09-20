@@ -8,6 +8,7 @@ import httpx
 from app.config import settings
 from app.vehicles.base import VehicleSnapshot
 from app.vehicles.payloads import AircraftPlatform, attach_payload_capabilities, platform_from_camera_type
+from app.vehicles.state import normalize_aircraft_state
 
 def _configured_hosts() -> list[str]:
     return [item.strip() for item in settings.lyrebird_hosts.split(",") if item.strip()]
@@ -98,7 +99,7 @@ def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any
     caps = camera_capabilities or {}
     platform = platform_from_camera_type(caps.get("cameraType"))
     model = platform.value if platform != AircraftPlatform.UNKNOWN else "LYREBIRD_AIRCRAFT"
-    enriched = attach_payload_capabilities(telemetry, platform)
+    enriched = attach_payload_capabilities(normalize_aircraft_state(telemetry, source="lyrebird"), platform)
     if enriched is not None and caps:
         enriched["payload"]["camera"] = {
             "component_index": caps.get("componentIndex"),

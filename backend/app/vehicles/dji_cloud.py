@@ -5,6 +5,7 @@ from redis.asyncio import Redis
 from app.dji.registry import DeviceRegistry
 from app.dji.telemetry import TelemetryStore
 from app.vehicles.base import VehicleSnapshot
+from app.vehicles.state import normalize_aircraft_state
 
 
 class DJICloudVehicleProvider:
@@ -31,7 +32,7 @@ class DJICloudVehicleProvider:
                     online=bool(device.get("online", False)),
                     gateway_sn=device.get("gateway_sn"),
                     updated_at_ms=device.get("updated_at_ms"),
-                    telemetry=state,
+                    telemetry=normalize_aircraft_state(state, source=self.source),
                 )
             )
         return result
