@@ -18,6 +18,7 @@ from app.models import (
     ProcessingJobAsset,
     ProcessingResult,
 )
+from app.processing.mbtiles import publish_mbtiles
 from app.processing.profiles import get_profile
 from app.storage import create_storage_client
 from app.processing.webodm import WebODMClient
@@ -500,6 +501,17 @@ class ProcessingManager:
                             object_key,
                             ExtraArgs={"ContentType": content_type},
                         )
+
+                        details: dict[str, object] = {}
+                        if asset == "orthophoto.mbtiles":
+                            details = await asyncio.to_thread(
+                                publish_mbtiles,
+                                storage,
+                                bucket=RESULT_BUCKET,
+                                job_id=job_id,
+                                mbtiles_path=destination,
+                            )
+
                         async with self.sessions() as session:
                             session.add(
                                 ProcessingResult(
@@ -510,6 +522,7 @@ class ProcessingManager:
                                     size_bytes=size,
                                     sha256=sha256,
                                     content_type=content_type,
+                                    details=details,
                                     created_at=datetime.now(timezone.utc),
                                 )
                             )

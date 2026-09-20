@@ -6,6 +6,7 @@ import type {
   MediaGroup,
   MediaImportStatus,
   ProcessingJob,
+  ProcessingMapInfo,
   ProcessingProfile,
   ProcessingResult,
   SystemHealth,
@@ -148,6 +149,19 @@ export async function fetchProcessingResults(
     throw new Error(`Processing results request failed: ${response.status}`);
   }
   return response.json() as Promise<ProcessingResult[]>;
+}
+
+export async function fetchProcessingMap(
+  jobId: string,
+): Promise<ProcessingMapInfo | null> {
+  const response = await fetch(
+    `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/map`,
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Processing map request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingMapInfo>;
 }
 
 export function processingResultDownloadUrl(

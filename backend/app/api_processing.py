@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Path, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -87,6 +87,7 @@ def _result(result: ProcessingResult) -> dict[str, Any]:
         "size_bytes": result.size_bytes,
         "sha256": result.sha256,
         "content_type": result.content_type,
+        "details": result.details or {},
         "created_at": result.created_at.isoformat(),
     }
 
@@ -174,3 +175,102 @@ async def create_webodm_job(
         ) from exc
 
     return _job(job)
+
+
+@router.get("/jobs/{job_id}/map")
+async def processing_map(job_id: uuid.UUID) -> dict[str, Any]:
+    async with session_factory() as session:
+        result = await session.scalar(
+            select(ProcessingResult)
+            .where(
+                ProcessingResult.job_id == job_id,
+                ProcessingResult.asset_name == "orthophoto.mbtiles",
+            )
+            .limit(1)
+        )
+        if result is None or not result.details:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No published orthophoto map for this job",
+            )
+
+        details = dict(result.details)
+        if details.get("map_kind") != "RASTER_XYZ":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Processing result is not map-published",
+            )
+
+        return {
+            "job_id": str(job_id),
+            "result_id": str(result.id),
+            "kind": "RASTER_XYZ",
+            "tile_url": (
+                f"/api/v1/processing/jobs/{job_id}/map/tiles/"
+                "{z}/{x}/{y}"
+            ),
+            "bounds": details.get("bounds"),
+            "minzoom": details.get("minzoom"),
+            "maxzoom": details.get("maxzoom"),
+            "tile_count": details.get("tile_count"),
+            "attribution": details.get("attribution"),
+        }
+
+
+@router.get("/jobs/{job_id}/map/tiles/{z}/{x}/{y}")
+async def processing_map_tile(
+    job_id: uuid.UUID,
+    z: int = Path(ge=0, le=30),
+    x: int = Path(ge=0),
+    y: int = Path(ge=0),
+) -> StreamingResponse:
+    async with session_factory() as session:
+        result = await session.scalar(
+            select(ProcessingResult)
+            .where(
+                ProcessingResult.job_id == job_id,
+                ProcessingResult.asset_name == "orthophoto.mbtiles",
+            )
+            .limit(1)
+        )
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Orthophoto map not found",
+            )
+
+        details = result.details or {}
+        prefix = details.get("tile_prefix")
+        extension = details.get("tile_extension")
+        content_type = details.get("tile_content_type")
+        if not all(isinstance(value, str) and value for value in (prefix, extension, content_type)):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Orthophoto tiles are not published",
+            )
+
+        bucket = result.bucket
+        object_key = f"{prefix}/{z}/{x}/{y}.{extension}"
+
+    client = create_storage_client()
+    try:
+        response = client.get_object(Bucket=bucket, Key=object_key)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tile not found",
+        ) from exc
+
+    body = response["Body"]
+
+    def chunks():
+        try:
+            yield from body.iter_chunks(chunk_size=256 * 1024)
+        finally:
+            body.close()
+
+    return StreamingResponse(
+        chunks(),
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

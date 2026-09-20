@@ -291,7 +291,20 @@ export interface ProcessingResult {
   size_bytes: number;
   sha256: string;
   content_type: string;
+  details?: Record<string, unknown>;
   created_at: string;
+}
+
+export interface ProcessingMapInfo {
+  job_id: string;
+  result_id: string;
+  kind: "RASTER_XYZ";
+  tile_url: string;
+  bounds?: [number, number, number, number] | null;
+  minzoom?: number | null;
+  maxzoom?: number | null;
+  tile_count?: number | null;
+  attribution?: string | null;
 }
 
 export interface ComponentHealth {

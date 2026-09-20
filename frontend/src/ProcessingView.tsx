@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createWebODMJob,
   fetchMedia,
+  fetchProcessingMap,
   fetchProcessingResults,
   fetchProcessingJobs,
   fetchProcessingProfiles,
@@ -14,6 +15,7 @@ import type {
   ProcessingProfile,
   ProcessingResult,
 } from "./types";
+import { ProcessingResultMap } from "./ProcessingResultMap";
 
 const ACTIVE_STATUSES = new Set([
   "QUEUED",
@@ -107,12 +109,27 @@ export function ProcessingView() {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<Record<string, ProcessingResult[]>>({});
+  const [mapInfo, setMapInfo] = useState<Awaited<ReturnType<typeof fetchProcessingMap>>>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadResults = useCallback(async (jobId: string) => {
     try {
       const values = await fetchProcessingResults(jobId);
       setResults((current) => ({ ...current, [jobId]: values }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, []);
+
+  const openMap = useCallback(async (jobId: string) => {
+    try {
+      const value = await fetchProcessingMap(jobId);
+      if (!value) {
+        setError("Für diesen Job ist noch kein Orthophoto-Kartenlayer veröffentlicht.");
+        return;
+      }
+      setMapInfo(value);
+      setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -311,6 +328,9 @@ export function ProcessingView() {
                   <button onClick={() => void loadResults(job.id)} type="button">
                     M3 results
                   </button>
+                  <button onClick={() => void openMap(job.id)} type="button">
+                    Orthophoto map
+                  </button>
                   {(results[job.id] ?? []).map((result) => (
                     <a
                       href={processingResultDownloadUrl(job.id, result.id)}
@@ -327,6 +347,13 @@ export function ProcessingView() {
           ))}
         </div>
       </section>
+
+      {mapInfo ? (
+        <ProcessingResultMap
+          info={mapInfo}
+          onClose={() => setMapInfo(null)}
+        />
+      ) : null}
     </div>
   );
 }

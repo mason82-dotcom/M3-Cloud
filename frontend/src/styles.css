@@ -960,3 +960,69 @@ button { font: inherit; }
   cursor: pointer;
   color: var(--accent);
 }
+
+
+.processingMapModal {
+  position: fixed;
+  z-index: 100;
+  inset: 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0b1118;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 55%);
+}
+
+.processingMapToolbar {
+  z-index: 2;
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 9px 12px;
+  background: #111821;
+}
+
+.processingMapToolbar strong,
+.processingMapToolbar small {
+  display: block;
+}
+
+.processingMapToolbar strong {
+  font-size: 12px;
+}
+
+.processingMapToolbar small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.processingMapToolbar button {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.processingMap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.processingMapModal .map-fallback-badge {
+  top: 68px;
+}
+
+@media (max-width: 700px) {
+  .processingMapModal {
+    inset: 8px;
+  }
+}
