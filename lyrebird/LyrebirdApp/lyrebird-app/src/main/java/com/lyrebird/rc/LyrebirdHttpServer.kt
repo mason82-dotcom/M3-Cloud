@@ -367,7 +367,7 @@ internal class LyrebirdHttpCommandHandler(
                 val altitude = postData.toIntOrNull()
                 if (altitude != null) {
                     DroneController.setRTHAltitude(altitude)
-                    "RTH altitude set to $altitude m"
+                    "RTH altitude change requested: $altitude m"
                 } else {
                     "Invalid altitude value"
                 }
@@ -376,7 +376,7 @@ internal class LyrebirdHttpCommandHandler(
                 val height = postData.toIntOrNull()
                 if (height != null) {
                     DroneController.setMaxFlightHeight(height)
-                    "Max flight height set to $height m"
+                    "Max flight height change requested: $height m"
                 } else {
                     "Invalid height value"
                 }
@@ -385,7 +385,7 @@ internal class LyrebirdHttpCommandHandler(
                 val distance = postData.toIntOrNull()
                 if (distance != null) {
                     DroneController.setMaxFlightDistance(distance)
-                    "Max flight distance set to $distance m"
+                    "Max flight distance change requested: $distance m"
                 } else {
                     "Invalid distance value"
                 }
@@ -394,11 +394,11 @@ internal class LyrebirdHttpCommandHandler(
                 when (postData.trim().lowercase()) {
                     "true", "1", "on", "enable" -> {
                         DroneController.setDistanceLimitEnabled(true)
-                        "Distance limit enabled"
+                        "Distance limit enable requested"
                     }
                     "false", "0", "off", "disable" -> {
                         DroneController.setDistanceLimitEnabled(false)
-                        "Distance limit disabled"
+                        "Distance limit disable requested"
                     }
                     else -> "Invalid value (use true/false)"
                 }
