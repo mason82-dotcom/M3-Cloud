@@ -130,6 +130,14 @@ class Settings(BaseSettings):
         default="",
         validation_alias="M3CLOUD_MEDIA_IMPORT_HANDOFF_ROOT",
     )
+    processing_import_root: str = Field(
+        default="/processing-import",
+        validation_alias="M3CLOUD_PROCESSING_IMPORT_ROOT",
+    )
+    processing_import_handoff_root: str = Field(
+        default="",
+        validation_alias="M3CLOUD_PROCESSING_IMPORT_HANDOFF_ROOT",
+    )
 
     webodm_enabled: bool = Field(
         default=False,

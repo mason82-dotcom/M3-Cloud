@@ -52,6 +52,8 @@ async def lifespan(app: FastAPI):
         session_factory,
         media_root=settings.media_import_root,
         media_handoff_root=settings.media_import_handoff_root,
+        external_result_root=settings.processing_import_root,
+        external_result_handoff_root=settings.processing_import_handoff_root,
         webodm_enabled=settings.webodm_enabled,
         webodm_url=settings.webodm_url,
         webodm_token=settings.webodm_token,

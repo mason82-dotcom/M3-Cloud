@@ -251,6 +251,52 @@ async def download_processing_handoff(
     )
 
 
+@router.get("/jobs/{job_id}/external-results/status")
+async def external_processing_result_status(
+    job_id: uuid.UUID,
+    request: Request,
+) -> dict[str, object]:
+    manager = request.app.state.processing_manager
+    try:
+        return await manager.external_result_status(job_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/jobs/{job_id}/external-results/import")
+async def import_external_processing_results(
+    job_id: uuid.UUID,
+    request: Request,
+) -> list[dict[str, Any]]:
+    manager = request.app.state.processing_manager
+    try:
+        results = await manager.import_external_results(job_id)
+        return [_result(result) for result in results]
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"External result import failed: {type(exc).__name__}: {exc}",
+        ) from exc
+
+
 @router.post("/jobs/{job_id}/external-status")
 async def update_external_processing_status(
     job_id: uuid.UUID,

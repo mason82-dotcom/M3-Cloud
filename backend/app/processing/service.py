@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import logging
+import mimetypes
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -225,6 +227,13 @@ def result_object_key(job_id: uuid.UUID, asset_name: str) -> str:
     return f"webodm/{job_id}/{asset_name}"
 
 
+def external_result_object_key(job_id: uuid.UUID, relative_path: str) -> str:
+    safe = PurePosixPath(relative_path.replace("\\", "/"))
+    if safe.is_absolute() or ".." in safe.parts:
+        raise ValueError("external result path must stay inside the job result folder")
+    return f"external/{job_id}/{safe.as_posix()}"
+
+
 def normalize_prefix(raw: str) -> str:
     value = raw.strip().replace("\\", "/").strip("/")
     if not value:
@@ -250,6 +259,8 @@ class ProcessingManager:
         *,
         media_root: str,
         media_handoff_root: str = "",
+        external_result_root: str = "/processing-import",
+        external_result_handoff_root: str = "",
         webodm_enabled: bool,
         webodm_url: str,
         webodm_token: str = "",
@@ -261,6 +272,10 @@ class ProcessingManager:
         self.sessions = sessions
         self.media_root = Path(media_root)
         self.media_handoff_root = media_handoff_root or media_root
+        self.external_result_root = Path(external_result_root)
+        self.external_result_handoff_root = (
+            external_result_handoff_root or external_result_root
+        )
         self.webodm_enabled = webodm_enabled
         self.webodm_url = webodm_url.rstrip("/")
         self.webodm_token = webodm_token
@@ -485,11 +500,16 @@ class ProcessingManager:
                 )
             ).all()
 
-            return build_thermogram_handoff(
+            handoff = build_thermogram_handoff(
                 job,
                 assets,
                 handoff_root=self.media_handoff_root,
             )
+            handoff["result_drop_path"] = _handoff_path(
+                self.external_result_handoff_root,
+                str(job.id),
+            )
+            return handoff
 
     async def update_external_job(
         self,
@@ -542,6 +562,186 @@ class ProcessingManager:
             job.updated_at = now
             await session.commit()
             return job
+
+    async def external_result_status(self, job_id: uuid.UUID) -> dict[str, object]:
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is None:
+                raise LookupError("Processing job not found")
+            if job.kind != "THERMOGRAM" or job.platform != "M3T":
+                raise ValueError("External result import is only supported for M3T Thermogram jobs")
+
+        root = self.external_result_root / str(job_id)
+        files = await asyncio.to_thread(self._external_result_files, root)
+        return {
+            "job_id": str(job_id),
+            "drop_path": _handoff_path(
+                self.external_result_handoff_root,
+                str(job_id),
+            ),
+            "mounted": self.external_result_root.exists() and self.external_result_root.is_dir(),
+            "job_folder_exists": root.exists() and root.is_dir(),
+            "file_count": len(files),
+            "files": [path.relative_to(root).as_posix() for path in files],
+        }
+
+    async def import_external_results(self, job_id: uuid.UUID) -> list[ProcessingResult]:
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is None:
+                raise LookupError("Processing job not found")
+            if job.kind != "THERMOGRAM" or job.platform != "M3T":
+                raise ValueError("External result import is only supported for M3T Thermogram jobs")
+            if job.status not in {"COMPLETED_EXTERNAL", "RESULT_IMPORT_FAILED"}:
+                raise ValueError(
+                    "Thermogram job must be COMPLETED_EXTERNAL before importing results"
+                )
+            existing = {
+                result.asset_name: result
+                for result in (
+                    await session.scalars(
+                        select(ProcessingResult).where(
+                            ProcessingResult.job_id == job_id
+                        )
+                    )
+                ).all()
+            }
+
+        root = self.external_result_root / str(job_id)
+        files = await asyncio.to_thread(self._external_result_files, root)
+        if not files:
+            raise ValueError(
+                f"No external results found in {_handoff_path(self.external_result_handoff_root, str(job_id))}"
+            )
+
+        storage = create_storage_client()
+        imported: list[ProcessingResult] = []
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="m3-external-results-") as temporary:
+                temp_root = Path(temporary)
+                for source in files:
+                    relative = source.relative_to(root).as_posix()
+                    if len(relative) > 255:
+                        raise ValueError(
+                            f"External result path is too long for the catalog: {relative}"
+                        )
+
+                    snapshot = temp_root / relative
+                    snapshot.parent.mkdir(parents=True, exist_ok=True)
+                    size, sha256 = await asyncio.to_thread(
+                        self._snapshot_external_result,
+                        source,
+                        snapshot,
+                    )
+
+                    previous = existing.get(relative)
+                    if previous is not None:
+                        if previous.sha256 != sha256:
+                            raise ValueError(
+                                f"External result changed after import: {relative}"
+                            )
+                        imported.append(previous)
+                        continue
+
+                    content_type = (
+                        mimetypes.guess_type(relative)[0]
+                        or "application/octet-stream"
+                    )
+                    object_key = external_result_object_key(job_id, relative)
+                    await asyncio.to_thread(
+                        storage.upload_file,
+                        str(snapshot),
+                        RESULT_BUCKET,
+                        object_key,
+                        ExtraArgs={"ContentType": content_type},
+                    )
+
+                    result = ProcessingResult(
+                        job_id=job_id,
+                        asset_name=relative,
+                        bucket=RESULT_BUCKET,
+                        object_key=object_key,
+                        size_bytes=size,
+                        sha256=sha256,
+                        content_type=content_type,
+                        details={
+                            "source": "external",
+                            "workflow": "THERMOGRAM",
+                            "relative_path": relative,
+                        },
+                        created_at=datetime.now(timezone.utc),
+                    )
+                    async with self.sessions() as session:
+                        session.add(result)
+                        await session.commit()
+                        await session.refresh(result)
+                    existing[relative] = result
+                    imported.append(result)
+        except Exception as exc:
+            now = datetime.now(timezone.utc)
+            async with self.sessions() as session:
+                job = await session.get(ProcessingJob, job_id)
+                if job is not None:
+                    job.status = "RESULT_IMPORT_FAILED"
+                    job.error = f"{type(exc).__name__}: {exc}"
+                    job.updated_at = now
+                    await session.commit()
+            raise
+
+        now = datetime.now(timezone.utc)
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is not None:
+                job.status = "COMPLETED"
+                job.progress = 1.0
+                job.available_assets = sorted(result.asset_name for result in imported)
+                job.error = None
+                job.updated_at = now
+                job.finished_at = now
+                await session.commit()
+
+        return imported
+
+    @staticmethod
+    def _external_result_files(root: Path) -> list[Path]:
+        if not root.exists():
+            return []
+        if not root.is_dir():
+            raise NotADirectoryError(root)
+
+        resolved_root = root.resolve()
+        files: list[Path] = []
+        for path in sorted(root.rglob("*")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            resolved = path.resolve()
+            if not resolved.is_relative_to(resolved_root):
+                raise ValueError("External result escapes job result folder")
+            files.append(path)
+        return files
+
+    @staticmethod
+    def _snapshot_external_result(source: Path, destination: Path) -> tuple[int, str]:
+        before = source.stat()
+        digest = hashlib.sha256()
+        size = 0
+        with source.open("rb") as src, destination.open("wb") as dst:
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                dst.write(chunk)
+                digest.update(chunk)
+                size += len(chunk)
+        after = source.stat()
+        if (
+            before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+            or size != after.st_size
+        ):
+            raise RuntimeError(f"External result is still changing: {source.name}")
+        return size, digest.hexdigest()
 
     async def _recover(self) -> None:
         now = datetime.now(timezone.utc)
