@@ -10,8 +10,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import java.io.File
-import java.util.Collections
-import java.util.concurrent.atomic.AtomicBoolean
 import com.lyrebird.rc.settings.LyrebirdOnboarding
 import com.lyrebird.rc.settings.LyrebirdSettingsBackup
 import com.lyrebird.rc.settings.DroneSettingsProfiles
