@@ -1,5 +1,7 @@
 package com.lyrebird.rc.controller
 
+import android.os.Handler
+import android.os.Looper
 import dji.sdk.keyvalue.key.CameraKey
 import dji.sdk.keyvalue.key.DJIKey
 import dji.sdk.keyvalue.key.KeyTools
@@ -21,6 +23,8 @@ internal data class CameraPrepareResult(
 )
 
 internal object CameraCaptureConfigurator {
+    private const val LIVE_SOURCE_ATTEMPTS = 2
+    private const val LIVE_SOURCE_RETRY_DELAY_MS = 200L
 
     fun defaultDirectProfile(capabilities: CameraPlatformCapabilities): CameraCaptureProfile? =
         CameraCapturePolicy.defaultDirectProfile(capabilities)
@@ -90,47 +94,58 @@ internal object CameraCaptureConfigurator {
                 return
             }
 
-            KeyManager.getInstance().setValue(
-                liveSourceKey,
-                previousSource,
-                object : CommonCallbacks.CompletionCallback {
-                    override fun onSuccess() {
-                        KeyManager.getInstance().getValue(
-                            liveSourceKey,
-                            object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
-                                override fun onSuccess(readback: CameraVideoStreamSourceType?) {
-                                    val suffix = if (readback == previousSource) {
-                                        "; liveSource=${previousSource.name}"
-                                    } else {
-                                        "; liveSource restore mismatch: expected=${previousSource.name} actual=${readback?.name}"
+            fun attemptRestore(attemptsRemaining: Int) {
+                KeyManager.getInstance().setValue(
+                    liveSourceKey,
+                    previousSource,
+                    object : CommonCallbacks.CompletionCallback {
+                        override fun onSuccess() {
+                            KeyManager.getInstance().getValue(
+                                liveSourceKey,
+                                object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
+                                    override fun onSuccess(readback: CameraVideoStreamSourceType?) {
+                                        val suffix = if (readback == previousSource) {
+                                            "; liveSource=${previousSource.name}"
+                                        } else {
+                                            "; liveSource restore mismatch: expected=${previousSource.name} actual=${readback?.name}"
+                                        }
+                                        callback(CameraPrepareResult(true, profile, detail + suffix))
                                     }
-                                    callback(CameraPrepareResult(true, profile, detail + suffix))
-                                }
 
-                                override fun onFailure(error: IDJIError) {
-                                    callback(
-                                        CameraPrepareResult(
-                                            true,
-                                            profile,
-                                            "$detail; liveSource restore readback failed: ${error.description()}"
+                                    override fun onFailure(error: IDJIError) {
+                                        callback(
+                                            CameraPrepareResult(
+                                                true,
+                                                profile,
+                                                "$detail; liveSource restore readback failed: ${error.description()}"
+                                            )
                                         )
-                                    )
+                                    }
                                 }
-                            }
-                        )
-                    }
-
-                    override fun onFailure(error: IDJIError) {
-                        callback(
-                            CameraPrepareResult(
-                                true,
-                                profile,
-                                "$detail; liveSource restore failed: ${error.description()}"
                             )
-                        )
+                        }
+
+                        override fun onFailure(error: IDJIError) {
+                            if (attemptsRemaining > 1) {
+                                Handler(Looper.getMainLooper()).postDelayed(
+                                    { attemptRestore(attemptsRemaining - 1) },
+                                    LIVE_SOURCE_RETRY_DELAY_MS
+                                )
+                            } else {
+                                callback(
+                                    CameraPrepareResult(
+                                        true,
+                                        profile,
+                                        "$detail; liveSource restore failed: ${error.description()}"
+                                    )
+                                )
+                            }
+                        }
                     }
-                }
-            )
+                )
+            }
+
+            attemptRestore(LIVE_SOURCE_ATTEMPTS)
         }
 
         fun configurePhoto(previousSource: CameraVideoStreamSourceType?) {
@@ -208,19 +223,30 @@ internal object CameraCaptureConfigurator {
         // VIDEO_NORMAL -> PHOTO_NORMAL resets the live source to RGB_CAMERA; restoring the prior
         // source after photo configuration preserves NDVI/G/R/RE/NIR selection without changing
         // which sources are actually written to storage.
-        KeyManager.getInstance().getValue(
-            liveSourceKey,
-            object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
-                override fun onSuccess(source: CameraVideoStreamSourceType?) {
-                    configurePhoto(source)
-                }
+        fun readLiveSourceBeforeCapture(attemptsRemaining: Int) {
+            KeyManager.getInstance().getValue(
+                liveSourceKey,
+                object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
+                    override fun onSuccess(source: CameraVideoStreamSourceType?) {
+                        configurePhoto(source)
+                    }
 
-                override fun onFailure(error: IDJIError) {
-                    // Live-source preservation is secondary to capture preparation.
-                    configurePhoto(null)
+                    override fun onFailure(error: IDJIError) {
+                        if (attemptsRemaining > 1) {
+                            Handler(Looper.getMainLooper()).postDelayed(
+                                { readLiveSourceBeforeCapture(attemptsRemaining - 1) },
+                                LIVE_SOURCE_RETRY_DELAY_MS
+                            )
+                        } else {
+                            // Live-source preservation is secondary to capture preparation.
+                            configurePhoto(null)
+                        }
+                    }
                 }
-            }
-        )
+            )
+        }
+
+        readLiveSourceBeforeCapture(LIVE_SOURCE_ATTEMPTS)
     }
 
 }
