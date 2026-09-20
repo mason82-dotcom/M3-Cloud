@@ -17,7 +17,7 @@ from app.health import readiness
 from app.live import LiveTelemetryHub, router as live_router
 from app.media.importer import MediaImporter
 from app.media.watcher import MediaImportWatcher
-from app.missions.uploader import MissionUploader
+from app.missions.uploader import MissionUploader, recover_interrupted_uploads
 from app.processing.service import ProcessingManager
 from app.api_operations import router as operations_router
 from app.redis_client import redis_client
@@ -27,6 +27,9 @@ from app.vehicles.live import LyrebirdLiveBridge
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    interrupted_uploads = await recover_interrupted_uploads(session_factory)
+    app.state.recovered_mission_uploads = interrupted_uploads
+
     flight_recorder = FlightRecorder(session_factory)
     await flight_recorder.recover_interrupted()
     flight_router = FlightTelemetryRouter(flight_recorder)
