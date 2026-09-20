@@ -62,6 +62,7 @@ def test_camera_capability_probe_provides_explicit_m3m_identity():
     assert vehicle.telemetry["payload"]["platform"] == "M3M"
     assert vehicle.telemetry["payload"]["multispectral"] is True
     assert vehicle.telemetry["payload"]["thermal"] is False
+    assert vehicle.telemetry["payload"]["camera"]["record_stored_sources"] == ["RGB_CAMERA", "NDVI_CAMERA"]
     assert "MS_NIR_CAMERA" in vehicle.telemetry["payload"]["camera"]["capture_stored_sources"]
 
 def test_has_thermal_alone_does_not_claim_m3t():
