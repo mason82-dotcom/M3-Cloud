@@ -34,7 +34,7 @@ services:
       retries: 20
 
   emqx:
-    image: ${EMQX_IMAGE:-emqx/emqx:5}
+    image: ${EMQX_IMAGE:-emqx/emqx:5.10.5}
     restart: unless-stopped
     ports:
       - "1883:1883"
