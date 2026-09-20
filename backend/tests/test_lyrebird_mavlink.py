@@ -2,7 +2,7 @@ import math
 import struct
 from types import SimpleNamespace
 from app.vehicles.lyrebird import merge_dicts, merge_transport_telemetry
-from app.vehicles.mavlink import normalize_mavlink_message, decode_lyrebird_frame, decode_lyrebird_rtk_status, decode_autosensing_status, decode_autosensing_target, _mavlink2_frames, AUTOSENSING_STATUS_STRUCT, AUTOSENSING_TARGET_STRUCT
+from app.vehicles.mavlink import normalize_mavlink_message, decode_lyrebird_frame, decode_lyrebird_rtk_status, decode_autosensing_status, decode_autosensing_target, _mavlink2_frames, AUTOSENSING_STATUS_STRUCT, AUTOSENSING_TARGET_STRUCT, LyrebirdMavlinkCollector
 
 class Msg(SimpleNamespace):
     def get_type(self): return self.kind
@@ -144,3 +144,50 @@ def test_lyrebird_status_uint16_unknown_budget_is_null():
         "total_flight_time_s": None if total_s == 0xFFFF else total_s,
     }
     assert decoded=={"time_to_home_s":None,"time_to_land_s":12,"total_flight_time_s":None}
+
+
+def test_camera_heartbeat_does_not_overwrite_aircraft_flight_state(monkeypatch):
+    from pymavlink.dialects.v20 import common as mavlink_common
+
+    host = "192.168.178.45"
+    monkeypatch.setattr("app.vehicles.mavlink.settings.lyrebird_hosts", host)
+
+    def heartbeat_frame(component_id, custom_mode, base_mode, system_status, mav_type):
+        sink = bytearray()
+        class Sink:
+            def write(self, data):
+                sink.extend(data)
+        mav = mavlink_common.MAVLink(Sink(), srcSystem=142, srcComponent=component_id)
+        mav.heartbeat_send(
+            mav_type,
+            mavlink_common.MAV_AUTOPILOT_PX4 if component_id == 1 else mavlink_common.MAV_AUTOPILOT_INVALID,
+            base_mode,
+            custom_mode,
+            system_status,
+        )
+        return bytes(sink)
+
+    collector = LyrebirdMavlinkCollector()
+    aircraft = heartbeat_frame(
+        1,
+        2 << 16,
+        mavlink_common.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED | mavlink_common.MAV_MODE_FLAG_STABILIZE_ENABLED,
+        mavlink_common.MAV_STATE_STANDBY,
+        mavlink_common.MAV_TYPE_QUADROTOR,
+    )
+    camera = heartbeat_frame(
+        mavlink_common.MAV_COMP_ID_CAMERA,
+        0,
+        0,
+        mavlink_common.MAV_STATE_ACTIVE,
+        mavlink_common.MAV_TYPE_CAMERA,
+    )
+
+    collector.feed_datagram(aircraft, host)
+    collector.feed_datagram(camera, host)
+
+    snapshot = collector.snapshot(host)
+    assert snapshot is not None
+    assert snapshot["flight_state"]["custom_mode"] == 2 << 16
+    assert snapshot["flight_state"]["mode"] == "ALTITUDE_HOLD"
+    assert snapshot["flight_state"]["system_status"] == mavlink_common.MAV_STATE_STANDBY
