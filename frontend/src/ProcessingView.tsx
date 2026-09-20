@@ -21,6 +21,7 @@ const ACTIVE_STATUSES = new Set([
   "SUBMITTED",
   "QUEUED_REMOTE",
   "RUNNING",
+  "IMPORTING_RESULTS",
 ]);
 
 function parentPath(relativePath: string): string {
@@ -34,22 +35,18 @@ function percent(value: number): string {
 
 function statusClass(status: string): string {
   if (status === "COMPLETED") return "good";
-  if (status === "FAILED" || status === "CANCELED" || status === "INTERRUPTED") {
+  if (
+    status === "FAILED" ||
+    status === "CANCELED" ||
+    status === "INTERRUPTED" ||
+    status === "RESULT_IMPORT_FAILED"
+  ) {
     return "bad";
   }
   return "warn";
 }
 
 function eligible(asset: MediaAsset): boolean {
-  const loadResults = useCallback(async (jobId: string) => {
-    try {
-      const values = await fetchProcessingResults(jobId);
-      setResults((current) => ({ ...current, [jobId]: values }));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }, []);
-
   return (
     asset.present &&
     !asset.duplicate_of &&
@@ -111,6 +108,15 @@ export function ProcessingView() {
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<Record<string, ProcessingResult[]>>({});
   const [error, setError] = useState<string | null>(null);
+
+  const loadResults = useCallback(async (jobId: string) => {
+    try {
+      const values = await fetchProcessingResults(jobId);
+      setResults((current) => ({ ...current, [jobId]: values }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
