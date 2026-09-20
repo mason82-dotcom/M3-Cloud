@@ -368,8 +368,11 @@ def decode_lyrebird_rtk_status(payload: bytes) -> dict[str, Any]:
     )
     names = {0: "UNKNOWN", 1: "NONE", 2: "SINGLE", 3: "FLOAT", 4: "FIXED", 5: "STALE"}
     return {
-        "rtkEnabled": bool(flags & 1), "rtkConnected": bool(flags & 2), "rtkHealthy": bool(flags & 4),
-        "rtkFix": names.get(fix, "UNKNOWN"), "rtkAgeMs": None if age == 0xFFFFFFFF else age,
+        "rtkEnabled": bool(flags & 1),
+        "rtkConnected": bool(flags & 2),
+        "rtkHealthy": bool(flags & 4),
+        "rtkFix": names.get(fix, "UNKNOWN"),
+        "rtkAgeMs": None if age == 0xFFFFFFFF else age,
         "rtkStdLatitudeM": None if math.isnan(std_lat) else std_lat,
         "rtkStdLongitudeM": None if math.isnan(std_lon) else std_lon,
         "rtkStdAltitudeM": None if math.isnan(std_alt) else std_alt,
