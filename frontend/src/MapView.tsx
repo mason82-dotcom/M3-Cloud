@@ -77,7 +77,6 @@ export function MapView({
         "https://demotiles.maplibre.org/style.json",
       center: [8.5, 49.1],
       zoom: 7,
-      attributionControl: true,
     });
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
