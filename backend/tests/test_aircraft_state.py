@@ -114,3 +114,39 @@ def test_lyrebird_known_mavlink_mode_remains_authoritative_over_dji_mode():
     telemetry={"flight_mode":"GPS_NORMAL","flight_state":{"mode":"SAFE_RECOVERY","custom_mode":84148224}}
     common=normalize_aircraft_state(telemetry,source="lyrebird")["aircraft_state"]
     assert common["mode"]=="SAFE_RECOVERY"
+
+
+def test_lyrebird_no_fix_zero_coordinates_are_not_exposed_as_real_position():
+    telemetry={
+        "latitude":0.0,
+        "longitude":0.0,
+        "amsl_altitude_m":-26.0,
+        "altitude":{"amsl_m":-26.0,"relative_m":0.0,"local_m":0.0},
+        "positioning":{"fix":"NONE","native":{"mavlink_gps_fix_type":0}},
+        "home_set":False,
+        "distance_to_home_m":0.0,
+        "flight_state":{"mode":"ALTITUDE_HOLD"},
+    }
+    result=normalize_aircraft_state(telemetry,source="lyrebird")
+    assert result["latitude"] is None
+    assert result["longitude"] is None
+    assert result["amsl_altitude_m"] is None
+    assert result["altitude"]["amsl_m"] is None
+    assert result["altitude"]["relative_m"]==0.0
+    assert result["distance_to_home_m"] is None
+
+def test_lyrebird_zero_zero_is_preserved_when_position_has_a_real_fix():
+    telemetry={
+        "latitude":0.0,
+        "longitude":0.0,
+        "amsl_altitude_m":4.0,
+        "positioning":{"fix":"SINGLE","native":{"mavlink_gps_fix_type":3}},
+        "home_set":True,
+        "distance_to_home_m":0.0,
+        "flight_state":{"mode":"POSITION_HOLD"},
+    }
+    result=normalize_aircraft_state(telemetry,source="lyrebird")
+    assert result["latitude"]==0.0
+    assert result["longitude"]==0.0
+    assert result["amsl_altitude_m"]==4.0
+    assert result["distance_to_home_m"]==0.0
