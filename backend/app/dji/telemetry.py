@@ -146,6 +146,8 @@ def normalize_telemetry(
         "home_longitude": "home_longitude",
         "wind_speed": "wind_speed_mps",
         "wind_direction": "wind_direction_code",
+        "control_source": "control_source",
+        "gear": "gear_code",
     }
     for source, target in scalar_mapping.items():
         if source in raw:
