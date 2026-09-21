@@ -281,6 +281,7 @@ processing node. Configure credentials before deployment:
 
 ```dotenv
 DRONEDB_IMAGE=dronedb/registry:latest
+DRONEDB_PLATFORM=linux/amd64
 DRONEDB_DB_IMAGE=mariadb:10.6
 DRONEDB_PORT=5000
 DRONEDB_PUBLIC_URL=http://localhost:5000
@@ -296,9 +297,11 @@ M3CLOUD_DRONEDB_PUBLIC_URL=http://localhost:5000
 M3CLOUD_DRONEDB_ORG=m3cloud
 ```
 
-The Registry is exposed on port 5000 by default. M3-Cloud authenticates over the internal Compose
-network, creates the configured organization and a private dataset per handoff, then uploads the
-verified originals. If the backend restarts during transfer, the job is re-queued and the persisted
+The Registry is exposed on port 5000 by default. The currently published DroneDB Registry Docker
+image is amd64-only, so Compose declares `linux/amd64` explicitly; ARM hosts therefore require
+Docker emulation or an external compatible DroneDB deployment. M3-Cloud authenticates over the
+internal Compose network, creates the configured organization and a private dataset per handoff,
+then uploads the verified originals. If the backend restarts during transfer, the job is re-queued and the persisted
 DroneDB dataset identity is reused so the transfer can resume safely.
 
 Photogrammetry, reflectance calibration, vegetation indices, and other multispectral derivatives
