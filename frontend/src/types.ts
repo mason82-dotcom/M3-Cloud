@@ -675,7 +675,7 @@ export interface MediaGroup {
 }
 
 export interface MediaWorkflowReadiness {
-  key: "WEBODM" | "THERMOGRAM" | "MULTISPECTRAL" | string;
+  key: "WEBODM" | "THERMOGRAM" | "DRONEDB" | string;
   ready: boolean;
   eligible_assets: number;
   complete_groups: number;
@@ -819,6 +819,12 @@ export interface ProcessingJob {
   remote_project_id?: number | null;
   remote_task_id?: number | null;
   remote_status?: number | null;
+  remote?: {
+    provider: "DRONEDB" | string;
+    organization?: string | null;
+    dataset?: string | null;
+    url?: string | null;
+  } | null;
   available_assets: string[];
   error?: string | null;
   created_at: string;
