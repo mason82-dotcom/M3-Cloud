@@ -87,6 +87,10 @@ def build_pilot_bootstrap(
             "host": ws_url,
             "token": settings.dji_pilot_api_token,
         },
+        "map": {
+            "user_name": settings.dji_pilot_map_user_name,
+            "element_pre_name": settings.dji_pilot_map_element_prefix,
+        },
         "media": {
             "auto_upload_photo": False,
             "auto_upload_photo_type": 0,
@@ -100,7 +104,7 @@ def build_pilot_bootstrap(
             "thing": True,
             "liveshare": True,
             "ws": True,
-            "map": False,
+            "map": True,
             "tsa": True,
             "media": pilot_storage_ready(settings),
             "mission": True,
