@@ -20,6 +20,33 @@ def test_normalize_config_uses_real_aircraft_serial_as_canonical_identity():
     assert vehicle.model == "LYREBIRD_AIRCRAFT"
 
 
+
+
+def test_normalize_config_exposes_runtime_flight_limits():
+    vehicle = normalize_config(
+        "192.168.1.42",
+        {"droneName": "field-drone", "aircraftSerialNumber": "1581F-TEST"},
+        {},
+        {"cameraType": "M3E", "platform": "M3E", "connected": True},
+        {
+            "maxFlightHeight": 120,
+            "maxFlightDistance": 2000,
+            "distanceLimitEnabled": True,
+            "rthAltitude": 100,
+            "rthAltitudeEffective": 100,
+            "rthAltitudeStatus": "confirmed",
+        },
+    )
+    assert vehicle.telemetry["limits"] == {
+        "max_flight_height_m": 120.0,
+        "max_flight_distance_m": 2000.0,
+        "distance_limit_enabled": True,
+        "rth_altitude_m": 100.0,
+        "rth_altitude_effective_m": 100.0,
+        "rth_altitude_status": "confirmed",
+    }
+
+
 def test_normalize_config_falls_back_to_host_when_serial_is_unknown():
     vehicle = normalize_config(
         "192.168.1.42",
