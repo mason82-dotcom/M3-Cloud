@@ -2,6 +2,10 @@
 apply from: rootProject.file('dependencies.gradle')
 
 buildscript {
+    dependencyLocking {
+        lockMode = LockMode.STRICT
+    }
+
     configurations.classpath {
         resolutionStrategy.activateDependencyLocking()
     }
@@ -25,6 +29,7 @@ apply plugin: 'io.gitlab.arturbosch.detekt'
 
 allprojects {
     dependencyLocking {
+        lockMode = LockMode.STRICT
         lockAllConfigurations()
     }
 
