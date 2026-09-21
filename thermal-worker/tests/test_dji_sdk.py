@@ -5,10 +5,10 @@ import pytest
 from thermal_worker.dji_sdk import DjiThermalSdk, ThermalSdkError
 
 
-def test_measurement_override_ranges_match_modern_dirp_contract():
+def test_measurement_override_validation_accepts_values_for_sdk_range_check():
     values = DjiThermalSdk._validate_overrides(
         {
-            "distance_m": 10,
+            "distance_m": 250,
             "humidity_pct": 65,
             "emissivity": 0.95,
             "reflection_c": 20,
@@ -16,7 +16,7 @@ def test_measurement_override_ranges_match_modern_dirp_contract():
         }
     )
     assert values == {
-        "distance_m": 10.0,
+        "distance_m": 250.0,
         "humidity_pct": 65.0,
         "emissivity": 0.95,
         "reflection_c": 20.0,
@@ -27,16 +27,32 @@ def test_measurement_override_ranges_match_modern_dirp_contract():
 @pytest.mark.parametrize(
     ("key", "value"),
     [
-        ("distance_m", 0.5),
-        ("humidity_pct", 10),
-        ("emissivity", 0.05),
-        ("reflection_c", 600),
-        ("ambient_temp_c", 100),
+        ("distance_m", 0),
+        ("humidity_pct", -1),
+        ("humidity_pct", 101),
+        ("emissivity", 0),
+        ("emissivity", 1.1),
+        ("reflection_c", float("nan")),
     ],
 )
-def test_measurement_override_ranges_fail_closed(key, value):
+def test_measurement_override_basic_validation_fails_closed(key, value):
     with pytest.raises(ValueError):
         DjiThermalSdk._validate_overrides({key: value})
+
+
+def test_sdk_specific_measurement_range_is_authoritative():
+    DjiThermalSdk._validate_against_sdk_ranges(
+        {"distance_m": 250.0, "emissivity": 0.95},
+        {
+            "distance_m": {"min": 1.0, "max": 500.0},
+            "emissivity": {"min": 0.1, "max": 1.0},
+        },
+    )
+    with pytest.raises(ValueError, match="outside DJI DIRP range"):
+        DjiThermalSdk._validate_against_sdk_ranges(
+            {"distance_m": 600.0},
+            {"distance_m": {"min": 1.0, "max": 500.0}},
+        )
 
 
 def test_unknown_measurement_override_is_rejected():
@@ -69,7 +85,7 @@ def _fake_sdk(*, measure_code=0):
         ).contents.value = 0x1234
         return 0
 
-    def get_api_version(_handle, version_ptr):
+    def get_api_version(version_ptr):
         version = ctypes.cast(
             version_ptr,
             ctypes.POINTER(dji._DirpApiVersion),
@@ -97,6 +113,23 @@ def _fake_sdk(*, measure_code=0):
         resolution.height = 2
         return 0
 
+    def get_measurement_range(_handle, range_ptr):
+        value = ctypes.cast(
+            range_ptr,
+            ctypes.POINTER(dji._DirpMeasurementParamsRangeV2),
+        ).contents
+        value.distance.min = 1.0
+        value.distance.max = 500.0
+        value.humidity.min = 0.0
+        value.humidity.max = 100.0
+        value.emissivity.min = 0.1
+        value.emissivity.max = 1.0
+        value.reflection.min = -40.0
+        value.reflection.max = 500.0
+        value.ambient_temp.min = -40.0
+        value.ambient_temp.max = 500.0
+        return 0
+
     def get_measurement(_handle, _params_ptr):
         return dji.DIRP_ERROR_UNSUPPORTED_FUNC
 
@@ -116,6 +149,7 @@ def _fake_sdk(*, measure_code=0):
     sdk._get_api_version = get_api_version
     sdk._get_version = get_rjpeg_version
     sdk._get_resolution = get_resolution
+    sdk._get_measurement_range = get_measurement_range
     sdk._get_measurement = get_measurement
     sdk._set_measurement = lambda _handle, _params: 0
     sdk._measure_ex = measure_ex
@@ -139,6 +173,10 @@ def test_decode_uses_sdk_reported_resolution_and_versions():
     assert result.rjpeg_version == {"rjpeg": 3, "header": 4, "curve": 5}
     assert result.measurement_mode == "sdk_native_locked"
     assert result.measurement_error_code == -12
+    assert result.measurement_ranges["distance_m"] == {
+        "min": 1.0,
+        "max": 500.0,
+    }
     assert destroyed == [0x1234]
 
 
