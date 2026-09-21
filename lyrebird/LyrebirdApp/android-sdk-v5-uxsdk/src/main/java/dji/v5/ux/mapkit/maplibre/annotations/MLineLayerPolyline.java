@@ -10,12 +10,12 @@ import com.mapbox.geojson.Feature;
 import com.mapbox.geojson.FeatureCollection;
 import com.mapbox.geojson.LineString;
 import com.mapbox.geojson.Point;
-import com.mapbox.mapboxsdk.maps.MapboxMap;
-import com.mapbox.mapboxsdk.style.layers.LineLayer;
-import com.mapbox.mapboxsdk.style.layers.Property;
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
-import com.mapbox.mapboxsdk.style.layers.PropertyValue;
-import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.style.layers.LineLayer;
+import org.maplibre.android.style.layers.Property;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.android.style.layers.PropertyValue;
+import org.maplibre.android.style.sources.GeoJsonSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,7 +25,7 @@ import java.util.List;
  */
 public class MLineLayerPolyline implements DJIPolyline {
 
-    private MapboxMap mapboxMap;
+    private MapLibreMap mapboxMap;
     private LineLayer lineLayer;
     private GeoJsonSource source;
     private MaplibreMapDelegate maplibreMapDelegate;
@@ -40,7 +40,7 @@ public class MLineLayerPolyline implements DJIPolyline {
     }
 
     public MLineLayerPolyline(MaplibreMapDelegate maplibreMapDelegate,
-                              MapboxMap mapboxMap,
+                              MapLibreMap mapboxMap,
                               LineLayer lineLayer,
                               GeoJsonSource source,
                               DJIPolylineOptions options) {
