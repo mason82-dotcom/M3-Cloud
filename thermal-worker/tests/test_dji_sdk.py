@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from thermal_worker.dji_sdk import DjiThermalSdk, ThermalSdkError
@@ -77,6 +79,8 @@ def _fake_sdk(*, measure_code=0):
     sdk._measurement_abi = "AMBIENT_V2"
     sdk._api_version_abi = "HANDLE_V2"
     sdk.sdk_label = "fake-tsdk"
+    sdk._library_path = Path("libdirp.so")
+    sdk._library_sha256 = "b" * 64
     destroyed = []
 
     def create(_raw, _size, handle_ptr):
@@ -174,6 +178,8 @@ def test_decode_uses_sdk_reported_resolution_and_versions():
     assert result.rjpeg_version == {"rjpeg": 3, "header": 4, "curve": 5}
     assert result.measurement_mode == "sdk_native_locked"
     assert result.measurement_error_code == -12
+    assert result.sdk_library_name == "libdirp.so"
+    assert result.sdk_library_sha256 == "b" * 64
     assert result.measurement_ranges["distance_m"] == {
         "min": 1.0,
         "max": 500.0,
@@ -408,4 +414,12 @@ def test_multiple_sdk_releases_require_exact_release_path(
     assert DjiThermalSdk._resolve_release_dir(
         tmp_path / "v1"
     ) == releases[0]
+
+def test_sdk_library_sha256_fingerprints_exact_binary(tmp_path):
+    library = tmp_path / "libdirp.so"
+    library.write_bytes(b"DJI-DIRP-BINARY")
+
+    assert DjiThermalSdk._sha256_path(library) == (
+        "dc49d41a85ecbb264378e70d03d00e9846e18bd84c652f2b695925cac4efca31"
+    )
 
