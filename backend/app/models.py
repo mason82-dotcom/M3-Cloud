@@ -330,6 +330,33 @@ class MediaAsset(Base):
 
 
 
+class DjiMediaGroup(Base):
+    __tablename__ = "dji_media_groups"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "file_group_id",
+            name="uq_dji_media_group_workspace_file_group",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[str] = mapped_column(String(64), index=True)
+    file_group_id: Mapped[str] = mapped_column(String(128), index=True)
+    file_count: Mapped[int] = mapped_column(Integer)
+    file_uploaded_count: Mapped[int] = mapped_column(Integer)
+    catalogued_count: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    platform: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    details: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class MediaDatasetRecord(Base):
     __tablename__ = "media_datasets"
     __table_args__ = (
