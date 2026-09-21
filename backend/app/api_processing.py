@@ -35,6 +35,10 @@ class ExternalJobStatusRequest(BaseModel):
     error: str | None = Field(default=None, max_length=2000)
 
 
+class ExternalJobClaimRequest(BaseModel):
+    retry_failed: bool = False
+
+
 def _job(job: ProcessingJob) -> dict[str, Any]:
     return {
         "id": str(job.id),
@@ -418,6 +422,36 @@ async def import_external_processing_results(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"External result import failed: {type(exc).__name__}: {exc}",
         ) from exc
+
+
+@router.post("/jobs/{job_id}/external-claim")
+async def claim_external_processing_job(
+    job_id: uuid.UUID,
+    body: ExternalJobClaimRequest,
+    request: Request,
+) -> dict[str, Any]:
+    manager = request.app.state.processing_manager
+    try:
+        job = await manager.claim_external_job(
+            job_id,
+            retry_failed=body.retry_failed,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return _job(job)
 
 
 @router.post("/jobs/{job_id}/external-status")
