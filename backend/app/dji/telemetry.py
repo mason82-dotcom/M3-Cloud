@@ -52,25 +52,11 @@ def _camera(camera: Any) -> dict[str, Any] | None:
     if not isinstance(camera, dict):
         return None
 
-    keys = (
-        "payload_index",
-        "camera_mode",
-        "photo_state",
-        "recording_state",
-        "record_time",
-        "remain_photo_num",
-        "remain_record_duration",
-        "screen_split_enable",
-        "zoom_factor",
-        "ir_zoom_factor",
-        "photo_storage_settings",
-        "video_storage_settings",
-        "ir_metering_mode",
-        "ir_metering_point",
-        "ir_metering_area",
-        "thermal_gain_mode",
-    )
-    return {key: deepcopy(camera[key]) for key in keys if key in camera}
+    # Keep the complete DJI camera thing-model object. M3E, M3T and M3M expose
+    # different payload properties (exposure/focus/thermal/multispectral
+    # capabilities). Filtering this object would silently collapse those
+    # platform differences and lose forward-compatible DJI fields.
+    return deepcopy(camera)
 
 
 def _battery(value: Any) -> dict[str, Any] | None:
@@ -129,6 +115,11 @@ def normalize_telemetry(
         "source_timestamp_ms": source_timestamp_ms,
         "received_at_ms": received,
         "last_seen_ms": received,
+        # Lossless merged OSD+state thing-model snapshot. Stable aliases below
+        # remain convenient for M3-Cloud consumers, while this preserves every
+        # DJI property and any future thing-model extension byte-for-byte at
+        # JSON value level.
+        "dji_properties": deepcopy(dict(raw)),
     }
 
     scalar_mapping = {
@@ -152,6 +143,37 @@ def normalize_telemetry(
     for source, target in scalar_mapping.items():
         if source in raw:
             state[target] = deepcopy(raw[source])
+
+    for key in (
+        "country",
+        "dongle_infos",
+        "obstacle_avoidance",
+        "is_near_area_limit",
+        "is_near_height_limit",
+        "height_limit",
+        "night_lights_state",
+        "activation_time",
+        "maintain_status",
+        "total_flight_sorties",
+        "storage",
+        "total_flight_distance",
+        "total_flight_time",
+        "serious_low_battery_warning_threshold",
+        "low_battery_warning_threshold",
+        "firmware_upgrade_status",
+        "compatible_status",
+        "firmware_version",
+        "camera_watermark_settings",
+        # RC Pro Enterprise thing-model fields.
+        "capacity_percent",
+        "wireless_link",
+        "live_capacity",
+        "live_status",
+        "is_cloud_control_auth",
+        "cloud_control_auth_state",
+    ):
+        if key in raw:
+            state[key] = deepcopy(raw[key])
 
     attitude = {}
     for source, target in (
@@ -184,18 +206,6 @@ def normalize_telemetry(
     if isinstance(cameras, list):
         normalized_cameras = [item for camera in cameras if (item := _camera(camera)) is not None]
         state["cameras"] = normalized_cameras
-
-    # RC Pro / Pilot 2 gateway state is transported through the same OSD/state
-    # topics but has a different thing model. Preserve the documented gateway
-    # capabilities required by the primary DJI Cloud API control plane.
-    for key in (
-        "live_capacity",
-        "live_status",
-        "is_cloud_control_auth",
-        "cloud_control_auth_state",
-    ):
-        if key in raw:
-            state[key] = deepcopy(raw[key])
 
     return state
 
