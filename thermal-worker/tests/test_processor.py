@@ -1021,3 +1021,55 @@ def test_m3t_source_identity_accepts_common_m3t_aliases():
         assert identity["status"] == "CONFIRMED"
         assert identity["thermal"]["m3t_confirmed"] is True
 
+def test_m3t_source_identity_uses_dji_xmp_drone_model():
+    from thermal_worker.processor import _m3t_source_identity
+
+    identity = _m3t_source_identity(
+        {
+            "metadata": {
+                "raw": {
+                    "xmp": {
+                        "drone-dji": {
+                            "DroneModel": "M3T",
+                        }
+                    }
+                }
+            }
+        },
+        {"metadata": {}},
+    )
+
+    assert identity["status"] == "CONFIRMED"
+    assert identity["wide"]["m3t_confirmed"] is True
+    assert identity["wide"]["models"] == [
+        {
+            "value": "M3T",
+            "normalized": "m3t",
+            "classification": "M3T",
+        }
+    ]
+
+
+def test_m3t_source_identity_rejects_conflicting_dji_xmp_drone_model():
+    from thermal_worker.processor import _require_m3t_source_identity
+
+    with pytest.raises(
+        ValueError,
+        match="conflicts with M3T-only thermal workflow",
+    ):
+        _require_m3t_source_identity(
+            "M3T/site/DJI_0001",
+            {
+                "metadata": {
+                    "raw": {
+                        "xmp": {
+                            "drone-dji": {
+                                "DroneModel": "M30T",
+                            }
+                        }
+                    }
+                }
+            },
+            {"metadata": {}},
+        )
+
