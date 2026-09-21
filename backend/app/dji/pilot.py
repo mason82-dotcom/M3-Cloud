@@ -4,6 +4,7 @@ from typing import Any
 from uuid import UUID
 
 from app.config import Settings
+from app.dji.storage_sts import pilot_storage_ready
 
 
 _REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
@@ -86,6 +87,11 @@ def build_pilot_bootstrap(
             "host": ws_url,
             "token": settings.dji_pilot_api_token,
         },
+        "media": {
+            "auto_upload_photo": False,
+            "auto_upload_photo_type": 0,
+            "auto_upload_video": False,
+        },
         "liveshare": {
             "video_publish_type": settings.dji_pilot_live_publish_type,
         },
@@ -96,7 +102,7 @@ def build_pilot_bootstrap(
             "ws": True,
             "map": False,
             "tsa": True,
-            "media": False,
+            "media": pilot_storage_ready(settings),
             "mission": True,
         },
     }
