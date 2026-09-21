@@ -34,7 +34,7 @@ def test_subscription_set_contains_only_dji_uplink_topics() -> None:
     assert "thing/product/+/events" in SUBSCRIPTIONS
     assert "thing/product/+/requests" in SUBSCRIPTIONS
     assert "thing/product/+/property/set_reply" in SUBSCRIPTIONS
-    assert "thing/product/+/drc/up" in SUBSCRIPTIONS
+    assert "thing/product/+/drc/up" not in SUBSCRIPTIONS
 
     assert "thing/product/+/services" not in SUBSCRIPTIONS
     assert "thing/product/+/events_reply" not in SUBSCRIPTIONS

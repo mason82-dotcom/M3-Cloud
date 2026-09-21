@@ -24,6 +24,8 @@ def test_dji_service_create_wires_primary_domains() -> None:
     assert service.cloud_control.gateways is service.gateways
     assert service.cloud_control.drc_sessions is service.drc_sessions
     assert service.drc_sessions.channel is service.drc_channel
+    assert service.drc_sessions.transport is service.drc_transport
+    assert service.drc_channel.publisher is service.drc_transport
 
 
 def test_dji_service_cloud_control_is_wired_without_polluting_router() -> None:

@@ -50,3 +50,28 @@ def test_dji_health_reports_disabled_configuration(monkeypatch: pytest.MonkeyPat
         "status": "disabled",
         "connected": False,
     }
+
+
+
+@pytest.mark.asyncio
+async def test_mqtt_wait_connected_times_out_when_no_connack() -> None:
+    transport = DJIMqttTransport(
+        _noop_handler,
+        host="127.0.0.1",
+        port=1883,
+        subscriptions=(),
+    )
+
+    with pytest.raises(TimeoutError):
+        await transport.wait_connected(0.01)
+
+
+def test_mqtt_transport_keeps_custom_subscription_set() -> None:
+    transport = DJIMqttTransport(
+        _noop_handler,
+        host="127.0.0.1",
+        port=1883,
+        subscriptions=("thing/product/+/drc/up",),
+    )
+
+    assert transport.subscriptions == ("thing/product/+/drc/up",)
