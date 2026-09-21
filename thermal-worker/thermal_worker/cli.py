@@ -2,49 +2,42 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
-from typing import Any
 
+from .api_client import M3CloudApi, M3CloudApiError
 from .dji_sdk import DjiThermalSdk
 from .processor import process_handoff
-
-
-def _post_json(url: str, payload: dict[str, Any] | None = None) -> Any:
-    data = json.dumps(payload or {}).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        raw = response.read()
-    return json.loads(raw) if raw else None
-
-
-def _job_url(api_base: str, job_id: str, suffix: str) -> str:
-    return (
-        api_base.rstrip("/")
-        + f"/api/v1/processing/jobs/{job_id}/{suffix.lstrip('/')}"
-    )
-
-
-def _status(api_base: str, job_id: str, status: str, error: str | None = None) -> None:
-    payload: dict[str, Any] = {"status": status}
-    if error:
-        payload["error"] = error[:2000]
-    _post_json(_job_url(api_base, job_id, "external-status"), payload)
+from .watch import watch_thermograms
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Process an M3-Cloud M3T radiometric handoff with DJI Thermal SDK.",
+        description="Process M3-Cloud M3T radiometric R-JPEGs with DJI Thermal SDK.",
     )
-    parser.add_argument("handoff", help="Path to m3t-thermogram-handoff.json")
+    parser.add_argument(
+        "handoff",
+        nargs="?",
+        help="Path to m3t-thermogram-handoff.json for one-shot processing.",
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Continuously claim and process WAITING_EXTERNAL M3T Thermogram jobs.",
+    )
+    parser.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=10.0,
+        help="Watch-mode polling interval (minimum 2 seconds).",
+    )
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Watch mode may also reclaim FAILED_EXTERNAL jobs.",
+    )
     parser.add_argument(
         "--sdk-dir",
         default=os.environ.get("DJI_TSDK_DIR", ""),
@@ -57,7 +50,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--result-dir",
-        help="Output directory; defaults to handoff.result_drop_path.",
+        help="One-shot output directory; defaults to handoff.result_drop_path.",
     )
     parser.add_argument("--distance-m", type=float)
     parser.add_argument("--humidity-pct", type=float)
@@ -66,18 +59,44 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ambient-temp-c", type=float)
     parser.add_argument(
         "--api-base",
-        help="Optional M3-Cloud base URL for external job status callbacks.",
+        default=os.environ.get("M3CLOUD_API_BASE"),
+        help="M3-Cloud base URL (or M3CLOUD_API_BASE). Required for --watch.",
     )
     parser.add_argument(
         "--import-results",
         action="store_true",
-        help="After successful processing, ask M3-Cloud to import the result folder.",
+        help="One-shot mode: import result folder into M3-Cloud after processing.",
+    )
+    parser.add_argument(
+        "--log-level",
+        default=os.environ.get("M3_THERMAL_LOG_LEVEL", "INFO"),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+def _overrides(args: argparse.Namespace) -> dict[str, float]:
+    return {
+        key: value
+        for key, value in {
+            "distance_m": args.distance_m,
+            "humidity_pct": args.humidity_pct,
+            "emissivity": args.emissivity,
+            "reflection_c": args.reflection_c,
+            "ambient_temp_c": args.ambient_temp_c,
+        }.items()
+        if value is not None
+    }
+
+
+def _run_one_shot(
+    args: argparse.Namespace,
+    decoder: DjiThermalSdk,
+    overrides: dict[str, float],
+) -> int:
+    if not args.handoff:
+        raise ValueError("Handoff path is required unless --watch is used")
+
     handoff_path = Path(args.handoff)
     handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
     if not isinstance(handoff, dict):
@@ -90,30 +109,17 @@ def main(argv: list[str] | None = None) -> int:
     result_dir = args.result_dir or handoff.get("result_drop_path")
     if not isinstance(result_dir, str) or not result_dir:
         raise ValueError("No result directory supplied and handoff has no result_drop_path")
-    if not args.sdk_dir:
-        raise ValueError("DJI Thermal SDK path required via --sdk-dir or DJI_TSDK_DIR")
     if args.import_results and not args.api_base:
         raise ValueError("--import-results requires --api-base")
 
-    overrides = {
-        key: value
-        for key, value in {
-            "distance_m": args.distance_m,
-            "humidity_pct": args.humidity_pct,
-            "emissivity": args.emissivity,
-            "reflection_c": args.reflection_c,
-            "ambient_temp_c": args.ambient_temp_c,
-        }.items()
-        if value is not None
-    }
-
+    api = M3CloudApi(args.api_base) if args.api_base else None
     callback_started = False
+    completed_external = False
     try:
-        if args.api_base:
-            _status(args.api_base, job_id, "RUNNING_EXTERNAL")
+        if api is not None:
+            api.transition(job_id, "RUNNING_EXTERNAL")
             callback_started = True
 
-        decoder = DjiThermalSdk(args.sdk_dir, sdk_label=args.sdk_label)
         manifest = process_handoff(
             handoff_path,
             result_dir,
@@ -121,25 +127,61 @@ def main(argv: list[str] | None = None) -> int:
             measurement_overrides=overrides,
         )
 
-        if args.api_base:
-            _status(args.api_base, job_id, "COMPLETED_EXTERNAL")
+        if api is not None:
+            api.transition(job_id, "COMPLETED_EXTERNAL")
+            completed_external = True
             if args.import_results:
-                _post_json(_job_url(args.api_base, job_id, "external-results/import"))
+                api.import_results(job_id)
 
         print(json.dumps(manifest, indent=2, ensure_ascii=False))
         return 0
     except Exception as exc:
-        if args.api_base and callback_started:
+        if api is not None and callback_started and not completed_external:
             try:
-                _status(
-                    args.api_base,
+                api.transition(
                     job_id,
                     "FAILED_EXTERNAL",
-                    f"{type(exc).__name__}: {exc}",
+                    error=f"{type(exc).__name__}: {exc}",
                 )
-            except (OSError, urllib.error.URLError, ValueError):
-                pass
+            except (M3CloudApiError, TypeError, ValueError):
+                logging.getLogger(__name__).exception(
+                    "Failed to mark thermal job %s as FAILED_EXTERNAL",
+                    job_id,
+                )
         raise
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    if not args.sdk_dir:
+        raise ValueError("DJI Thermal SDK path required via --sdk-dir or DJI_TSDK_DIR")
+    if args.watch and args.handoff:
+        raise ValueError("Do not supply a handoff path together with --watch")
+    if args.watch and args.result_dir:
+        raise ValueError("--result-dir is only valid for one-shot handoff processing")
+    if args.watch and not args.api_base:
+        raise ValueError("--watch requires --api-base or M3CLOUD_API_BASE")
+
+    overrides = _overrides(args)
+    decoder = DjiThermalSdk(args.sdk_dir, sdk_label=args.sdk_label)
+
+    if args.watch:
+        api = M3CloudApi(args.api_base)
+        watch_thermograms(
+            api,
+            decoder,
+            poll_seconds=args.poll_seconds,
+            retry_failed=args.retry_failed,
+            measurement_overrides=overrides,
+        )
+        return 0
+
+    return _run_one_shot(args, decoder, overrides)
 
 
 if __name__ == "__main__":
