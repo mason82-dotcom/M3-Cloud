@@ -4,24 +4,24 @@ import dji.v5.ux.mapkit.core.models.DJILatLng;
 import dji.v5.ux.mapkit.core.models.annotations.DJIPolyline;
 import dji.v5.ux.mapkit.core.models.annotations.DJIPolylineOptions;
 import dji.v5.ux.mapkit.maplibre.utils.MaplibreUtils;
-import com.mapbox.mapboxsdk.annotations.Polyline;
-import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.maps.MapboxMap;
+import org.maplibre.android.annotations.Polyline;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.maps.MapLibreMap;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Created by joeyang on 11/2/17.
- * Mapbox的Polyline代理类
+ * MapLibre的Polyline代理类
  */
 public class MPolyline implements DJIPolyline {
 
     Polyline polyline;
     DJIPolylineOptions mDJIPolylineOptions;
-    MapboxMap mapboxMap;
+    MapLibreMap mapboxMap;
 
-    public MPolyline(Polyline polyline, DJIPolylineOptions options, MapboxMap mapboxMap) {
+    public MPolyline(Polyline polyline, DJIPolylineOptions options, MapLibreMap mapboxMap) {
         this.polyline = polyline;
         this.mDJIPolylineOptions = options;
         this.mapboxMap = mapboxMap;
@@ -72,7 +72,7 @@ public class MPolyline implements DJIPolyline {
 
     @Override
     public void setZIndex(float zIndex) {
-        //  11/2/17 Mapbox没有这个，空实现
+        //  11/2/17 MapLibre没有这个，空实现
     }
 
     @Override
