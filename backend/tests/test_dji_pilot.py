@@ -51,6 +51,11 @@ def test_pilot_bootstrap_uses_rc_reachable_urls_and_valid_workspace_uuid():
     assert result["workspace"]["id"] == "e3dea0f5-37f2-4d79-ae58-490af3228069"
     assert result["components"]["thing"] is True
     assert result["components"]["ws"] is True
+    assert result["components"]["map"] is True
+    assert result["map"] == {
+        "user_name": "M3-Cloud",
+        "element_pre_name": "M3CLOUD",
+    }
     assert result["components"]["tsa"] is True
     assert result["components"]["mission"] is True
     assert result["components"]["liveshare"] is True
