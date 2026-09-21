@@ -398,7 +398,15 @@ def _orient_for_reference(
     reversed_segments = _reverse_segments(segments)
     reverse_total, reverse_ingress, reverse_egress = external_distance(reversed_segments)
 
-    if reverse_total + 1e-9 < forward_total:
+    # For RTH, reversing a route often leaves ingress+return unchanged. In that tie,
+    # prefer the traversal with the shorter ingress so the first survey leg begins nearer home.
+    if (
+        reverse_total + 1e-9 < forward_total
+        or (
+            abs(reverse_total - forward_total) <= 1e-9
+            and reverse_ingress + 1e-9 < forward_ingress
+        )
+    ):
         return reversed_segments, True, reverse_ingress, reverse_egress
     return segments, False, forward_ingress, forward_egress
 
