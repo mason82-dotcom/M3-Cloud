@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any
 
 import boto3
@@ -39,6 +40,31 @@ class DJIPilotStorageCredentials:
             "provider": self.provider,
             "region": self.region,
         }
+
+
+def pilot_object_key_allowed(workspace_id: str, object_key: str) -> bool:
+    path = PurePosixPath(object_key)
+    if ".." in path.parts:
+        return False
+    expected = PurePosixPath("pilot2", workspace_id)
+    return path.parts[: len(expected.parts)] == expected.parts
+
+
+def presign_pilot_object(
+    settings: Settings,
+    *,
+    bucket: str,
+    object_key: str,
+    expires_in: int = 900,
+) -> str:
+    client = create_pilot_storage_client(settings)
+    return str(
+        client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": object_key},
+            ExpiresIn=max(60, min(3600, int(expires_in))),
+        )
+    )
 
 
 def pilot_storage_ready(settings: Settings) -> bool:
