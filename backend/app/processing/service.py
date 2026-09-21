@@ -675,6 +675,41 @@ class ProcessingManager:
             )
             return handoff
 
+    async def claim_external_job(
+        self,
+        job_id: uuid.UUID,
+        *,
+        retry_failed: bool = False,
+    ) -> ProcessingJob:
+        claimable = {"WAITING_EXTERNAL"}
+        if retry_failed:
+            claimable.add("FAILED_EXTERNAL")
+
+        async with self.sessions() as session:
+            job = await session.scalar(
+                select(ProcessingJob)
+                .where(ProcessingJob.id == job_id)
+                .with_for_update()
+            )
+            if job is None:
+                raise LookupError("Processing job not found")
+            if job.kind != "THERMOGRAM" or job.platform != "M3T":
+                raise ValueError("External claim is only supported for M3T Thermogram jobs")
+            if job.status not in claimable:
+                raise RuntimeError(
+                    f"Thermogram job is not claimable from {job.status}"
+                )
+
+            now = datetime.now(timezone.utc)
+            job.status = "RUNNING_EXTERNAL"
+            job.started_at = job.started_at or now
+            job.finished_at = None
+            job.progress = 0.5
+            job.error = None
+            job.updated_at = now
+            await session.commit()
+            return job
+
     async def update_external_job(
         self,
         job_id: uuid.UUID,
