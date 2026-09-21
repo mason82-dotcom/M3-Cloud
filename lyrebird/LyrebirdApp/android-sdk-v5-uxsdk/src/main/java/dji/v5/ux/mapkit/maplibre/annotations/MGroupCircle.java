@@ -9,24 +9,24 @@ import com.mapbox.geojson.Feature;
 import com.mapbox.geojson.FeatureCollection;
 import com.mapbox.geojson.Point;
 import com.mapbox.geojson.Polygon;
-import com.mapbox.mapboxsdk.maps.MapboxMap;
-import com.mapbox.mapboxsdk.style.layers.FillLayer;
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
-import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.style.layers.FillLayer;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.android.style.sources.GeoJsonSource;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.mapbox.mapboxsdk.style.layers.Property.NONE;
-import static com.mapbox.mapboxsdk.style.layers.Property.VISIBLE;
+import static org.maplibre.android.style.layers.Property.NONE;
+import static org.maplibre.android.style.layers.Property.VISIBLE;
 
 /**
  * Created by dickensdai 10/9/18
- * Mapbox的GRoupCircle代理类
+ * MapLibre的GRoupCircle代理类
  */
 public class MGroupCircle implements DJIGroupCircle {
 
-    private MapboxMap mapboxMap;
+    private MapLibreMap mapboxMap;
     private FillLayer groupCircleLayer;
     private GeoJsonSource source;
     private MaplibreMapDelegate maplibreMapDelegate;
@@ -42,7 +42,7 @@ public class MGroupCircle implements DJIGroupCircle {
     }
 
     public MGroupCircle(MaplibreMapDelegate maplibreMapDelegate,
-                        MapboxMap mapboxMap,
+                        MapLibreMap mapboxMap,
                         FillLayer groupCircleLayer,
                         GeoJsonSource source,
                         DJIGroupCircleOptions options) {
