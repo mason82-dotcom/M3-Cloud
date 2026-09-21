@@ -234,9 +234,12 @@ export interface MissionGridPreview {
     forward_overlap_pct: number;
     side_overlap_pct: number;
     direction_deg: number;
+    requested_direction_deg: number;
+    optimize_direction: boolean;
     requested_speed_mps: number;
     gimbal_pitch_deg: number;
     finish_action: "RTH" | "LAND" | "NONE";
+    start_reference: MissionPlannerPoint | null;
   };
   geometry: {
     area_m2: number;
@@ -250,12 +253,25 @@ export interface MissionGridPreview {
     scan_line_count: number;
     capture_segment_count: number;
     route_distance_m: number;
+    ingress_distance_m: number;
+    return_distance_m: number;
+    total_planned_distance_m: number;
     capture_distance_m: number;
     expected_photos_upper_bound: number;
     expected_media_assets_upper_bound: number;
     stored_assets_per_exposure: number;
     nominal_route_time_s: number;
+    nominal_total_time_s: number;
     nominal_capture_time_s: number;
+  };
+  optimization: {
+    enabled: boolean;
+    candidate_count: number;
+    requested_direction_deg: number;
+    selected_direction_deg: number;
+    reversed_for_reference: boolean;
+    reference_used: boolean;
+    score_distance_m: number;
   };
   cadence: {
     minimum_interval_s: number;
