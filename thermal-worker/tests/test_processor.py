@@ -95,6 +95,14 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
                         "filename": thermal.name,
                         "size_bytes": thermal.stat().st_size,
                         "sha256": _sha(thermal),
+                        "capture_time_utc": "2026-09-21T01:02:03+00:00",
+                        "metadata": {
+                            "gps": {
+                                "latitude": 49.123456,
+                                "longitude": 8.654321,
+                                "altitude_m": 145.2,
+                            }
+                        },
                     },
                 ],
             }
@@ -161,6 +169,19 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert metadata["registration"]["wide_thermal_coregistered"] is False
     assert metadata["registration"]["georeferenced_temperature_raster"] is False
     assert (output / "result-manifest.json").is_file()
+    capture_points_path = output / manifest["capture_points_geojson"]
+    capture_points = json.loads(capture_points_path.read_text(encoding="utf-8"))
+    assert manifest["georeferenced_capture_count"] == 1
+    assert capture_points["metadata"]["geometry_scope"] == "CAPTURE_CENTER_ONLY"
+    feature = capture_points["features"][0]
+    assert feature["geometry"] == {
+        "type": "Point",
+        "coordinates": [8.654321, 49.123456],
+    }
+    assert feature["properties"]["position_source"] == "THERMAL"
+    assert feature["properties"]["pixel_georeferenced"] is False
+    assert feature["properties"]["max_c"] == 42.5
+    assert feature["properties"]["hotspot_component_count"] == 0
     assert len(manifest["input_fingerprint"]) == 64
 
     retry_decoder = FakeDecoder()
@@ -380,4 +401,33 @@ def test_existing_manifest_rejects_intermediate_symlink_escape(tmp_path):
             expected_job_id="job",
             expected_fingerprint="f" * 64,
         )
+
+def test_capture_point_falls_back_to_wide_gps_without_georeferencing_pixels():
+    from thermal_worker.processor import _capture_point_feature
+
+    feature = _capture_point_feature(
+        capture_group="M3T/site/DJI_0001",
+        thermal_item={"filename": "DJI_0001_T.JPG", "metadata": {"gps": {}}},
+        wide_item={
+            "filename": "DJI_0001_W.JPG",
+            "capture_time_utc": "2026-09-21T01:02:03+00:00",
+            "metadata": {
+                "gps": {
+                    "latitude": 49.2,
+                    "longitude": 8.5,
+                }
+            },
+        },
+        statistics={"min_c": 20.0, "max_c": 42.0, "mean_c": 24.0},
+        hotspot_analysis={
+            "component_count": 1,
+            "components": [{"max_c": 42.0, "delta_max_c": 18.0}],
+        },
+    )
+
+    assert feature["geometry"]["coordinates"] == [8.5, 49.2]
+    assert feature["properties"]["position_source"] == "WIDE"
+    assert feature["properties"]["position_scope"] == "CAPTURE_CENTER_ONLY"
+    assert feature["properties"]["pixel_georeferenced"] is False
+    assert feature["properties"]["hotspot_peak_delta_c"] == 18.0
 
