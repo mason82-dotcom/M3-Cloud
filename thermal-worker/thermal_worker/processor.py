@@ -116,6 +116,110 @@ def _capture_output_name(index: int, capture_group: str) -> str:
     return f"{index:05d}_{safe}_{short_hash}"
 
 
+def _handoff_fingerprint(handoff: Mapping[str, Any]) -> str:
+    groups = handoff.get("capture_groups")
+    normalized_groups: list[dict[str, Any]] = []
+    if isinstance(groups, list):
+        for group in groups:
+            if not isinstance(group, Mapping):
+                continue
+            files = group.get("files")
+            normalized_files = []
+            if isinstance(files, list):
+                for item in files:
+                    if not isinstance(item, Mapping):
+                        continue
+                    normalized_files.append(
+                        {
+                            "media_kind": item.get("media_kind"),
+                            "path_relative_to_input": item.get("path_relative_to_input"),
+                            "relative_path": item.get("relative_path"),
+                            "size_bytes": item.get("size_bytes"),
+                            "sha256": item.get("sha256"),
+                        }
+                    )
+            normalized_files.sort(
+                key=lambda item: (
+                    str(item.get("media_kind") or ""),
+                    str(item.get("path_relative_to_input") or item.get("relative_path") or ""),
+                )
+            )
+            normalized_groups.append(
+                {
+                    "capture_group": group.get("capture_group"),
+                    "files": normalized_files,
+                }
+            )
+    normalized_groups.sort(key=lambda item: str(item.get("capture_group") or ""))
+    payload = {
+        "worker_contract": handoff.get("worker_contract"),
+        "job_id": handoff.get("job_id"),
+        "input_prefix": handoff.get("input_prefix"),
+        "capture_groups": normalized_groups,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _existing_manifest(
+    destination: Path,
+    *,
+    expected_job_id: Any,
+    expected_fingerprint: str,
+) -> dict[str, Any] | None:
+    if not destination.exists():
+        return None
+    if destination.is_symlink():
+        raise FileExistsError(f"Thermal result path must not be a symlink: {destination}")
+    if not destination.is_dir():
+        raise FileExistsError(f"Thermal result path is not a directory: {destination}")
+    if not any(destination.iterdir()):
+        return None
+
+    manifest_path = destination / "result-manifest.json"
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        raise FileExistsError(
+            f"Thermal result directory is non-empty without a valid manifest: {destination}"
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise FileExistsError(
+            f"Thermal result manifest is unreadable: {manifest_path}"
+        ) from exc
+    if not isinstance(manifest, dict):
+        raise FileExistsError(f"Thermal result manifest is not an object: {manifest_path}")
+    if (
+        manifest.get("contract") != RESULT_CONTRACT
+        or manifest.get("job_id") != expected_job_id
+        or manifest.get("input_fingerprint") != expected_fingerprint
+    ):
+        raise FileExistsError(
+            f"Existing thermal results do not match this frozen handoff: {destination}"
+        )
+
+    groups = manifest.get("capture_groups")
+    if not isinstance(groups, list) or not groups:
+        raise FileExistsError(f"Existing thermal result manifest has no capture groups: {destination}")
+    for group in groups:
+        if not isinstance(group, Mapping):
+            raise FileExistsError("Existing thermal result manifest has an invalid capture group")
+        for key in ("temperature_tif", "preview_png", "thermal_json"):
+            relative = group.get(key)
+            if not isinstance(relative, str):
+                raise FileExistsError(f"Existing thermal result manifest is missing {key}")
+            safe = _safe_relative_path(relative)
+            artifact = destination.joinpath(*safe.parts)
+            if artifact.is_symlink() or not artifact.is_file():
+                raise FileExistsError(f"Existing thermal result artifact is missing: {artifact}")
+    return manifest
+
+
 def _write_temperature_tiff(
     path: Path,
     temperature: np.ndarray,
@@ -173,13 +277,14 @@ def process_handoff(
     destination = Path(output_root)
     destination_parent = destination.parent
     destination_parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists():
-        if not destination.is_dir():
-            raise FileExistsError(f"Thermal result path is not a directory: {destination}")
-        if any(destination.iterdir()):
-            raise FileExistsError(
-                f"Thermal result directory is not empty; refusing to overwrite: {destination}"
-            )
+    input_fingerprint = _handoff_fingerprint(handoff)
+    existing = _existing_manifest(
+        destination,
+        expected_job_id=handoff.get("job_id"),
+        expected_fingerprint=input_fingerprint,
+    )
+    if existing is not None:
+        return existing
 
     groups = handoff.get("capture_groups")
     if not isinstance(groups, list) or not groups:
@@ -342,6 +447,7 @@ def process_handoff(
             "platform": "M3T",
             "job_id": handoff.get("job_id"),
             "source_handoff_schema": schema_version,
+            "input_fingerprint": input_fingerprint,
             "capture_group_count": len(results),
             "capture_groups": results,
         }
