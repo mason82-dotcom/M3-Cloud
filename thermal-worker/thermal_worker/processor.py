@@ -3,7 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
+import shutil
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
@@ -162,162 +165,185 @@ def process_handoff(
         raise ValueError("Thermogram handoff has no external_path")
     source_root = Path(external_path)
     destination = Path(output_root)
-    destination.mkdir(parents=True, exist_ok=True)
+    destination_parent = destination.parent
+    destination_parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        if not destination.is_dir():
+            raise FileExistsError(f"Thermal result path is not a directory: {destination}")
+        if any(destination.iterdir()):
+            raise FileExistsError(
+                f"Thermal result directory is not empty; refusing to overwrite: {destination}"
+            )
 
     groups = handoff.get("capture_groups")
     if not isinstance(groups, list) or not groups:
         raise ValueError("Thermogram handoff contains no capture groups")
 
-    results: list[dict[str, Any]] = []
-    for index, group in enumerate(groups, start=1):
-        if not isinstance(group, dict):
-            raise TypeError("Invalid capture group entry")
-        capture_group = group.get("capture_group")
-        if not isinstance(capture_group, str) or not capture_group:
-            raise TypeError("Capture group is missing its string identifier")
-        files = group.get("files")
-        if not isinstance(files, list):
-            raise TypeError(f"Capture group {capture_group} has no file list")
-
-        by_kind = {
-            item.get("media_kind"): item
-            for item in files
-            if isinstance(item, dict) and isinstance(item.get("media_kind"), str)
-        }
-        thermal_item = by_kind.get("THERMAL")
-        wide_item = by_kind.get("WIDE")
-        if not isinstance(thermal_item, dict) or not isinstance(wide_item, dict):
-            raise TypeError(
-                f"Capture group {capture_group} is missing WIDE/THERMAL pair objects"
-            )
-
-        thermal_path = _source_path(source_root, thermal_item)
-        wide_path = _source_path(source_root, wide_item)
-        _verify_source(thermal_path, thermal_item)
-        _verify_source(wide_path, wide_item)
-
-        decoded = decoder.decode_file(
-            thermal_path,
-            overrides=measurement_overrides,
+    staging = Path(
+        tempfile.mkdtemp(
+            prefix=f".{destination.name or 'thermal-results'}.staging-",
+            dir=destination_parent,
         )
-        temperature = np.asarray(decoded.temperature_c, dtype=np.float32)
-        if temperature.shape != (decoded.height, decoded.width):
-            raise ValueError(
-                f"Decoder shape mismatch for {thermal_path.name}: "
-                f"{temperature.shape} != {(decoded.height, decoded.width)}"
+    )
+    published = False
+    try:
+        results: list[dict[str, Any]] = []
+        for index, group in enumerate(groups, start=1):
+            if not isinstance(group, dict):
+                raise TypeError("Invalid capture group entry")
+            capture_group = group.get("capture_group")
+            if not isinstance(capture_group, str) or not capture_group:
+                raise TypeError("Capture group is missing its string identifier")
+            files = group.get("files")
+            if not isinstance(files, list):
+                raise TypeError(f"Capture group {capture_group} has no file list")
+    
+            by_kind = {
+                item.get("media_kind"): item
+                for item in files
+                if isinstance(item, dict) and isinstance(item.get("media_kind"), str)
+            }
+            thermal_item = by_kind.get("THERMAL")
+            wide_item = by_kind.get("WIDE")
+            if not isinstance(thermal_item, dict) or not isinstance(wide_item, dict):
+                raise TypeError(
+                    f"Capture group {capture_group} is missing WIDE/THERMAL pair objects"
+                )
+    
+            thermal_path = _source_path(source_root, thermal_item)
+            wide_path = _source_path(source_root, wide_item)
+            _verify_source(thermal_path, thermal_item)
+            _verify_source(wide_path, wide_item)
+    
+            decoded = decoder.decode_file(
+                thermal_path,
+                overrides=measurement_overrides,
             )
-
-        statistics = _stats(temperature)
-        folder = destination / "captures" / _capture_output_name(index, capture_group)
-        folder.mkdir(parents=True, exist_ok=True)
-        temperature_path = folder / "temperature.tif"
-        preview_path = folder / "preview.png"
-        metadata_path = folder / "thermal.json"
-
-        _write_temperature_tiff(
-            temperature_path,
-            temperature,
-            source_sha256=(
-                str(thermal_item.get("sha256"))
-                if thermal_item.get("sha256") is not None
-                else None
-            ),
-            sdk_label=decoded.sdk_label,
-        )
-        preview = _preview(temperature, statistics)
-        preview.save(preview_path, format="PNG")
-
-        thermal_metadata: dict[str, Any] = {
-            "schema_version": 1,
-            "contract": RESULT_CONTRACT,
-            "capture_group": capture_group,
-            "source": {
-                "thermal": {
-                    "relative_path": thermal_item.get("relative_path"),
-                    "path_relative_to_input": thermal_item.get("path_relative_to_input"),
-                    "filename": thermal_item.get("filename"),
-                    "size_bytes": thermal_item.get("size_bytes"),
-                    "sha256": thermal_item.get("sha256"),
-                    "capture_time_utc": thermal_item.get("capture_time_utc"),
-                    "metadata": thermal_item.get("metadata") or {},
-                },
-                "wide": {
-                    "relative_path": wide_item.get("relative_path"),
-                    "path_relative_to_input": wide_item.get("path_relative_to_input"),
-                    "filename": wide_item.get("filename"),
-                    "size_bytes": wide_item.get("size_bytes"),
-                    "sha256": wide_item.get("sha256"),
-                    "capture_time_utc": wide_item.get("capture_time_utc"),
-                    "metadata": wide_item.get("metadata") or {},
-                },
-            },
-            "radiometry": {
-                "decoder": "DJI_DIRP",
-                "sdk_label": decoded.sdk_label,
-                "api_version": decoded.api_version,
-                "rjpeg_version": decoded.rjpeg_version,
-                "width": decoded.width,
-                "height": decoded.height,
-                "dtype": "float32",
-                "unit": "degree_Celsius",
-                "measurement_mode": decoded.measurement_mode,
-                "measurement_abi": decoded.measurement_abi,
-                "measurement_error_code": decoded.measurement_error_code,
-                "measurement_params": (
-                    decoded.measurement_params.as_dict()
-                    if decoded.measurement_params is not None
+            temperature = np.asarray(decoded.temperature_c, dtype=np.float32)
+            if temperature.shape != (decoded.height, decoded.width):
+                raise ValueError(
+                    f"Decoder shape mismatch for {thermal_path.name}: "
+                    f"{temperature.shape} != {(decoded.height, decoded.width)}"
+                )
+    
+            statistics = _stats(temperature)
+            folder = staging / "captures" / _capture_output_name(index, capture_group)
+            folder.mkdir(parents=True, exist_ok=True)
+            temperature_path = folder / "temperature.tif"
+            preview_path = folder / "preview.png"
+            metadata_path = folder / "thermal.json"
+    
+            _write_temperature_tiff(
+                temperature_path,
+                temperature,
+                source_sha256=(
+                    str(thermal_item.get("sha256"))
+                    if thermal_item.get("sha256") is not None
                     else None
                 ),
-                "requested_overrides": dict(measurement_overrides or {}),
-                "statistics": statistics,
-            },
-            "registration": {
-                "wide_thermal_coregistered": False,
-                "georeferenced_temperature_raster": False,
-                "note": (
-                    "Temperature TIFF is sensor-pixel space only. "
-                    "WIDE/THERMAL registration and map georeferencing are separate stages."
-                ),
-            },
-            "artifacts": {
-                "temperature_tif": temperature_path.relative_to(destination).as_posix(),
-                "preview_png": preview_path.relative_to(destination).as_posix(),
-            },
+                sdk_label=decoded.sdk_label,
+            )
+            preview = _preview(temperature, statistics)
+            preview.save(preview_path, format="PNG")
+    
+            thermal_metadata: dict[str, Any] = {
+                "schema_version": 1,
+                "contract": RESULT_CONTRACT,
+                "capture_group": capture_group,
+                "source": {
+                    "thermal": {
+                        "relative_path": thermal_item.get("relative_path"),
+                        "path_relative_to_input": thermal_item.get("path_relative_to_input"),
+                        "filename": thermal_item.get("filename"),
+                        "size_bytes": thermal_item.get("size_bytes"),
+                        "sha256": thermal_item.get("sha256"),
+                        "capture_time_utc": thermal_item.get("capture_time_utc"),
+                        "metadata": thermal_item.get("metadata") or {},
+                    },
+                    "wide": {
+                        "relative_path": wide_item.get("relative_path"),
+                        "path_relative_to_input": wide_item.get("path_relative_to_input"),
+                        "filename": wide_item.get("filename"),
+                        "size_bytes": wide_item.get("size_bytes"),
+                        "sha256": wide_item.get("sha256"),
+                        "capture_time_utc": wide_item.get("capture_time_utc"),
+                        "metadata": wide_item.get("metadata") or {},
+                    },
+                },
+                "radiometry": {
+                    "decoder": "DJI_DIRP",
+                    "sdk_label": decoded.sdk_label,
+                    "api_version": decoded.api_version,
+                    "rjpeg_version": decoded.rjpeg_version,
+                    "width": decoded.width,
+                    "height": decoded.height,
+                    "dtype": "float32",
+                    "unit": "degree_Celsius",
+                    "measurement_mode": decoded.measurement_mode,
+                    "measurement_abi": decoded.measurement_abi,
+                    "measurement_error_code": decoded.measurement_error_code,
+                    "measurement_params": (
+                        decoded.measurement_params.as_dict()
+                        if decoded.measurement_params is not None
+                        else None
+                    ),
+                    "requested_overrides": dict(measurement_overrides or {}),
+                    "statistics": statistics,
+                },
+                "registration": {
+                    "wide_thermal_coregistered": False,
+                    "georeferenced_temperature_raster": False,
+                    "note": (
+                        "Temperature TIFF is sensor-pixel space only. "
+                        "WIDE/THERMAL registration and map georeferencing are separate stages."
+                    ),
+                },
+                "artifacts": {
+                    "temperature_tif": temperature_path.relative_to(staging).as_posix(),
+                    "preview_png": preview_path.relative_to(staging).as_posix(),
+                },
+            }
+            metadata_path.write_text(
+                json.dumps(thermal_metadata, indent=2, sort_keys=True, ensure_ascii=False),
+                encoding="utf-8",
+            )
+    
+            results.append(
+                {
+                    "capture_group": capture_group,
+                    "temperature_tif": temperature_path.relative_to(staging).as_posix(),
+                    "preview_png": preview_path.relative_to(staging).as_posix(),
+                    "thermal_json": metadata_path.relative_to(staging).as_posix(),
+                    "statistics": statistics,
+                    "width": decoded.width,
+                    "height": decoded.height,
+                    "sdk_label": decoded.sdk_label,
+                    "api_version": decoded.api_version,
+                    "measurement_mode": decoded.measurement_mode,
+                    "measurement_abi": decoded.measurement_abi,
+                }
+            )
+    
+        manifest = {
+            "schema_version": 1,
+            "contract": RESULT_CONTRACT,
+            "workflow": "THERMOGRAM",
+            "platform": "M3T",
+            "job_id": handoff.get("job_id"),
+            "source_handoff_schema": schema_version,
+            "capture_group_count": len(results),
+            "capture_groups": results,
         }
-        metadata_path.write_text(
-            json.dumps(thermal_metadata, indent=2, sort_keys=True, ensure_ascii=False),
+        manifest_path = staging / "result-manifest.json"
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False),
             encoding="utf-8",
         )
-
-        results.append(
-            {
-                "capture_group": capture_group,
-                "temperature_tif": temperature_path.relative_to(destination).as_posix(),
-                "preview_png": preview_path.relative_to(destination).as_posix(),
-                "thermal_json": metadata_path.relative_to(destination).as_posix(),
-                "statistics": statistics,
-                "width": decoded.width,
-                "height": decoded.height,
-                "sdk_label": decoded.sdk_label,
-                "api_version": decoded.api_version,
-                "measurement_mode": decoded.measurement_mode,
-                "measurement_abi": decoded.measurement_abi,
-            }
-        )
-
-    manifest = {
-        "schema_version": 1,
-        "contract": RESULT_CONTRACT,
-        "workflow": "THERMOGRAM",
-        "platform": "M3T",
-        "job_id": handoff.get("job_id"),
-        "source_handoff_schema": schema_version,
-        "capture_group_count": len(results),
-        "capture_groups": results,
-    }
-    manifest_path = destination / "result-manifest.json"
-    manifest_path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    return manifest
+        if destination.exists():
+            destination.rmdir()
+        os.replace(staging, destination)
+        published = True
+        return manifest
+    finally:
+        if not published:
+            shutil.rmtree(staging, ignore_errors=True)
