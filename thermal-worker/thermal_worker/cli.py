@@ -49,6 +49,14 @@ def _parser() -> argparse.ArgumentParser:
         help="Provenance label such as 1.8_20251211.",
     )
     parser.add_argument(
+        "--sdk-sha256",
+        default=os.environ.get("DJI_TSDK_EXPECTED_SHA256"),
+        help=(
+            "Expected SHA-256 of libdirp.so/libdirp.dll. "
+            "A mismatch fails before native code is loaded."
+        ),
+    )
+    parser.add_argument(
         "--result-dir",
         help="One-shot output directory; defaults to handoff.result_drop_path.",
     )
@@ -182,7 +190,11 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("--watch requires --api-base or M3CLOUD_API_BASE")
 
     overrides = _overrides(args)
-    decoder = DjiThermalSdk(args.sdk_dir, sdk_label=args.sdk_label)
+    decoder = DjiThermalSdk(
+        args.sdk_dir,
+        sdk_label=args.sdk_label,
+        expected_library_sha256=args.sdk_sha256,
+    )
 
     if args.watch:
         api = M3CloudApi(args.api_base)
