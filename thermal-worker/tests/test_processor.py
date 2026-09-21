@@ -92,6 +92,10 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
                         "sha256": _sha(wide),
                         "capture_time_utc": "2026-09-21T01:02:03+00:00",
                         "metadata": {
+                            "camera": {
+                                "make": "DJI",
+                                "model": "M3T",
+                            },
                             "gps": {
                                 "latitude": 49.123456,
                                 "longitude": 8.654321,
@@ -108,6 +112,10 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
                         "sha256": _sha(thermal),
                         "capture_time_utc": "2026-09-21T01:02:03+00:00",
                         "metadata": {
+                            "camera": {
+                                "make": "DJI",
+                                "model": "M3T",
+                            },
                             "image": {
                                 "width": 3,
                                 "height": 2,
@@ -137,6 +145,9 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
 
     assert manifest["contract"] == RESULT_CONTRACT
     assert manifest["capture_group_count"] == 1
+    assert manifest["source_identity"]["expected_platform"] == "M3T"
+    assert manifest["source_identity"]["confirmed_capture_count"] == 1
+    assert manifest["source_identity"]["unconfirmed_capture_count"] == 0
     assert manifest["decoder_provenance"] == {
         "decoder": "DJI_DIRP",
         "sdk_label": "test-sdk",
@@ -202,6 +213,8 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert manifest["capture_groups"][0]["sdk_library_sha256"] == "c" * 64
     assert manifest["capture_groups"][0]["radiometry_integrity"]["status"] == "PASS"
     assert metadata["analysis"]["hotspots"]["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
+    assert metadata["source_identity"]["status"] == "CONFIRMED"
+    assert result["source_identity"]["status"] == "CONFIRMED"
     assert metadata["registration"]["status"] == "NOT_REGISTERED"
     assert metadata["registration"]["wide_thermal_coregistered"] is False
     assert metadata["registration"]["georeferenced_temperature_raster"] is False
@@ -252,6 +265,9 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert summary_json["aggregate"]["max_c"] == 42.5
     assert summary_json["aggregate"]["hotspot_component_count"] == 0
     assert summary_json["aggregate"]["radiometry_warning_capture_count"] == 0
+    assert summary_json["aggregate"]["m3t_identity_confirmed_count"] == 1
+    assert summary_json["aggregate"]["m3t_identity_unconfirmed_count"] == 0
+    assert summary_json["captures"][0]["source_identity_status"] == "CONFIRMED"
     assert summary_json["aggregate"]["registration_status"] == "NOT_REGISTERED"
     assert summary_json["aggregate"]["pair_capture_time_evidence_count"] == 1
     assert summary_json["aggregate"]["pair_gps_evidence_count"] == 1
@@ -260,6 +276,7 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert summary_json["captures"][0]["pair_gps_separation_m"] == pytest.approx(0.0)
     summary_csv = (output / manifest["summary_csv"]).read_text(encoding="utf-8")
     assert "capture_group,capture_time_utc,latitude,longitude" in summary_csv
+    assert "source_identity_status" in summary_csv
     assert "registration_status" in summary_csv
     assert "pair_capture_time_delta_ms" in summary_csv
     assert "pair_gps_separation_m" in summary_csv
@@ -853,4 +870,50 @@ def test_process_handoff_rejects_decoder_provenance_change_between_captures(
         )
 
     assert not (tmp_path / "results").exists()
+
+def test_m3t_source_identity_keeps_unknown_model_unconfirmed():
+    from thermal_worker.processor import _m3t_source_identity
+
+    identity = _m3t_source_identity(
+        {"metadata": {"camera": {"model": "FC3582"}}},
+        {"metadata": {"camera": {"model": "DJI-THERMAL-SENSOR"}}},
+    )
+
+    assert identity["status"] == "UNCONFIRMED"
+    assert identity["wide"]["known_conflict"] is False
+    assert identity["thermal"]["known_conflict"] is False
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "M30T",
+        "H30T",
+        "M4T",
+        "M3TD",
+        "Mavic 3 Enterprise",
+        "Mavic 3 Multispectral",
+    ],
+)
+def test_m3t_source_identity_rejects_known_other_dji_models(model):
+    from thermal_worker.processor import _require_m3t_source_identity
+
+    with pytest.raises(ValueError, match="conflicts with M3T-only"):
+        _require_m3t_source_identity(
+            "M3T/site/DJI_0001",
+            {"metadata": {"camera": {"model": "M3T"}}},
+            {"metadata": {"camera": {"model": model}}},
+        )
+
+
+def test_m3t_source_identity_accepts_common_m3t_aliases():
+    from thermal_worker.processor import _m3t_source_identity
+
+    for model in ("M3T", "Mavic 3T", "Mavic 3 Thermal", "DJI Mavic 3 Thermal"):
+        identity = _m3t_source_identity(
+            {"metadata": {}},
+            {"metadata": {"camera": {"model": model}}},
+        )
+        assert identity["status"] == "CONFIRMED"
+        assert identity["thermal"]["m3t_confirmed"] is True
 

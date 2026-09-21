@@ -207,6 +207,134 @@ def _metadata_mapping(
     return metadata if isinstance(metadata, Mapping) else {}
 
 
+def _normalize_model(value: str) -> str:
+    return "".join(
+        character
+        for character in value.casefold()
+        if character.isalnum()
+    )
+
+
+def _camera_model_evidence(
+    item: Mapping[str, Any],
+) -> dict[str, Any]:
+    metadata = _metadata_mapping(item)
+    camera = metadata.get("camera")
+    values: list[str] = []
+    if isinstance(camera, Mapping):
+        model = camera.get("model")
+        if isinstance(model, str) and model.strip():
+            values.append(model.strip())
+
+    raw = metadata.get("raw")
+    if isinstance(raw, Mapping):
+        exif = raw.get("exif")
+        if isinstance(exif, Mapping):
+            model = exif.get("Model")
+            if isinstance(model, str) and model.strip():
+                values.append(model.strip())
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value not in seen:
+            deduped.append(value)
+            seen.add(value)
+
+    m3t_aliases = {
+        "m3t",
+        "mavic3t",
+        "mavic3thermal",
+        "djimavic3thermal",
+    }
+    known_other_models = {
+        "m3e",
+        "mavic3enterprise",
+        "djimavic3enterprise",
+        "m3m",
+        "mavic3multispectral",
+        "djimavic3multispectral",
+        "m3td",
+        "mavic3td",
+        "m30t",
+        "matrice30t",
+        "h30t",
+        "zenmuseh30t",
+        "m4t",
+        "matrice4t",
+    }
+
+    classifications: list[dict[str, str]] = []
+    for value in deduped:
+        normalized = _normalize_model(value)
+        if normalized in m3t_aliases:
+            classification = "M3T"
+        elif normalized in known_other_models:
+            classification = "OTHER_DJI_MODEL"
+        else:
+            classification = "UNKNOWN"
+        classifications.append(
+            {
+                "value": value,
+                "normalized": normalized,
+                "classification": classification,
+            }
+        )
+    return {
+        "models": classifications,
+        "m3t_confirmed": any(
+            entry["classification"] == "M3T"
+            for entry in classifications
+        ),
+        "known_conflict": any(
+            entry["classification"] == "OTHER_DJI_MODEL"
+            for entry in classifications
+        ),
+    }
+
+
+def _m3t_source_identity(
+    wide_item: Mapping[str, Any],
+    thermal_item: Mapping[str, Any],
+) -> dict[str, Any]:
+    wide = _camera_model_evidence(wide_item)
+    thermal = _camera_model_evidence(thermal_item)
+    conflict = bool(wide["known_conflict"] or thermal["known_conflict"])
+    confirmed = bool(wide["m3t_confirmed"] or thermal["m3t_confirmed"])
+    status = (
+        "CONFLICT"
+        if conflict
+        else "CONFIRMED"
+        if confirmed
+        else "UNCONFIRMED"
+    )
+    return {
+        "status": status,
+        "expected_platform": "M3T",
+        "wide": wide,
+        "thermal": thermal,
+        "note": (
+            "Known conflicting DJI model metadata blocks the M3T-only thermal "
+            "workflow. Missing or unrecognized model strings remain "
+            "UNCONFIRMED rather than being guessed from filenames or image "
+            "dimensions."
+        ),
+    }
+
+
+def _require_m3t_source_identity(
+    capture_group: str,
+    wide_item: Mapping[str, Any],
+    thermal_item: Mapping[str, Any],
+) -> dict[str, Any]:
+    identity = _m3t_source_identity(wide_item, thermal_item)
+    if identity["status"] == "CONFLICT":
+        raise ValueError(
+            f"Capture group {capture_group} conflicts with M3T-only thermal workflow"
+        )
+    return identity
+
+
 def _metadata_number(
     item: Mapping[str, Any],
     section: str,
@@ -833,6 +961,7 @@ def process_handoff(
         capture_point_features: list[dict[str, Any]] = []
         capture_summaries: list[dict[str, Any]] = []
         registration_audits: list[dict[str, Any]] = []
+        source_identities: list[dict[str, Any]] = []
         decoder_provenance: dict[str, Any] | None = None
         for index, group in enumerate(groups, start=1):
             if not isinstance(group, dict):
@@ -856,6 +985,18 @@ def process_handoff(
                     f"Capture group {capture_group} is missing WIDE/THERMAL pair objects"
                 )
     
+            source_identity = _require_m3t_source_identity(
+                capture_group,
+                wide_item,
+                thermal_item,
+            )
+            source_identities.append(
+                {
+                    "capture_group": capture_group,
+                    **source_identity,
+                }
+            )
+
             thermal_path = _source_path(source_root, thermal_item)
             wide_path = _source_path(source_root, wide_item)
             _verify_source(thermal_path, thermal_item)
@@ -994,6 +1135,7 @@ def process_handoff(
                 "analysis": {
                     "hotspots": hotspot_analysis,
                 },
+                "source_identity": source_identity,
                 "registration": registration_audit,
                 "artifacts": {
                     "temperature_tif": temperature_path.relative_to(staging).as_posix(),
@@ -1054,6 +1196,7 @@ def process_handoff(
                     "radiometry_integrity_flags": "|".join(
                         str(flag) for flag in radiometry_integrity["flags"]
                     ),
+                    "source_identity_status": source_identity["status"],
                     "registration_status": registration_audit["status"],
                     "pair_capture_time_delta_ms": pair_audit[
                         "capture_time_delta_ms"
@@ -1093,6 +1236,7 @@ def process_handoff(
                     "measurement_abi": decoded.measurement_abi,
                     "measurement_ranges": decoded.measurement_ranges,
                     "radiometry_integrity": radiometry_integrity,
+                    "source_identity": source_identity,
                     "registration": registration_audit,
                 }
             )
@@ -1140,6 +1284,16 @@ def process_handoff(
                 1
                 for item in capture_summaries
                 if item["radiometry_integrity_status"] == "WARN"
+            ),
+            "m3t_identity_confirmed_count": sum(
+                1
+                for item in capture_summaries
+                if item["source_identity_status"] == "CONFIRMED"
+            ),
+            "m3t_identity_unconfirmed_count": sum(
+                1
+                for item in capture_summaries
+                if item["source_identity_status"] == "UNCONFIRMED"
             ),
             "registration_status": "NOT_REGISTERED",
             "pair_capture_time_evidence_count": sum(
@@ -1199,6 +1353,7 @@ def process_handoff(
                 "hotspot_peak_delta_c",
                 "radiometry_integrity_status",
                 "radiometry_integrity_flags",
+                "source_identity_status",
                 "registration_status",
                 "pair_capture_time_delta_ms",
                 "pair_gps_separation_m",
@@ -1258,6 +1413,20 @@ def process_handoff(
             "input_fingerprint": input_fingerprint,
             "processing_options": processing_options,
             "decoder_provenance": decoder_provenance,
+            "source_identity": {
+                "expected_platform": "M3T",
+                "confirmed_capture_count": sum(
+                    1
+                    for item in source_identities
+                    if item["status"] == "CONFIRMED"
+                ),
+                "unconfirmed_capture_count": sum(
+                    1
+                    for item in source_identities
+                    if item["status"] == "UNCONFIRMED"
+                ),
+                "captures": source_identities,
+            },
             "capture_group_count": len(results),
             "georeferenced_capture_count": len(capture_point_features),
             "capture_points_geojson": "capture-points.geojson",
