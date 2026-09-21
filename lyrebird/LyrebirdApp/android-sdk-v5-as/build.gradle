@@ -28,17 +28,6 @@ allprojects {
         lockAllConfigurations()
     }
 
-    tasks.register('resolveAndLockAll') {
-        notCompatibleWithConfigurationCache("Resolves all project configurations at execution time")
-        doFirst {
-            assert gradle.startParameter.writeDependencyLocks :
-                    "$path must be run with --write-locks"
-        }
-        doLast {
-            configurations.matching { it.canBeResolved }.each { it.resolve() }
-        }
-    }
-
     repositories {
         google()
         mavenCentral()
