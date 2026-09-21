@@ -240,7 +240,7 @@ jobs:
       DRONEDB_SECRET: ci-dronedb-secret-not-for-production
       DRONEDB_ADMIN_EMAIL: ci@example.com
       DRONEDB_ADMIN_USERNAME: admin
-      DRONEDB_ADMIN_PASSWORD: ci-dronedb-password
+      DRONEDB_ADMIN_PASSWORD: ci-dronedb-password-1
       DRONEDB_DB_ROOT_PASSWORD: ci-dronedb-root
       DRONEDB_DB_PASSWORD: ci-dronedb-db
 
