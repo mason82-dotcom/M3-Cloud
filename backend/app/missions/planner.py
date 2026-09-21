@@ -730,6 +730,11 @@ def build_grid_preview(
     total_planned_distance_m = (
         route_distance_m + ingress_distance_m + return_distance_m
     )
+    max_reference_distance_m = (
+        max(_distance(reference_xy, point) for point in route_xy)
+        if reference_xy is not None and route_xy
+        else None
+    )
     # DJI's native fly-to-wayline transition is configured at 10 m/s. Never assume a faster
     # ingress/RTH contribution just because the survey legs themselves can run faster.
     transit_speed_mps = min(effective_speed_mps, 10.0)
@@ -787,6 +792,7 @@ def build_grid_preview(
             "ingress_distance_m": ingress_distance_m,
             "return_distance_m": return_distance_m,
             "total_planned_distance_m": total_planned_distance_m,
+            "max_reference_distance_m": max_reference_distance_m,
         },
     }
     plan = normalize_plan(items, planning=planning_context)
@@ -853,6 +859,7 @@ def build_grid_preview(
             "ingress_distance_m": ingress_distance_m,
             "return_distance_m": return_distance_m,
             "total_planned_distance_m": total_planned_distance_m,
+            "max_reference_distance_m": max_reference_distance_m,
             "capture_distance_m": active_distance_m,
             "expected_photos_upper_bound": expected_photos,
             "expected_media_assets_upper_bound": expected_media_assets_upper_bound,
