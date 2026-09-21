@@ -425,14 +425,16 @@ def _angle_delta_deg(first: float, second: float) -> float:
     return abs((first - second + 180.0) % 360.0 - 180.0)
 
 
-def _gimbal_delta(
+def _attitude_delta(
     wide_item: Mapping[str, Any],
     thermal_item: Mapping[str, Any],
+    *,
+    section: str,
 ) -> dict[str, float | None]:
     result: dict[str, float | None] = {}
     for axis in ("yaw_deg", "pitch_deg", "roll_deg"):
-        wide = _metadata_number(wide_item, "gimbal_attitude", axis)
-        thermal = _metadata_number(thermal_item, "gimbal_attitude", axis)
+        wide = _metadata_number(wide_item, section, axis)
+        thermal = _metadata_number(thermal_item, section, axis)
         if wide is None or thermal is None:
             result[axis] = None
         elif axis == "yaw_deg":
@@ -440,6 +442,72 @@ def _gimbal_delta(
         else:
             result[axis] = abs(wide - thermal)
     return result
+
+
+def _gimbal_delta(
+    wide_item: Mapping[str, Any],
+    thermal_item: Mapping[str, Any],
+) -> dict[str, float | None]:
+    return _attitude_delta(
+        wide_item,
+        thermal_item,
+        section="gimbal_attitude",
+    )
+
+
+def _flight_attitude_delta(
+    wide_item: Mapping[str, Any],
+    thermal_item: Mapping[str, Any],
+) -> dict[str, float | None]:
+    return _attitude_delta(
+        wide_item,
+        thermal_item,
+        section="flight_attitude",
+    )
+
+
+def _altitude_delta(
+    wide_item: Mapping[str, Any],
+    thermal_item: Mapping[str, Any],
+) -> dict[str, float | None]:
+    result: dict[str, float | None] = {}
+    for field in ("absolute_ellipsoid_m", "relative_takeoff_m"):
+        wide = _metadata_number(wide_item, "dji_altitude", field)
+        thermal = _metadata_number(thermal_item, "dji_altitude", field)
+        result[field] = (
+            abs(wide - thermal)
+            if wide is not None and thermal is not None
+            else None
+        )
+    wide_gps = _metadata_number(wide_item, "gps", "altitude_m")
+    thermal_gps = _metadata_number(thermal_item, "gps", "altitude_m")
+    result["gps_altitude_m"] = (
+        abs(wide_gps - thermal_gps)
+        if wide_gps is not None and thermal_gps is not None
+        else None
+    )
+    return result
+
+
+def _image_geometry_evidence(
+    item: Mapping[str, Any],
+) -> dict[str, float | int | None]:
+    width = _metadata_number(item, "image", "width")
+    height = _metadata_number(item, "image", "height")
+    return {
+        "width": int(width) if width is not None else None,
+        "height": int(height) if height is not None else None,
+        "focal_length_mm": _metadata_number(
+            item,
+            "image",
+            "focal_length_mm",
+        ),
+        "focal_length_35mm": _metadata_number(
+            item,
+            "image",
+            "focal_length_35mm",
+        ),
+    }
 
 
 def _dji_calibration_hints(
@@ -468,23 +536,70 @@ def _registration_audit(
         if wide_time is not None and thermal_time is not None
         else None
     )
+    gps_separation_m = _gps_separation_m(
+        wide_item,
+        thermal_item,
+    )
+    gimbal_delta_deg = _gimbal_delta(wide_item, thermal_item)
+    flight_attitude_delta_deg = _flight_attitude_delta(
+        wide_item,
+        thermal_item,
+    )
+    altitude_delta_m = _altitude_delta(wide_item, thermal_item)
+    wide_calibration = _dji_calibration_hints(wide_item)
+    thermal_calibration = _dji_calibration_hints(thermal_item)
+    wide_image = _image_geometry_evidence(wide_item)
+    thermal_image = _image_geometry_evidence(thermal_item)
+
+    evidence = {
+        "capture_time_pair": capture_time_delta_ms is not None,
+        "gps_pair": gps_separation_m is not None,
+        "gimbal_attitude_pair": all(
+            value is not None
+            for value in gimbal_delta_deg.values()
+        ),
+        "flight_attitude_pair": all(
+            value is not None
+            for value in flight_attitude_delta_deg.values()
+        ),
+        "dji_altitude_pair": any(
+            value is not None
+            for value in altitude_delta_m.values()
+        ),
+        "wide_image_dimensions": (
+            wide_image["width"] is not None
+            and wide_image["height"] is not None
+        ),
+        "thermal_image_dimensions": (
+            thermal_image["width"] is not None
+            and thermal_image["height"] is not None
+        ),
+        "wide_dji_calibration": bool(wide_calibration),
+        "thermal_dji_calibration": bool(thermal_calibration),
+    }
+
     return {
         "status": "NOT_REGISTERED",
         "wide_thermal_coregistered": False,
         "georeferenced_temperature_raster": False,
         "pair_audit": {
             "capture_time_delta_ms": capture_time_delta_ms,
-            "gps_separation_m": _gps_separation_m(wide_item, thermal_item),
-            "gimbal_delta_deg": _gimbal_delta(wide_item, thermal_item),
-            "wide_dji_calibration_raw": _dji_calibration_hints(wide_item),
-            "thermal_dji_calibration_raw": _dji_calibration_hints(
-                thermal_item
-            ),
+            "gps_separation_m": gps_separation_m,
+            "gimbal_delta_deg": gimbal_delta_deg,
+            "flight_attitude_delta_deg": flight_attitude_delta_deg,
+            "altitude_delta_m": altitude_delta_m,
+            "wide_image": wide_image,
+            "thermal_image": thermal_image,
+            "wide_dji_calibration_raw": wide_calibration,
+            "thermal_dji_calibration_raw": thermal_calibration,
+            "evidence": evidence,
         },
         "note": (
-            "Pair audit compares frozen source metadata only. No validated "
-            "WIDE-to-THERMAL intrinsic/extrinsic transform is available, so "
-            "thermal pixels and hotspot masks remain in sensor-pixel space."
+            "Pair audit compares frozen source metadata only. Evidence "
+            "presence is descriptive and does not establish registration. "
+            "No validated WIDE-to-THERMAL intrinsic/extrinsic transform is "
+            "available, so thermal pixels and hotspot masks remain in "
+            "sensor-pixel space."
         ),
     }
 
