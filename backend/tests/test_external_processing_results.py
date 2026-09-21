@@ -277,3 +277,102 @@ async def test_external_status_retries_are_idempotent(tmp_path: Path) -> None:
     )
     assert completed.status == "COMPLETED_EXTERNAL"
     assert completed_retry.status == "COMPLETED_EXTERNAL"
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_thermal_worker_claim_is_not_idempotent_for_competing_workers(
+    tmp_path: Path,
+) -> None:
+    job_id = __import__("uuid").uuid4()
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        session.add(
+            ProcessingJob(
+                id=job_id,
+                kind="THERMOGRAM",
+                status="WAITING_EXTERNAL",
+                name="M3T atomic claim",
+                input_prefix="M3T/atomic-claim",
+                platform="M3T",
+                flight_id=None,
+                media_kinds=["WIDE", "THERMAL"],
+                options=[],
+                image_count=2,
+                uploaded_count=0,
+                progress=0.0,
+                remote_project_id=None,
+                remote_task_id=None,
+                remote_status=None,
+                available_assets=[],
+                error=None,
+                created_at=now,
+                started_at=None,
+                updated_at=now,
+                finished_at=None,
+            )
+        )
+        await session.commit()
+
+    manager = ProcessingManager(
+        session_factory,
+        media_root=str(tmp_path / "media"),
+        external_result_root=str(tmp_path / "processing-import"),
+        webodm_enabled=False,
+        webodm_url="",
+    )
+
+    claimed = await manager.claim_external_job(job_id)
+    assert claimed.status == "RUNNING_EXTERNAL"
+
+    with pytest.raises(RuntimeError, match="not claimable from RUNNING_EXTERNAL"):
+        await manager.claim_external_job(job_id)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_failed_thermal_job_requires_explicit_claim_retry(
+    tmp_path: Path,
+) -> None:
+    job_id = __import__("uuid").uuid4()
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        session.add(
+            ProcessingJob(
+                id=job_id,
+                kind="THERMOGRAM",
+                status="FAILED_EXTERNAL",
+                name="M3T retry claim",
+                input_prefix="M3T/retry-claim",
+                platform="M3T",
+                flight_id=None,
+                media_kinds=["WIDE", "THERMAL"],
+                options=[],
+                image_count=2,
+                uploaded_count=0,
+                progress=0.0,
+                remote_project_id=None,
+                remote_task_id=None,
+                remote_status=None,
+                available_assets=[],
+                error="previous failure",
+                created_at=now,
+                started_at=now,
+                updated_at=now,
+                finished_at=now,
+            )
+        )
+        await session.commit()
+
+    manager = ProcessingManager(
+        session_factory,
+        media_root=str(tmp_path / "media"),
+        external_result_root=str(tmp_path / "processing-import"),
+        webodm_enabled=False,
+        webodm_url="",
+    )
+
+    with pytest.raises(RuntimeError, match="not claimable from FAILED_EXTERNAL"):
+        await manager.claim_external_job(job_id)
+
+    claimed = await manager.claim_external_job(job_id, retry_failed=True)
+    assert claimed.status == "RUNNING_EXTERNAL"
+    assert claimed.error is None
+
