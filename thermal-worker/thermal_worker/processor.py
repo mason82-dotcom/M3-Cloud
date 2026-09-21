@@ -187,8 +187,8 @@ def process_handoff(
         thermal_item = by_kind.get("THERMAL")
         wide_item = by_kind.get("WIDE")
         if not isinstance(thermal_item, dict) or not isinstance(wide_item, dict):
-            raise ValueError(
-                f"Capture group {capture_group} is missing WIDE/THERMAL pair"
+            raise TypeError(
+                f"Capture group {capture_group} is missing WIDE/THERMAL pair objects"
             )
 
         thermal_path = _source_path(source_root, thermal_item)
