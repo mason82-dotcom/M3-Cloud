@@ -21,6 +21,17 @@ class CameraPlatformCapabilitiesTest {
         assertEquals(CameraPlatform.M3T, caps.platform)
         assertTrue(caps.supportsThermalCapture)
         assertFalse(caps.supportsMultispectralCapture)
+        assertTrue(caps.isIntegratedThermalPlatform)
+    }
+
+    @Test
+    fun m4tIsASeparateIntegratedThermalPlatform() {
+        val caps = CameraPlatformCapabilities.fromCameraTypeName("M4T")
+        assertEquals(CameraPlatform.M4T, caps.platform)
+        assertTrue(caps.supportsThermalCapture)
+        assertFalse(caps.supportsMultispectralCapture)
+        assertTrue(caps.isIntegratedThermalPlatform)
+        assertFalse(caps.isM3Family)
     }
 
     @Test
