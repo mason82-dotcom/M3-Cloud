@@ -10,7 +10,7 @@ aircraft-side trust mechanism.
 
 from __future__ import annotations
 
-import argparse
+import argparse  # noqa: I001
 import contextlib
 import hashlib
 import json

@@ -119,43 +119,81 @@ def _rtk_fix_ok(fix: str, allow_float: bool) -> bool:
     return allow_float and normalized in {"FLOAT", "RTK_FLOAT"}
 
 
-def evaluate_preflight(
-    *,
-    rc_host: str,
+def _snapshot_checks(
     snapshot: dict[str, Any],
-    mission_trace: dict[str, Any] | None,
-    wiretap_path: Path | None,
-    policy: PreflightPolicy = PreflightPolicy(),
-    expected_platform: str | None = None,
-    expected_capture_profile: str | None = None,
-    now_epoch_ms: int | None = None,
-) -> PreflightReport:
-    """Evaluate immutable RC facts. No command or setting write is issued."""
-    checks: list[Check] = []
-    now_ms = int(time.time() * 1000) if now_epoch_ms is None else int(now_epoch_ms)
+    policy: PreflightPolicy,
+    now_ms: int,
+) -> tuple[list[Check], int]:
     snapshot_ts = int(snapshot.get("timestampEpochMs") or 0)
     snapshot_age = now_ms - snapshot_ts if snapshot_ts else 2**63 - 1
-    checks.append(
+    freshness = (
         _pass("snapshot_fresh", f"RC snapshot age {snapshot_age} ms")
         if 0 <= snapshot_age <= policy.max_snapshot_age_ms
         else _fail("snapshot_fresh", f"RC snapshot stale/invalid: age={snapshot_age} ms")
     )
-
-    for name, value, ok, bad in (
-        ("aircraft_connected", bool(snapshot.get("aircraftConnected")), "Flight controller connected", "Flight controller not connected"),
-        ("camera_connected", bool(snapshot.get("cameraConnected")), "Main camera connected", "Main camera not connected"),
-        ("on_ground", not bool(snapshot.get("airborne")), "Aircraft reports on ground", "Aircraft reports airborne"),
-        ("failsafe_clear", not bool(snapshot.get("failsafe")), "DJI failsafe clear", "DJI failsafe active"),
-        ("compass_healthy", bool(snapshot.get("compassHealthy")), "Compass reports healthy", "Compass error reported"),
-        ("mavlink_flight_allowed", bool(snapshot.get("mavlinkFlightAllowed")), "MAVLink flight gate enabled", "MAVLink flight gate disabled"),
-        ("manual_override_clear", not bool(snapshot.get("manualOverrideActive")), "Manual override clear", "Manual override active"),
-        ("rc_connected", bool(snapshot.get("rcConnected")), "Remote controller connected", "Remote controller disconnected"),
-        ("airlink_connected", bool(snapshot.get("airLinkConnected")), "DJI AirLink connected", "DJI AirLink disconnected"),
-        ("home_position", bool(snapshot.get("homeSet")), "Home position set", "Home position not set"),
-    ):
-        checks.append(_bool_check(name, value, ok, bad))
-
-    checks.append(
+    core = [
+        _bool_check(
+            "aircraft_connected",
+            bool(snapshot.get("aircraftConnected")),
+            "Flight controller connected",
+            "Flight controller not connected",
+        ),
+        _bool_check(
+            "camera_connected",
+            bool(snapshot.get("cameraConnected")),
+            "Main camera connected",
+            "Main camera not connected",
+        ),
+        _bool_check(
+            "on_ground",
+            not bool(snapshot.get("airborne")),
+            "Aircraft reports on ground",
+            "Aircraft reports airborne",
+        ),
+        _bool_check(
+            "failsafe_clear",
+            not bool(snapshot.get("failsafe")),
+            "DJI failsafe clear",
+            "DJI failsafe active",
+        ),
+        _bool_check(
+            "compass_healthy",
+            bool(snapshot.get("compassHealthy")),
+            "Compass reports healthy",
+            "Compass error reported",
+        ),
+        _bool_check(
+            "mavlink_flight_allowed",
+            bool(snapshot.get("mavlinkFlightAllowed")),
+            "MAVLink flight gate enabled",
+            "MAVLink flight gate disabled",
+        ),
+        _bool_check(
+            "manual_override_clear",
+            not bool(snapshot.get("manualOverrideActive")),
+            "Manual override clear",
+            "Manual override active",
+        ),
+        _bool_check(
+            "rc_connected",
+            bool(snapshot.get("rcConnected")),
+            "Remote controller connected",
+            "Remote controller disconnected",
+        ),
+        _bool_check(
+            "airlink_connected",
+            bool(snapshot.get("airLinkConnected")),
+            "DJI AirLink connected",
+            "DJI AirLink disconnected",
+        ),
+        _bool_check(
+            "home_position",
+            bool(snapshot.get("homeSet")),
+            "Home position set",
+            "Home position not set",
+        ),
+    ]
+    takeoff = (
         _pass("dji_takeoff_ready", "DJI reports ready to take off")
         if bool(snapshot.get("readyToTakeoff"))
         else _fail(
@@ -163,62 +201,75 @@ def evaluate_preflight(
             f"DJI takeoff blocked: {snapshot.get('takeoffBlockReason') or 'UNKNOWN'}",
         )
     )
+    return [freshness, *core, takeoff], snapshot_ts
 
+
+def _battery_storage_checks(
+    snapshot: dict[str, Any],
+    policy: PreflightPolicy,
+) -> list[Check]:
     battery = int(snapshot.get("batteryPercent", -1))
-    checks.append(
+    battery_check = (
         _pass("battery", f"{battery}% >= policy {policy.min_battery_percent}%")
         if battery >= policy.min_battery_percent
         else _fail("battery", f"{battery}% < policy {policy.min_battery_percent}%")
     )
 
     storage = dict(snapshot.get("storage") or {})
-    checks.append(
+    selected = str(storage.get("selected") or "UNKNOWN").upper()
+    free_mb = int(storage.get("freeMb", -1))
+    return [
+        battery_check,
         _bool_check(
             "sd_inserted",
             bool(storage.get("sdInserted")),
             "Camera SD card inserted",
             "Camera SD card not inserted",
-        )
-    )
-    selected = str(storage.get("selected") or "UNKNOWN").upper()
-    checks.append(
-        _pass("storage_selected", "Camera storage is SDCARD")
-        if selected == "SDCARD"
-        else _fail("storage_selected", f"Camera storage is {selected}, expected SDCARD")
-    )
-    free_mb = int(storage.get("freeMb", -1))
-    checks.append(
-        _pass("sd_free_space", f"{free_mb} MB >= policy {policy.min_sd_free_mb} MB")
-        if free_mb >= policy.min_sd_free_mb
-        else _fail("sd_free_space", f"{free_mb} MB < policy {policy.min_sd_free_mb} MB")
-    )
+        ),
+        (
+            _pass("storage_selected", "Camera storage is SDCARD")
+            if selected == "SDCARD"
+            else _fail("storage_selected", f"Camera storage is {selected}, expected SDCARD")
+        ),
+        (
+            _pass("sd_free_space", f"{free_mb} MB >= policy {policy.min_sd_free_mb} MB")
+            if free_mb >= policy.min_sd_free_mb
+            else _fail("sd_free_space", f"{free_mb} MB < policy {policy.min_sd_free_mb} MB")
+        ),
+    ]
 
+
+def _camera_gimbal_checks(
+    snapshot: dict[str, Any],
+    expected_platform: str | None,
+    expected_capture_profile: str | None,
+) -> list[Check]:
     gimbal = dict(snapshot.get("gimbal") or {})
-    checks.append(
+    camera = dict(snapshot.get("camera") or {})
+    platform = str(camera.get("platform") or "OTHER").upper()
+    profile = camera.get("surveyProfile")
+
+    checks = [
         _bool_check(
             "gimbal_telemetry",
             bool(gimbal.get("valid")),
             "Raw gimbal telemetry valid",
             "Raw gimbal telemetry unavailable/invalid",
-        )
-    )
-
-    camera = dict(snapshot.get("camera") or {})
-    platform = str(camera.get("platform") or "OTHER").upper()
-    profile = camera.get("surveyProfile")
-    checks.append(
-        _pass("camera_platform", f"Detected {platform}")
-        if platform in SUPPORTED_PLATFORMS
-        else _fail("camera_platform", f"Unsupported/unknown camera platform: {platform}")
-    )
-    checks.append(
-        _pass("survey_capture_profile", f"{profile} supported by runtime source range")
-        if profile and bool(camera.get("surveyProfileSupported"))
-        else _fail(
-            "survey_capture_profile",
-            f"No supported survey profile for platform={platform}, profile={profile}",
-        )
-    )
+        ),
+        (
+            _pass("camera_platform", f"Detected {platform}")
+            if platform in SUPPORTED_PLATFORMS
+            else _fail("camera_platform", f"Unsupported/unknown camera platform: {platform}")
+        ),
+        (
+            _pass("survey_capture_profile", f"{profile} supported by runtime source range")
+            if profile and bool(camera.get("surveyProfileSupported"))
+            else _fail(
+                "survey_capture_profile",
+                f"No supported survey profile for platform={platform}, profile={profile}",
+            )
+        ),
+    ]
     if expected_platform:
         wanted = expected_platform.upper()
         checks.append(
@@ -237,103 +288,149 @@ def evaluate_preflight(
                 f"Expected {wanted}, selected {actual or 'NONE'}",
             )
         )
+    return checks
 
+
+def _rtk_check(snapshot: dict[str, Any], policy: PreflightPolicy) -> Check:
     rtk = dict(snapshot.get("rtk") or {})
     fix = str(rtk.get("fix") or "UNKNOWN")
     age_raw = rtk.get("ageMs")
     age_ms = int(age_raw) if age_raw is not None else 2**63 - 1
+
     if not bool(rtk.get("enabled")):
-        checks.append(_fail("rtk", "RTK disabled"))
-    elif not bool(rtk.get("connected")):
-        checks.append(_fail("rtk", "RTK module disconnected"))
-    elif not bool(rtk.get("healthy")):
-        checks.append(_fail("rtk", f"RTK unhealthy (fix={fix})"))
-    elif age_ms > policy.max_rtk_age_ms:
-        checks.append(_fail("rtk", f"RTK stale: {age_ms} ms > {policy.max_rtk_age_ms} ms"))
-    elif not _rtk_fix_ok(fix, policy.allow_rtk_float):
+        return _fail("rtk", "RTK disabled")
+    if not bool(rtk.get("connected")):
+        return _fail("rtk", "RTK module disconnected")
+    if not bool(rtk.get("healthy")):
+        return _fail("rtk", f"RTK unhealthy (fix={fix})")
+    if age_ms > policy.max_rtk_age_ms:
+        return _fail("rtk", f"RTK stale: {age_ms} ms > {policy.max_rtk_age_ms} ms")
+    if not _rtk_fix_ok(fix, policy.allow_rtk_float):
         required = "FIXED or FLOAT" if policy.allow_rtk_float else "FIXED"
-        checks.append(_fail("rtk", f"RTK fix={fix}; policy requires {required}"))
-    else:
-        checks.append(_pass("rtk", f"RTK {fix}, connected/healthy, age {age_ms} ms"))
+        return _fail("rtk", f"RTK fix={fix}; policy requires {required}")
+    return _pass("rtk", f"RTK {fix}, connected/healthy, age {age_ms} ms")
 
+
+def _mission_checks(
+    mission_trace: dict[str, Any] | None,
+    snapshot_ts: int,
+    policy: PreflightPolicy,
+) -> list[Check]:
     if mission_trace is None:
-        checks.append(_fail("mission_trace", "No accepted Lyrebird mission trace"))
-    else:
-        items = list(mission_trace.get("items") or [])
-        declared = int(mission_trace.get("count") or 0)
-        checks.append(
-            _pass("mission_trace", f"Accepted mission contains {len(items)} items")
-            if items and declared == len(items)
-            else _fail(
-                "mission_trace",
-                f"Mission trace incomplete: declared={declared}, items={len(items)}",
-            )
-        )
-        frame_errors = _mission_frame_errors(items)
-        checks.append(
-            _pass("mission_frames", "All mission-item frames are Lyrebird-compatible")
-            if not frame_errors
-            else _fail("mission_frames", "; ".join(frame_errors[:5]))
-        )
-        uploaded_ms = int(mission_trace.get("uploadedAtEpochMs") or 0)
-        mission_age = snapshot_ts - uploaded_ms if snapshot_ts and uploaded_ms else -1
-        checks.append(
-            _pass("mission_fresh", f"Accepted mission age {mission_age} ms")
-            if 0 <= mission_age <= policy.max_mission_age_ms
-            else _fail(
-                "mission_fresh",
-                f"Accepted mission stale/unverifiable: age={mission_age} ms "
-                f"(policy {policy.max_mission_age_ms} ms)",
-            )
-        )
+        return [_fail("mission_trace", "No accepted Lyrebird mission trace")]
 
-    wire_result: dict[str, Any] | None = None
-    if wiretap_path is None:
-        checks.append(_fail("wiretap", "Phase-9 wiretap capture required"))
-    elif not wiretap_path.is_file():
-        checks.append(_fail("wiretap", f"Wiretap file not found: {wiretap_path}"))
-    elif mission_trace is None:
-        checks.append(_fail("wiretap", "Cannot compare wiretap without mission trace"))
-    else:
-        try:
-            capture = load_wiretap_capture(wiretap_path)
-            wire_result = compare_wiretap_to_rc(
-                list(capture.get("items") or []),
-                mission_trace,
-                wire_metadata=capture,
-            )
-        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-            checks.append(_fail("wiretap", f"Wiretap could not be decoded: {exc}"))
-        else:
-            checks.append(
-                _pass(
-                    "wiretap",
-                    f"Wire/RC identical: {wire_result['wireItems']} items, "
-                    f"planId={wire_result.get('wirePlanId')}",
-                )
-                if wire_result.get("ok")
-                else _fail(
-                    "wiretap",
-                    "; ".join(wire_result.get("differences", [])[:5])
-                    or "Wiretap/RC comparison failed",
-                )
-            )
-            clock_delta = wire_result.get("clockDeltaMs")
-            if clock_delta is not None and abs(int(clock_delta)) > 60_000:
-                checks.append(
-                    _warn(
-                        "wiretap_clock",
-                        f"Ground-station/RC clocks differ by {int(clock_delta)} ms; "
-                        "digest/planId/accepted ACK remain the identity proof",
-                    )
-                )
-
-    quality = int(snapshot.get("airLinkQualityPercent", -1))
-    checks.append(
-        _pass("airlink_quality_observed", f"DJI AirLink quality {quality}%")
-        if quality >= 0
-        else _warn("airlink_quality_observed", "DJI AirLink quality unavailable")
+    items = list(mission_trace.get("items") or [])
+    declared = int(mission_trace.get("count") or 0)
+    trace_check = (
+        _pass("mission_trace", f"Accepted mission contains {len(items)} items")
+        if items and declared == len(items)
+        else _fail(
+            "mission_trace",
+            f"Mission trace incomplete: declared={declared}, items={len(items)}",
+        )
     )
+
+    frame_errors = _mission_frame_errors(items)
+    frame_check = (
+        _pass("mission_frames", "All mission-item frames are Lyrebird-compatible")
+        if not frame_errors
+        else _fail("mission_frames", "; ".join(frame_errors[:5]))
+    )
+
+    uploaded_ms = int(mission_trace.get("uploadedAtEpochMs") or 0)
+    mission_age = snapshot_ts - uploaded_ms if snapshot_ts and uploaded_ms else -1
+    age_check = (
+        _pass("mission_fresh", f"Accepted mission age {mission_age} ms")
+        if 0 <= mission_age <= policy.max_mission_age_ms
+        else _fail(
+            "mission_fresh",
+            f"Accepted mission stale/unverifiable: age={mission_age} ms "
+            f"(policy {policy.max_mission_age_ms} ms)",
+        )
+    )
+    return [trace_check, frame_check, age_check]
+
+
+def _wiretap_checks(
+    wiretap_path: Path | None,
+    mission_trace: dict[str, Any] | None,
+) -> tuple[list[Check], dict[str, Any] | None]:
+    if wiretap_path is None:
+        return [_fail("wiretap", "Phase-9 wiretap capture required")], None
+    if not wiretap_path.is_file():
+        return [_fail("wiretap", f"Wiretap file not found: {wiretap_path}")], None
+    if mission_trace is None:
+        return [_fail("wiretap", "Cannot compare wiretap without mission trace")], None
+
+    try:
+        capture = load_wiretap_capture(wiretap_path)
+        result = compare_wiretap_to_rc(
+            list(capture.get("items") or []),
+            mission_trace,
+            wire_metadata=capture,
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        return [_fail("wiretap", f"Wiretap could not be decoded: {exc}")], None
+
+    checks = [
+        (
+            _pass(
+                "wiretap",
+                f"Wire/RC identical: {result['wireItems']} items, "
+                f"planId={result.get('wirePlanId')}",
+            )
+            if result.get("ok")
+            else _fail(
+                "wiretap",
+                "; ".join(result.get("differences", [])[:5])
+                or "Wiretap/RC comparison failed",
+            )
+        )
+    ]
+    clock_delta = result.get("clockDeltaMs")
+    if clock_delta is not None and abs(int(clock_delta)) > 60_000:
+        checks.append(
+            _warn(
+                "wiretap_clock",
+                f"Ground-station/RC clocks differ by {int(clock_delta)} ms; "
+                "digest/planId/accepted ACK remain the identity proof",
+            )
+        )
+    return checks, result
+
+
+def _airlink_observation(snapshot: dict[str, Any]) -> Check:
+    quality = int(snapshot.get("airLinkQualityPercent", -1))
+    if quality >= 0:
+        return _pass("airlink_quality_observed", f"DJI AirLink quality {quality}%")
+    return _warn("airlink_quality_observed", "DJI AirLink quality unavailable")
+
+
+def evaluate_preflight(
+    *,
+    rc_host: str,
+    snapshot: dict[str, Any],
+    mission_trace: dict[str, Any] | None,
+    wiretap_path: Path | None,
+    policy: PreflightPolicy = PreflightPolicy(),
+    expected_platform: str | None = None,
+    expected_capture_profile: str | None = None,
+    now_epoch_ms: int | None = None,
+) -> PreflightReport:
+    """Evaluate immutable RC facts. No command or setting write is issued."""
+    now_ms = int(time.time() * 1000) if now_epoch_ms is None else int(now_epoch_ms)
+
+    snapshot_checks, snapshot_ts = _snapshot_checks(snapshot, policy, now_ms)
+    checks = [
+        *snapshot_checks,
+        *_battery_storage_checks(snapshot, policy),
+        *_camera_gimbal_checks(snapshot, expected_platform, expected_capture_profile),
+        _rtk_check(snapshot, policy),
+        *_mission_checks(mission_trace, snapshot_ts, policy),
+    ]
+    wire_checks, wire_result = _wiretap_checks(wiretap_path, mission_trace)
+    checks.extend(wire_checks)
+    checks.append(_airlink_observation(snapshot))
 
     return PreflightReport(
         rc_host=rc_host,
