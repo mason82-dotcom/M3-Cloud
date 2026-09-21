@@ -110,7 +110,12 @@ def watch_thermograms(
 ) -> None:
     interval = max(2.0, float(poll_seconds))
     while True:
-        job = claim_next_thermogram(api, retry_failed=retry_failed)
+        try:
+            job = claim_next_thermogram(api, retry_failed=retry_failed)
+        except M3CloudApiError:
+            logger.exception("M3-Cloud API unavailable while polling thermal jobs")
+            time.sleep(interval)
+            continue
         if job is None:
             time.sleep(interval)
             continue
