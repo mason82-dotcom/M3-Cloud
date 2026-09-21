@@ -102,6 +102,30 @@ function thermalResultSummary(result: ProcessingResult): string | null {
       ? "Hotspot candidate analysis"
       : `Hotspot candidates · ${count}`;
   }
+  if (kind === "THERMAL_SUMMARY") {
+    const summary =
+      details.thermal_summary && typeof details.thermal_summary === "object"
+        ? details.thermal_summary as Record<string, unknown>
+        : null;
+    const captures =
+      summary && typeof summary.capture_count === "number"
+        ? summary.capture_count
+        : null;
+    const hotspots =
+      summary && typeof summary.hotspot_component_count === "number"
+        ? summary.hotspot_component_count
+        : null;
+    const maxC =
+      summary && typeof summary.max_c === "number"
+        ? summary.max_c
+        : null;
+    const parts = ["Thermal summary"];
+    if (captures !== null) parts.push(`${captures} captures`);
+    if (hotspots !== null) parts.push(`${hotspots} hotspot candidates`);
+    if (maxC !== null) parts.push(`${maxC.toFixed(1)} °C max`);
+    return parts.join(" · ");
+  }
+  if (kind === "THERMAL_SUMMARY_CSV") return "Thermal summary CSV";
   if (kind === "THERMAL_MANIFEST") return "Thermal result manifest";
   return kind;
 }
