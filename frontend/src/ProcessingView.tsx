@@ -161,6 +161,42 @@ function thermalResultSummary(result: ProcessingResult): string | null {
       details,
     );
   }
+  if (kind === "THERMAL_REGISTRATION_AUDIT") {
+    const summary =
+      details.registration_summary && typeof details.registration_summary === "object"
+        ? details.registration_summary as Record<string, unknown>
+        : null;
+    const captures =
+      summary && typeof summary.capture_count === "number"
+        ? summary.capture_count
+        : null;
+    const timeEvidence =
+      summary && typeof summary.pair_capture_time_evidence_count === "number"
+        ? summary.pair_capture_time_evidence_count
+        : null;
+    const gpsEvidence =
+      summary && typeof summary.pair_gps_evidence_count === "number"
+        ? summary.pair_gps_evidence_count
+        : null;
+    const status =
+      summary && typeof summary.registration_status === "string"
+        ? summary.registration_status
+        : null;
+    const parts = ["WIDE↔THERMAL registration audit"];
+    if (captures !== null) parts.push(`${captures} pairs`);
+    if (status === "NOT_REGISTERED") {
+      parts.push("not registered");
+    } else if (status) {
+      parts.push(status);
+    }
+    if (timeEvidence !== null && captures !== null) {
+      parts.push(`time evidence ${timeEvidence}/${captures}`);
+    }
+    if (gpsEvidence !== null && captures !== null) {
+      parts.push(`GPS evidence ${gpsEvidence}/${captures}`);
+    }
+    return parts.join(" · ");
+  }
   if (kind === "THERMAL_SUMMARY") {
     const summary =
       details.thermal_summary && typeof details.thermal_summary === "object"
