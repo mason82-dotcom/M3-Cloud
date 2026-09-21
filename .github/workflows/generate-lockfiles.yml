@@ -6,15 +6,18 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   lockfiles:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     name: Generate reproducible dependency locks
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out PR branch
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -36,12 +39,14 @@ jobs:
         working-directory: frontend
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
-      - name: Upload generated lockfiles
-        uses: actions/upload-artifact@v6
-        with:
-          name: generated-lockfiles
-          if-no-files-found: error
-          path: |
-            backend/requirements.lock
-            backend/requirements-dev.lock
-            frontend/package-lock.json
+      - name: Commit generated lockfiles
+        run: |
+          git add backend/requirements.lock backend/requirements-dev.lock frontend/package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfiles already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Generate reproducible dependency lockfiles"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
