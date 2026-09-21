@@ -566,6 +566,26 @@ export async function createWebODMJob(input: {
   return response.json() as Promise<ProcessingJob>;
 }
 
+export async function createDroneDBJob(input: {
+  name: string;
+  input_prefix: string;
+}): Promise<ProcessingJob> {
+  const response = await fetch("/api/v1/processing/dronedb", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `DroneDB handoff request failed: ${response.status}`);
+  }
+  return response.json() as Promise<ProcessingJob>;
+}
+
+export function dronedbHandoffDownloadUrl(jobId: string): string {
+  return `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/dronedb-handoff/download`;
+}
+
 export async function createThermogramJob(input: {
   name: string;
   input_prefix: string;
