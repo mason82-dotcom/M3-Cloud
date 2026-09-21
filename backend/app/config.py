@@ -65,6 +65,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias="M3CLOUD_DJI_MQTT_PASSWORD",
     )
+    dji_control_api_token: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_CONTROL_API_TOKEN",
+    )
     dji_telemetry_ttl_seconds: int = Field(
         default=15,
         validation_alias="M3CLOUD_DJI_TELEMETRY_TTL_SECONDS",

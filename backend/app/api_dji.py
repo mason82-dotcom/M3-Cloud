@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+import hmac
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -19,6 +20,11 @@ from app.dji.transactions import DJITransactionTimeout
 
 
 router = APIRouter(prefix="/api/v1/dji", tags=["dji-cloud"])
+
+ControlToken = Annotated[
+    str | None,
+    Header(alias="X-M3Cloud-Control-Token"),
+]
 
 
 class LiveStartBody(BaseModel):
@@ -64,6 +70,20 @@ def _dji(request: Request):
 
 def _liveview(request: Request) -> DJILiveView:
     return DJILiveView(_dji(request).services)
+
+
+def _require_control_token(token: str | None) -> None:
+    expected = settings.dji_control_api_token.strip()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DJI control API token is not configured",
+        )
+    if token is None or not hmac.compare_digest(token, expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid DJI control API token",
+        )
 
 
 async def _gateway_state(request: Request, gateway_sn: str) -> dict[str, Any]:
@@ -138,7 +158,9 @@ async def start_live(
     gateway_sn: str,
     body: LiveStartBody,
     request: Request,
+    x_control_token: ControlToken = None,
 ) -> dict[str, Any]:
+    _require_control_token(x_control_token)
     try:
         return await _liveview(request).start(
             gateway_sn,
@@ -156,7 +178,9 @@ async def stop_live(
     gateway_sn: str,
     body: LiveStopBody,
     request: Request,
+    x_control_token: ControlToken = None,
 ) -> dict[str, Any]:
+    _require_control_token(x_control_token)
     try:
         return await _liveview(request).stop(gateway_sn, video_id=body.video_id)
     except Exception as exc:
@@ -168,7 +192,9 @@ async def set_live_quality(
     gateway_sn: str,
     body: LiveQualityBody,
     request: Request,
+    x_control_token: ControlToken = None,
 ) -> dict[str, Any]:
+    _require_control_token(x_control_token)
     try:
         return await _liveview(request).set_quality(
             gateway_sn,
@@ -184,7 +210,9 @@ async def set_live_lens(
     gateway_sn: str,
     body: LiveLensBody,
     request: Request,
+    x_control_token: ControlToken = None,
 ) -> dict[str, Any]:
+    _require_control_token(x_control_token)
     try:
         return await _liveview(request).set_lens(
             gateway_sn,
@@ -201,7 +229,9 @@ async def authorize_cloud_control(
     gateway_sn: str,
     body: CloudControlAuthorizationBody,
     request: Request,
+    x_control_token: ControlToken = None,
 ) -> dict[str, object]:
+    _require_control_token(x_control_token)
     try:
         return await _dji(request).cloud_control.request_authorization(
             gateway_sn,
@@ -216,7 +246,9 @@ async def authorize_cloud_control(
 async def release_cloud_control(
     gateway_sn: str,
     request: Request,
+    x_control_token: ControlToken = None,
 ) -> dict[str, object]:
+    _require_control_token(x_control_token)
     try:
         return await _dji(request).cloud_control.release(gateway_sn)
     except Exception as exc:
@@ -227,7 +259,9 @@ async def release_cloud_control(
 async def enter_drc_mode(
     gateway_sn: str,
     request: Request,
+    x_control_token: ControlToken = None,
 ) -> dict[str, object]:
+    _require_control_token(x_control_token)
     try:
         return await _dji(request).cloud_control.enter_drc(gateway_sn)
     except Exception as exc:
