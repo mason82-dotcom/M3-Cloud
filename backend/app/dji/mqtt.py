@@ -28,6 +28,8 @@ class DJIMqttTransport:
         client_id: str | None = None,
         username: str | None = None,
         password: str | None = None,
+        subscriptions: tuple[str, ...] | None = None,
+        tls_enabled: bool = False,
     ):
         self.handler = handler
         self.host = host or settings.emqx_host
@@ -35,6 +37,7 @@ class DJIMqttTransport:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._connected = threading.Event()
         self._last_connection_reason: str | None = None
+        self.subscriptions = SUBSCRIPTIONS if subscriptions is None else subscriptions
 
         self.client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -43,6 +46,8 @@ class DJIMqttTransport:
         )
         if username:
             self.client.username_pw_set(username, password=password)
+        if tls_enabled:
+            self.client.tls_set()
 
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
@@ -64,6 +69,17 @@ class DJIMqttTransport:
         self._last_connection_reason = None
         await asyncio.to_thread(self.client.connect, self.host, self.port, 60)
         self.client.loop_start()
+
+    async def wait_connected(self, timeout_s: float = 5.0) -> None:
+        connected = await asyncio.to_thread(
+            self._connected.wait,
+            max(0.0, float(timeout_s)),
+        )
+        if not connected:
+            reason = self._last_connection_reason or "timeout"
+            raise TimeoutError(
+                f"DJI MQTT connection did not become ready: {reason}"
+            )
 
     async def stop(self) -> None:
         try:
@@ -104,7 +120,7 @@ class DJIMqttTransport:
 
         self._connected.set()
         logger.info("DJI MQTT connected to %s:%s", self.host, self.port)
-        for topic in SUBSCRIPTIONS:
+        for topic in self.subscriptions:
             result, _mid = client.subscribe(topic, qos=0)
             if result != mqtt.MQTT_ERR_SUCCESS:
                 logger.error(

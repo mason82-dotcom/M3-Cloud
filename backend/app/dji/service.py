@@ -11,6 +11,7 @@ from app.dji.drc import (
     DJIDRCCommandChannel,
     DJIDRCSessionManager,
     DJIDRCStateStore,
+    DJIDRCTransport,
 )
 from app.dji.events import DJIEventDispatcher, DJIEventStateStore
 from app.dji.gateway import DJIGatewayService
@@ -41,6 +42,7 @@ class DJIService:
     gateways: DJIGatewayService
     payloads: DJIPayloadControl
     drc_state: DJIDRCStateStore
+    drc_transport: DJIDRCTransport
     drc_channel: DJIDRCCommandChannel
     drc_sessions: DJIDRCSessionManager
     cloud_control: DJICloudControl
@@ -72,12 +74,14 @@ class DJIService:
             username=settings.dji_mqtt_username or None,
             password=settings.dji_mqtt_password or None,
         )
+        drc_transport = DJIDRCTransport(handle, settings)
         services = DJIServiceClient(transport, transactions)
         properties = DJIPropertyClient(transport, transactions)
-        drc_channel = DJIDRCCommandChannel(transport)
+        drc_channel = DJIDRCCommandChannel(drc_transport)
         drc_sessions = DJIDRCSessionManager(
             drc_channel,
             heartbeat_interval_s=settings.dji_drc_heartbeat_interval_seconds,
+            transport=drc_transport,
         )
         payloads = DJIPayloadControl(services)
         devices = DJIDeviceService(registry, telemetry, properties)
@@ -113,6 +117,7 @@ class DJIService:
             gateways=gateways,
             payloads=payloads,
             drc_state=drc_state,
+            drc_transport=drc_transport,
             drc_channel=drc_channel,
             drc_sessions=drc_sessions,
             cloud_control=cloud_control,

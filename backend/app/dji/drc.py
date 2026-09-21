@@ -5,18 +5,113 @@ import contextlib
 import json
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from urllib.parse import urlsplit
 from copy import deepcopy
 from typing import Any, Protocol
 
 from redis.asyncio import Redis
 
-from app.config import settings
+from app.config import Settings, settings
+from app.dji.mqtt import DJIMqttTransport
 from app.dji.protocol import DRCMessage, encode_json
 from app.dji.topics import drc_down_topic
 
 
 logger = logging.getLogger(__name__)
+
+DRCMessageHandler = Callable[[str, bytes], Awaitable[None]]
+DRC_UPLINK_SUBSCRIPTIONS = ("thing/product/+/drc/up",)
+
+
+def _drc_host_port(address: str) -> tuple[str, int]:
+    value = address.strip()
+    if not value or "://" in value:
+        raise ValueError("DJI DRC broker address must be host:port")
+    parsed = urlsplit(f"//{value}")
+    if not parsed.hostname or parsed.port is None:
+        raise ValueError("DJI DRC broker address must include host and port")
+    return parsed.hostname, parsed.port
+
+
+class DJIDRCTransport:
+    """Dedicated MQTT link for DJI DRC traffic."""
+
+    def __init__(
+        self,
+        handler: DRCMessageHandler,
+        config: Settings,
+        *,
+        connect_timeout_s: float = 5.0,
+    ) -> None:
+        self.handler = handler
+        self.config = config
+        self.connect_timeout_s = max(0.1, float(connect_timeout_s))
+        self._transport: DJIMqttTransport | None = None
+        self._lock = asyncio.Lock()
+
+    @property
+    def connected(self) -> bool:
+        return self._transport is not None and self._transport.connected
+
+    async def start(self) -> None:
+        async with self._lock:
+            if self.connected:
+                return
+
+            if self._transport is not None:
+                await self._transport.stop()
+                self._transport = None
+
+            host, port = _drc_host_port(self.config.dji_drc_broker_address)
+            username = self.config.dji_drc_username.strip()
+            password = self.config.dji_drc_password
+            prefix = self.config.dji_drc_client_id_prefix.strip()
+            if not username or not password or not prefix:
+                raise RuntimeError("DJI DRC broker credentials are incomplete")
+
+            transport = DJIMqttTransport(
+                self.handler,
+                host=host,
+                port=port,
+                client_id=f"{prefix}backend",
+                username=username,
+                password=password,
+                subscriptions=DRC_UPLINK_SUBSCRIPTIONS,
+                tls_enabled=self.config.dji_drc_enable_tls,
+            )
+            await transport.start()
+            try:
+                await transport.wait_connected(self.connect_timeout_s)
+            except Exception:
+                await transport.stop()
+                raise
+            self._transport = transport
+
+    async def stop(self) -> None:
+        async with self._lock:
+            transport = self._transport
+            self._transport = None
+            if transport is not None:
+                await transport.stop()
+
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        *,
+        qos: int = 0,
+        retain: bool = False,
+    ) -> None:
+        transport = self._transport
+        if transport is None or not transport.connected:
+            raise RuntimeError("DJI DRC MQTT transport is not connected")
+        await transport.publish(
+            topic,
+            payload,
+            qos=qos,
+            retain=retain,
+        )
 
 
 class DJIDRCStateStore:
@@ -126,6 +221,14 @@ class DJIDRCCommandChannel:
         return seq
 
 
+class DRCTransportLifecycle(Protocol):
+    async def start(self) -> None:
+        ...
+
+    async def stop(self) -> None:
+        ...
+
+
 class DJIDRCSessionManager:
     """Keep a DRC link alive after Pilot accepts drc_mode_enter."""
 
@@ -134,8 +237,10 @@ class DJIDRCSessionManager:
         channel: DJIDRCCommandChannel,
         *,
         heartbeat_interval_s: float,
+        transport: DRCTransportLifecycle | None = None,
     ) -> None:
         self.channel = channel
+        self.transport = transport
         self.heartbeat_interval_s = max(0.1, float(heartbeat_interval_s))
         self._tasks: dict[str, asyncio.Task[None]] = {}
 
@@ -153,6 +258,9 @@ class DJIDRCSessionManager:
         current = self._tasks.get(gateway_sn)
         if current is not None and not current.done():
             return
+
+        if self.transport is not None:
+            await self.transport.start()
 
         # DJI documents this as the first DRC/down request for obtaining the
         # current aircraft/camera state after the link is established.
@@ -178,6 +286,8 @@ class DJIDRCSessionManager:
     async def stop_all(self) -> None:
         for gateway_sn in tuple(self._tasks):
             await self.stop(gateway_sn)
+        if self.transport is not None:
+            await self.transport.stop()
 
     async def _heartbeat_loop(self, gateway_sn: str) -> None:
         try:

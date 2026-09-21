@@ -52,7 +52,6 @@ UPLINK_SUBSCRIPTIONS: tuple[str, ...] = (
     "thing/product/+/requests",
     "thing/product/+/services_reply",
     "thing/product/+/property/set_reply",
-    "thing/product/+/drc/up",
 )
 
 # Backwards-compatible name used by the MQTT transport.
