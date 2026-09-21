@@ -25,6 +25,11 @@ class WebODMJobRequest(BaseModel):
     profile: str = DEFAULT_PROFILE
 
 
+class DroneDBJobRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    input_prefix: str = Field(min_length=1, max_length=1024)
+
+
 class ThermogramJobRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     input_prefix: str = Field(min_length=1, max_length=1024)
@@ -40,7 +45,7 @@ class ExternalJobClaimRequest(BaseModel):
 
 
 def _job(job: ProcessingJob) -> dict[str, Any]:
-    return {
+    payload = {
         "id": str(job.id),
         "kind": job.kind,
         "status": job.status,
@@ -64,6 +69,19 @@ def _job(job: ProcessingJob) -> dict[str, Any]:
         "updated_at": job.updated_at.isoformat(),
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
     }
+    if job.kind == "DRONEDB":
+        options = {
+            str(item.get("name")): item.get("value")
+            for item in (job.options or [])
+            if isinstance(item, dict) and item.get("name") is not None
+        }
+        payload["remote"] = {
+            "provider": "DRONEDB",
+            "organization": options.get("dronedb_org"),
+            "dataset": options.get("dronedb_dataset"),
+            "url": options.get("dronedb_dataset_url"),
+        }
+    return payload
 
 
 @router.get("/profiles")
@@ -316,6 +334,30 @@ async def create_webodm_job(
     return _job(job)
 
 
+@router.post("/dronedb", status_code=status.HTTP_202_ACCEPTED)
+async def create_dronedb_job(
+    body: DroneDBJobRequest,
+    request: Request,
+) -> dict[str, Any]:
+    manager = request.app.state.processing_manager
+    try:
+        job = await manager.create_dronedb_job(
+            name=body.name,
+            input_prefix=body.input_prefix,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return _job(job)
+
+
 @router.post("/thermogram", status_code=status.HTTP_201_CREATED)
 async def create_thermogram_job(
     body: ThermogramJobRequest,
@@ -334,6 +376,48 @@ async def create_thermogram_job(
         ) from exc
 
     return _job(job)
+
+
+@router.get("/jobs/{job_id}/dronedb-handoff")
+async def dronedb_processing_handoff(
+    job_id: uuid.UUID,
+    request: Request,
+) -> dict[str, object]:
+    manager = request.app.state.processing_manager
+    try:
+        return await manager.dronedb_handoff(job_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/jobs/{job_id}/dronedb-handoff/download")
+async def download_dronedb_processing_handoff(
+    job_id: uuid.UUID,
+    request: Request,
+) -> Response:
+    manifest = await dronedb_processing_handoff(job_id, request)
+    payload = json.dumps(
+        manifest,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="m3m-dronedb-handoff.json"',
+            "Content-Length": str(len(payload)),
+        },
+    )
 
 
 @router.get("/jobs/{job_id}/handoff")
