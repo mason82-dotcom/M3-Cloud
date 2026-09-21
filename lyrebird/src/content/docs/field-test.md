@@ -173,3 +173,126 @@ latitude. Pull the log after flying:
 ```bash
 adb pull /sdcard/Documents/lyrebird/FlightLogs/$(date +%F)/
 ```
+
+
+## 7. UgCS PX4 VSM wiretap — safe dry-run before first flight
+
+The Phase-9 wiretap sits between the UgCS PX4 VSM and the RC. It records raw MAVLink 2 frames in
+both directions and, by default, is **fail-closed**: only heartbeat/time-sync, read-only parameter
+requests, mission upload/download traffic, and a short allowlist of read-only request commands are
+forwarded. `SET_MODE`, `MANUAL_CONTROL`, parameter writes, unknown commands/messages, MAVLink 1,
+and undecodable bytes are blocked. If one frame in a UDP datagram is unsafe, the complete datagram
+is blocked.
+
+```powershell
+$env:LYREBIRD_RC="192.168.178.63"
+lyrebird-ugcs-wiretap --listen-port 14560
+```
+
+Point the UgCS PX4 VSM to `127.0.0.1:14560`; the proxy forwards allowed traffic to RC UDP 14550.
+The first valid VSM peer is pinned, and replies are accepted only from the configured RC endpoint.
+
+Upload the mission but **do not start it**. Stop the capture with Ctrl+C and compare the actual
+wire mission with Lyrebird's accepted mission trace:
+
+```powershell
+lyrebird-ugcs-wiretap --rc 192.168.178.63 --compare .\ugcs-wiretap\ugcs-wiretap-YYYYMMDD-HHMMSS.jsonl
+```
+
+The comparison checks item count, sequence, command, frame, autocontinue, parameters, coordinates,
+altitude, and a canonical SHA-256 mission digest exposed by
+`GET /get/mavlink/mission/latest`. Float fields use a small absolute tolerance for their normal
+float32/JSON representation.
+
+Only after the dry-run comparison returns `"ok": true` should `--live-flight` be considered for
+a controlled field test. `--live-flight` disables the dry-run command allowlist; it does not
+replace Lyrebird's own signing/control-authority and manual-override safety gates.
+
+
+## UgCS Phase 9: fail-closed MAVLink wiretap
+
+For an UgCS/PX4-VSM bench upload, put the wiretap between the VSM and the RC instead of pointing
+the VSM directly at UDP 14550:
+
+```powershell
+$env:LYREBIRD_RC="192.168.178.63"
+lyrebird-ugcs-wiretap --listen-port 14560
+```
+
+Point the VSM at `127.0.0.1:14560`. The proxy uses its own connected UDP socket to the RC's
+MAVLink port 14550 and pins the first structurally valid VSM peer for the lifetime of the run.
+
+The default mode is deliberately **fail closed**. It forwards mission upload/readback handshakes,
+heartbeats, parameter reads, time sync, and a short allowlist of read-only/reporting MAV_CMDs.
+It blocks the whole datagram if it contains a direct flight/payload command, a parameter write, an
+unknown message, MAVLink 1, undecoded bytes, `MISSION_CLEAR_ALL`, or a zero-item
+`MISSION_COUNT`. A camera/gimbal/ROI command inside `MISSION_ITEM_INT` is still safe to upload:
+it is stored as mission data and is not executed until mission start, which dry-run blocks.
+
+Every frame is written to JSONL with its raw bytes and decoded mission fields. After the RC returns
+an accepted `MISSION_ACK`, compare the capture with the exact mission Lyrebird stored:
+
+```powershell
+lyrebird-ugcs-wiretap --rc 192.168.178.63 --compare .\ugcs-wiretap\ugcs-wiretap-YYYYMMDD-HHMMSS.jsonl
+```
+
+A passing comparison requires the latest captured upload to be complete and acknowledged, then
+checks each mission field plus the same canonical CRC32 `planId` and SHA-256 `missionDigest`
+reported by `GET /get/mavlink/mission/latest`. The RC and Windows timestamps are included only as
+diagnostics because their wall clocks are not assumed to be synchronized.
+
+`--live-flight` disables the dry-run filter and forwards datagrams from the pinned VSM peer
+unchanged. Do not use it as the first test; first require a clean mission-frame gate and a matching
+wire-vs-RC digest.
+
+
+## 8. Phase 10: one-command GO / NO-GO
+
+Run this immediately after the Phase-9 dry-run mission upload and before enabling live flight:
+
+```powershell
+lyrebird-preflight `
+  --rc 192.168.178.63 `
+  --wiretap .\ugcs-wiretap\ugcs-wiretap-YYYYMMDD-HHMMSS.jsonl `
+  --expect-platform M3E `
+  --expect-capture-profile M3E_MAPPING `
+  --output .\preflight\survey-preflight.json
+```
+
+Keep camera identity explicit across the three supported Mavic 3 Enterprise-family payloads:
+
+```text
+M3E -> M3E_MAPPING
+M3T -> M3T_WIDE
+M3M -> M3M_RGB_MULTISPECTRAL
+```
+
+The command is read-only. It does not arm, take off, prepare the camera, select storage or modify
+RTK. `GET /get/preflight` supplies current MSDK/Lyrebird facts; the Python gate combines them
+with the currently accepted MAVLink mission and the Phase-9 capture.
+
+A GO requires aircraft/camera/RC/AirLink connectivity, aircraft on ground, failsafe clear, healthy
+compass, MAVLink flight permission, manual-override clear, DJI ready-to-takeoff, Home set, SD card
+inserted and selected, sufficient policy storage, valid **raw** gimbal telemetry, a product-correct
+M3E/M3T/M3M survey profile, fresh connected/healthy RTK, a frame-compatible accepted mission and
+an exact wiretap/RC mission match.
+
+The defaults are operator policy, not DJI hardware limits:
+
+```text
+minimum aircraft battery     50 %
+minimum free SD storage      2048 MB
+maximum RTK sample age       3000 ms
+maximum RC snapshot age      5000 ms
+maximum accepted-mission age 120 s
+RTK FLOAT allowed            no
+```
+
+`--allow-rtk-float` is an explicit policy override. AirLink quality is recorded but has no invented
+hard percentage threshold.
+
+Mission age is evaluated on the RC clock only. The wiretap may run on a computer with a different
+wall-clock offset, so cross-device time delta is diagnostic; identity is established by the
+canonical SHA-256 mission digest, CRC32 plan id and the observed accepted `MISSION_ACK`.
+
+Exit code 0 means GO; NO-GO exits 2.

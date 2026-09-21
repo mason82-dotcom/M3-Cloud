@@ -36,6 +36,7 @@ class MavlinkMissionProtocolTest {
 
         store.commitUpload()
         assertEquals(3, store.count())
+        assertTrue("committed upload gets a correlation timestamp", store.currentPlanCommittedAtEpochMs() > 0L)
         assertEquals(MissionState.NOT_STARTED, store.missionState())
     }
 
@@ -75,6 +76,7 @@ class MavlinkMissionProtocolTest {
 
         assertNull(store.beginUpload(0, MavlinkMissionStore.MISSION_TYPE_MISSION))
         assertEquals(0, store.count())
+        assertEquals(0L, store.currentPlanCommittedAtEpochMs())
         assertEquals(MissionState.NO_MISSION, store.missionState())
         assertNull("a zero-item upload has nothing to request", store.nextRequestIndex())
     }
@@ -186,11 +188,36 @@ class MavlinkMissionProtocolTest {
     }
 
     @Test
-    fun onlyRelativeGlobalMissionFramesAreSupported() {
-        assertTrue(missionFrameSupported(3))
-        assertTrue(missionFrameSupported(6))
-        assertFalse(missionFrameSupported(0))
-        assertFalse(missionFrameSupported(10))
+    fun positionalMissionItemsRequireRelativeAltIntFrame() {
+        val wp = waypoint(0)
+        assertTrue(missionFrameSupported(wp.copy(frame = 6)))
+        assertFalse(missionFrameSupported(wp.copy(frame = 3)))
+        assertFalse(missionFrameSupported(wp.copy(frame = 2)))
+        assertFalse(missionFrameSupported(wp.copy(frame = 10)))
+    }
+
+    @Test
+    fun nonPositionalMissionCommandsAcceptMissionFrame() {
+        val speed = waypoint(0).copy(
+            command = Mav.CMD_DO_CHANGE_SPEED,
+            frame = 2,
+            latitudeDeg = 0.0,
+            longitudeDeg = 0.0,
+            altitudeM = 0.0
+        )
+        assertTrue(missionFrameSupported(speed))
+        assertTrue(missionFrameSupported(speed.copy(frame = 6)))
+        assertFalse(missionFrameSupported(speed.copy(frame = 0)))
+    }
+
+    @Test
+    fun roiLocationStillRequiresARealRelativeCoordinateFrame() {
+        val roi = waypoint(0).copy(
+            command = Mav.CMD_DO_SET_ROI_LOCATION,
+            frame = 6
+        )
+        assertTrue(missionFrameSupported(roi))
+        assertFalse(missionFrameSupported(roi.copy(frame = 2)))
     }
 
     @Test
@@ -215,6 +242,28 @@ class MavlinkMissionProtocolTest {
         assertEquals("total", 4, fields.getShort(2).toInt())
         assertEquals("state", MissionState.ACTIVE, payload[4].toInt())
         assertEquals("plan id", store.currentPlanId(), fields.getInt(6))
+    }
+
+    @Test
+    fun missionDigestMatchesGroundStationGoldenVector() {
+        assertEquals(
+            "bf0057504ab1f82df000c728328e34ddbdf277efcc678a3c73e33fe99bd295ea",
+            missionPlanDigest(listOf(waypoint(0)))
+        )
+    }
+
+    @Test
+    fun missionDigestIsStableAndChangesWithMissionContent() {
+        val plan = listOf(
+            waypoint(0, lat = 49.1, lon = 8.6, alt = 70.0),
+            waypoint(1, lat = 49.2, lon = 8.7, alt = 71.0)
+        )
+        val digest = missionPlanDigest(plan)
+        assertEquals(64, digest.length)
+        assertEquals(digest, missionPlanDigest(plan))
+        assertFalse(digest == missionPlanDigest(plan.mapIndexed { index, item ->
+            if (index == 1) item.copy(altitudeM = 72.0) else item
+        }))
     }
 
     @Test

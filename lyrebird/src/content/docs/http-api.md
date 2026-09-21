@@ -100,6 +100,7 @@ safety.requestReleaseSafetyControl()           # hand authority back to the Pilo
 | <span class="http-method get">GET</span>`/get/camera/live-source/history` | JSON | Recent live-source changes recorded by the camera source controller |
 | <span class="http-method get">GET</span>`/get/camera/vision-assist` | JSON | Read-only Vision Assist capability/state probe |
 | <span class="http-method get">GET</span>`/get/survey/latest` | JSON | Metadata for the latest completed per-mission survey report, including filenames, byte counts and artifact URLs |
+| <span class="http-method get">GET</span>`/get/preflight` | JSON | Read-only Phase-10 aircraft, RC/AirLink, camera/platform, storage, raw-gimbal and RTK snapshot for survey GO/NO-GO |
 | <span class="http-method get">GET</span>`/get/survey/latest/captures.csv` | CSV file | Reconciled per-capture survey metadata for the latest completed survey |
 | <span class="http-method get">GET</span>`/get/survey/latest/summary.json` | JSON file | RTK/media quality summary for the latest completed survey |
 

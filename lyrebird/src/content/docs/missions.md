@@ -158,6 +158,19 @@ enough (with a hard maximum wait) before media reconciliation begins. The result
 `*_captures.csv` and `*_survey-summary.json` files are registered as the latest completed survey
 and can be downloaded through the [HTTP API](/http-api/).
 
+
+### Mission-item frame gate
+
+Lyrebird validates the `MISSION_ITEM_INT.frame` together with the command before accepting an
+upload. Positional items such as `NAV_WAYPOINT` and `DO_SET_ROI_LOCATION` must use
+`MAV_FRAME_GLOBAL_RELATIVE_ALT_INT` (6), because the wire message carries latitude/longitude as
+scaled int32 values. Non-positional commands such as `DO_CHANGE_SPEED` may use
+`MAV_FRAME_MISSION` (2). The older non-INT relative frame (3) is rejected for positional
+`MISSION_ITEM_INT` items instead of guessing how x/y were encoded.
+
+This is intentionally strict: accepting an ambiguous frame and then treating its x/y values as
+degE7 can move the aircraft to a different location from the one the planner sent.
+
 ## Onboard, for comparison
 
 The `onboard` executor is the simpler of the two conceptually: a loop in the app walks the item list

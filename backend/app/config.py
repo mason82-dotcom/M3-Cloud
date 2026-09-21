@@ -78,6 +78,45 @@ class Settings(BaseSettings):
         validation_alias="M3CLOUD_DJI_STATE_CACHE_TTL_SECONDS",
     )
 
+    # Compatibility with the authenticated /pilot2 bootstrap introduced on main.
+    # These aliases are kept during the branch merge and consolidated in a follow-up.
+    dji_pilot_enabled: bool = Field(
+        default=False,
+        validation_alias="M3CLOUD_DJI_PILOT_ENABLED",
+    )
+    dji_pilot_bootstrap_token: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_BOOTSTRAP_TOKEN",
+    )
+    dji_cloud_app_id: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_CLOUD_APP_ID",
+    )
+    dji_cloud_app_key: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_CLOUD_APP_KEY",
+    )
+    dji_cloud_app_license: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_CLOUD_APP_LICENSE",
+    )
+    dji_workspace_id: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_WORKSPACE_ID",
+    )
+    dji_platform_name: str = Field(
+        default="M3-Cloud",
+        validation_alias="M3CLOUD_DJI_PLATFORM_NAME",
+    )
+    dji_workspace_name: str = Field(
+        default="M3-Cloud",
+        validation_alias="M3CLOUD_DJI_WORKSPACE_NAME",
+    )
+    dji_workspace_description: str = Field(
+        default="M3-Cloud DJI Pilot 2 workspace",
+        validation_alias="M3CLOUD_DJI_WORKSPACE_DESCRIPTION",
+    )
+
     # DJI Pilot 2 DRC relay settings. The address must be reachable from the
     # RC Pro Enterprise and intentionally has no Docker-internal default.
     dji_drc_broker_address: str = Field(

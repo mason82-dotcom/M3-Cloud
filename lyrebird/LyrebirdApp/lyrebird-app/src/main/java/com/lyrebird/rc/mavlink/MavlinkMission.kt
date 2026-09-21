@@ -65,9 +65,38 @@ internal data class MissionItem(
     val passThrough: Boolean get() = isWaypoint && holdSeconds == 0.0
 }
 
-/** MAV_MISSION_RESULT values used when acknowledging an upload. */
-internal fun missionFrameSupported(frame: Int): Boolean =
-    frame == 3 || frame == 6 // MAV_FRAME_GLOBAL_RELATIVE_ALT(_INT)
+private const val MAV_FRAME_MISSION = 2
+private const val MAV_FRAME_GLOBAL_RELATIVE_ALT_INT = 6
+
+/**
+ * Validate the frame against the command, not as a global mission-wide property.
+ *
+ * MISSION_ITEM_INT positional commands must use the INT global-relative frame because x/y are
+ * degE7 integers. MAV_FRAME_MISSION is reserved for non-positional mission commands whose frame
+ * is irrelevant. Accepting MAV_FRAME_GLOBAL_RELATIVE_ALT (3) here would be ambiguous: in an INT
+ * mission item that non-INT frame formally implies unscaled x/y values, while this parser reads
+ * degE7. Reject rather than silently fly a location different from the one the GCS intended.
+ */
+internal fun missionFrameSupported(item: MissionItem): Boolean {
+    val needsRelativePositionFrame = when (item.command) {
+        Mav.CMD_NAV_WAYPOINT,
+        Mav.CMD_NAV_TAKEOFF,
+        Mav.CMD_NAV_LAND,
+        Mav.CMD_DO_SET_ROI_LOCATION -> true
+
+        Mav.CMD_DO_SET_ROI ->
+            item.param1.toInt() == Mav.ROI_MODE_LOCATION
+
+        else -> false
+    }
+
+    return if (needsRelativePositionFrame) {
+        item.frame == MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+    } else {
+        item.frame == MAV_FRAME_MISSION ||
+            item.frame == MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+    }
+}
 
 /**
  * Cross-language mission fingerprint used for MISSION_CURRENT.mission_id.
@@ -98,6 +127,38 @@ internal fun missionPlanFingerprint(items: List<MissionItem>): Int {
         crc.update(buffer.array())
     }
     return crc.value.toInt()
+}
+
+/**
+ * Strong, cross-language mission identity for UgCS wire-vs-RC validation.
+ *
+ * Uses the same canonical logical MISSION_ITEM_INT fields as [missionPlanFingerprint], but SHA-256
+ * is collision-resistant enough to be used as a forensic correlation id in capture logs.
+ */
+internal fun missionPlanDigest(items: List<MissionItem>): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    items.forEach { item ->
+        val buffer = java.nio.ByteBuffer.allocate(35).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        fun putCanonicalFloat(value: Float) {
+            buffer.putInt(if (value.isNaN()) 0x7fc00000 else value.toRawBits())
+        }
+        putCanonicalFloat(item.param1)
+        putCanonicalFloat(item.param2)
+        putCanonicalFloat(item.param3)
+        putCanonicalFloat(item.param4)
+        buffer.putInt(java.lang.Math.round(item.latitudeDeg * 1e7).toInt())
+        buffer.putInt(java.lang.Math.round(item.longitudeDeg * 1e7).toInt())
+        putCanonicalFloat(item.altitudeM.toFloat())
+        buffer.putShort((item.seq and 0xffff).toShort())
+        buffer.putShort((item.command and 0xffff).toShort())
+        buffer.put((item.frame and 0xff).toByte())
+        buffer.put(if (item.autocontinue) 1.toByte() else 0.toByte())
+        buffer.put(MavlinkMissionStore.MISSION_TYPE_MISSION.toByte())
+        digest.update(buffer.array())
+    }
+    return digest.digest().joinToString("") { byte ->
+        "%02x".format(byte.toInt() and 0xff)
+    }
 }
 
 
@@ -189,6 +250,10 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
     @Volatile
     private var planId = 0
 
+    /** Wall-clock epoch time of the last successfully committed non-empty mission upload. */
+    @Volatile
+    private var committedAtEpochMs = 0L
+
     @Synchronized
     fun count(): Int = items.size
 
@@ -207,6 +272,9 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
     @Synchronized
     fun currentPlanId(): Int = planId
 
+    @Synchronized
+    fun currentPlanCommittedAtEpochMs(): Long = committedAtEpochMs
+
     /**
      * Begin an upload of [count] items. Returns null to proceed, or a MAV_MISSION_RESULT to refuse.
      *
@@ -223,6 +291,7 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
         if (count == 0) {
             items.clear()
             planId = 0
+            committedAtEpochMs = 0L
             state = MissionState.NO_MISSION
             currentSeq = -1
         }
@@ -265,6 +334,7 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
         incoming.clear()
         uploading = false
         planId = missionPlanFingerprint(items)
+        committedAtEpochMs = if (items.isEmpty()) 0L else System.currentTimeMillis()
         currentSeq = -1
         state = if (items.isEmpty()) MissionState.NO_MISSION else MissionState.NOT_STARTED
     }
@@ -282,6 +352,7 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
         incoming.clear()
         uploading = false
         planId = 0
+        committedAtEpochMs = 0L
         currentSeq = -1
         state = MissionState.NO_MISSION
     }

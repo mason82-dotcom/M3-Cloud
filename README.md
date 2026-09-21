@@ -75,6 +75,21 @@ Review the resulting dependency changes and run CI before merging them.
 developer/test wrapper around the development lockfile.
 
 
+## DJI Pilot 2 Cloud API bootstrap
+
+M3-Cloud includes a dedicated DJI Pilot 2 Open Platform page at:
+
+```text
+http://<m3-cloud-host>:8080/pilot2/
+```
+
+The current bootstrap intentionally enables only DJI's primary `thing`/MQTT path. It verifies the
+DJI Cloud API license, connects Pilot 2 to EMQX and sets the M3-Cloud workspace identity. Pilot 2
+modules that depend on additional DJI HTTPS/WebSocket contracts remain disabled until those
+contracts are implemented end-to-end.
+
+See [docs/dji-pilot2.md](docs/dji-pilot2.md) for server variables and the exact Pilot 2 steps.
+
 ## Fleet dashboard
 
 The first browser dashboard is served through the frontend reverse proxy:

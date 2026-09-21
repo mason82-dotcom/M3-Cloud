@@ -30,6 +30,9 @@ class DeviceIdentity:
     updated_at_ms: int
 
 
+# Only identifiers documented in DJI Cloud API's product-support table belong here.
+# M3M remains supported in MSDK/WPML, but no undocumented Pilot Cloud identity
+# is inferred from 77/2.
 _MODEL_BY_TYPE: dict[tuple[int, int], str] = {
     (77, 0): "DJI_MAVIC_3E",
     (77, 1): "DJI_MAVIC_3T",
