@@ -53,9 +53,9 @@ class MeasurementParams:
     humidity_pct: float
     emissivity: float
     reflection_c: float
-    ambient_temp_c: float
+    ambient_temp_c: float | None
 
-    def as_dict(self) -> dict[str, float]:
+    def as_dict(self) -> dict[str, float | None]:
         return {
             "distance_m": self.distance_m,
             "humidity_pct": self.humidity_pct,
@@ -75,6 +75,7 @@ class DecodeResult:
     measurement_mode: str
     measurement_error_code: int | None
     sdk_label: str
+    measurement_abi: str
 
 
 class _DirpRjpegVersion(ctypes.Structure):
@@ -118,10 +119,40 @@ class DjiThermalSdk:
         self.sdk_dir = Path(sdk_dir).expanduser().resolve()
         self.release_dir = self._resolve_release_dir(self.sdk_dir)
         self.sdk_label = sdk_label or os.environ.get("DJI_TSDK_VERSION") or self.sdk_dir.name
+        self._measurement_abi = self._detect_measurement_abi()
         self._dll_directory_handle = None
         self._helper_libraries: list[ctypes.CDLL] = []
         self._library = self._load_library()
         self._bind()
+
+    def _detect_measurement_abi(self) -> str:
+        candidates: list[Path] = []
+        search_roots = [self.sdk_dir, *list(self.sdk_dir.parents)[:4]]
+        for root in search_roots:
+            candidates.extend(
+                [
+                    root / "tsdk-core" / "api" / "dirp_api.h",
+                    root / "api" / "dirp_api.h",
+                ]
+            )
+        if self.sdk_dir.is_dir():
+            candidates.extend(self.sdk_dir.glob("**/dirp_api.h"))
+
+        seen: set[Path] = set()
+        for header in candidates:
+            if header in seen or not header.is_file():
+                continue
+            seen.add(header)
+            try:
+                source = header.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            return (
+                "AMBIENT_V2"
+                if "ambient_temp" in source
+                else "LEGACY_V1"
+            )
+        return "UNKNOWN"
 
     @staticmethod
     def _resolve_release_dir(root: Path) -> Path:
@@ -303,6 +334,14 @@ class DjiThermalSdk:
             raise ValueError("R-JPEG exceeds DJI DIRP int32 input-size limit")
 
         requested = self._validate_overrides(overrides)
+        if (
+            "ambient_temp_c" in requested
+            and self._measurement_abi != "AMBIENT_V2"
+        ):
+            raise ValueError(
+                "ambient_temp_c override requires a DJI dirp_api.h that confirms "
+                "the modern ambient_temp measurement ABI"
+            )
         raw_buffer = (ctypes.c_uint8 * len(raw)).from_buffer_copy(raw)
         handle = ctypes.c_void_p()
         created = False
@@ -350,17 +389,19 @@ class DjiThermalSdk:
                     humidity_pct=float(params.humidity),
                     emissivity=float(params.emissivity),
                     reflection_c=float(params.reflection),
-                    ambient_temp_c=float(params.ambient_temp),
+                    ambient_temp_c=(
+                        float(params.ambient_temp)
+                        if self._measurement_abi == "AMBIENT_V2"
+                        else None
+                    ),
                 )
                 if requested:
                     params.distance = requested.get("distance_m", measurement.distance_m)
                     params.humidity = requested.get("humidity_pct", measurement.humidity_pct)
                     params.emissivity = requested.get("emissivity", measurement.emissivity)
                     params.reflection = requested.get("reflection_c", measurement.reflection_c)
-                    params.ambient_temp = requested.get(
-                        "ambient_temp_c",
-                        measurement.ambient_temp_c,
-                    )
+                    if "ambient_temp_c" in requested:
+                        params.ambient_temp = requested["ambient_temp_c"]
                     set_code = int(
                         self._set_measurement(handle, ctypes.byref(params))
                     )
@@ -370,7 +411,11 @@ class DjiThermalSdk:
                             humidity_pct=float(params.humidity),
                             emissivity=float(params.emissivity),
                             reflection_c=float(params.reflection),
-                            ambient_temp_c=float(params.ambient_temp),
+                            ambient_temp_c=(
+                                float(params.ambient_temp)
+                                if self._measurement_abi == "AMBIENT_V2"
+                                else None
+                            ),
                         )
                         measurement_mode = "overridden"
                     elif set_code in {DIRP_ERROR_UNSUPPORTED_FUNC, DIRP_ERROR_NOT_READY}:
@@ -436,6 +481,7 @@ class DjiThermalSdk:
                 measurement_mode=measurement_mode,
                 measurement_error_code=measurement_error_code,
                 sdk_label=self.sdk_label,
+                measurement_abi=self._measurement_abi,
             )
         finally:
             if created and handle.value:
