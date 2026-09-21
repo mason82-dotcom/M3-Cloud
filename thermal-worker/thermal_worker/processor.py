@@ -319,15 +319,22 @@ def _existing_manifest(
         )
 
     resolved_destination = destination.resolve()
-    capture_points_relative = manifest.get("capture_points_geojson")
-    if not isinstance(capture_points_relative, str):
-        raise FileExistsError("Existing thermal result manifest is missing capture_points_geojson")
-    capture_points_safe = _safe_relative_path(capture_points_relative)
-    capture_points_path = destination.joinpath(*capture_points_safe.parts)
-    if capture_points_path.is_symlink() or not capture_points_path.is_file():
-        raise FileExistsError(
-            f"Existing thermal capture-point artifact is missing: {capture_points_path}"
-        )
+    for manifest_field in (
+        "capture_points_geojson",
+        "summary_json",
+        "summary_csv",
+    ):
+        relative = manifest.get(manifest_field)
+        if not isinstance(relative, str):
+            raise FileExistsError(
+                f"Existing thermal result manifest is missing {manifest_field}"
+            )
+        safe = _safe_relative_path(relative)
+        artifact = destination.joinpath(*safe.parts)
+        if artifact.is_symlink() or not artifact.is_file():
+            raise FileExistsError(
+                f"Existing thermal result artifact is missing: {artifact}"
+            )
 
     groups = manifest.get("capture_groups")
     if not isinstance(groups, list) or not groups:
