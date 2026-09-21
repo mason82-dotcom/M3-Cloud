@@ -4,7 +4,7 @@ import dji.v5.ux.mapkit.core.models.DJILatLng;
 import dji.v5.ux.mapkit.core.models.annotations.DJICircle;
 import dji.v5.ux.mapkit.core.models.annotations.DJICircleOptions;
 import dji.v5.ux.mapkit.maplibre.map.MaplibreMapDelegate;
-import com.mapbox.geojson.Point;
+import org.maplibre.geojson.Point;
 import org.maplibre.android.maps.MapLibreMap;
 import org.maplibre.android.style.layers.CircleLayer;
 import org.maplibre.android.style.layers.PropertyFactory;
