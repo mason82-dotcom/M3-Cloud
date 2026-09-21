@@ -74,10 +74,10 @@ ext {
     deps.glide = 'com.github.bumptech.glide:glide:4.9.0'
 
 
-    // wpmz mission file parsing
+    // WPMZ mission file parsing. Keep this aligned with the dependency published by MSDK 5.18.0.
     // For local dependency testing: copy this aar to the main project's sdklib directory
     // and add as a local dependency in the aircraft module's gradle: api(name:"djisdkwpmz", ext:'aar')
-    deps.wpmzSdk = 'com.dji:wpmzsdk:1.0.4.0'
+    deps.wpmzSdk = 'com.dji:wpmzsdk:1.0.5.0'
     // Extended EditText for sample
     deps.expandedit = "com.github.thomhurst:ExpandableHintText:1.0.7"
 

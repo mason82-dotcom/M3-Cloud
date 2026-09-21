@@ -192,6 +192,10 @@ dependencies {
     /** <----------------- MSDK dependencies ------------------> **/
     compileOnly rootProject.deps.aircraftProvided
     implementation rootProject.deps.aircraft
+    // DJI documents the network implementation as a runtime dependency.
+    // Declare it explicitly so the packaged binary graph does not rely on
+    // transitive behavior of dji-sdk-v5-aircraft.
+    runtimeOnly rootProject.deps.networkImp
 
     /** <----------------- Sample dependencies ------------------> **/
     implementation project(':uxsdk')
