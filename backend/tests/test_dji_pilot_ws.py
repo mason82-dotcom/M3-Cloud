@@ -7,8 +7,9 @@ from app.dji.pilot_ws import DJIPilotWebSocketHub
 
 
 class FakeWebSocket:
-    def __init__(self, *, fail=False):
+    def __init__(self, *, fail=False, hang=False):
         self.fail = fail
+        self.hang = hang
         self.accepted = False
         self.closed = []
         self.messages = []
@@ -22,6 +23,8 @@ class FakeWebSocket:
     async def send_json(self, payload):
         if self.fail:
             raise RuntimeError("socket closed")
+        if self.hang:
+            await asyncio.Event().wait()
         self.messages.append(payload)
 
 
@@ -135,3 +138,31 @@ async def test_pilot_ws_hub_drops_failed_connections_without_blocking_healthy_on
     assert healthy.messages[0]["biz_code"] == "device_update_topo"
     assert failed not in hub.connections
     assert healthy in hub.connections
+
+
+@pytest.mark.asyncio
+async def test_pilot_ws_slow_socket_cannot_block_healthy_clients():
+    hub = DJIPilotWebSocketHub(
+        FakeRedis([]),
+        channel="m3:live",
+        send_timeout_s=0.05,
+    )
+    healthy = FakeWebSocket()
+    slow = FakeWebSocket(hang=True)
+    hub.connections.update({healthy, slow})
+
+    await asyncio.wait_for(
+        hub.broadcast(
+            {
+                "biz_code": "device_osd",
+                "version": "1.0",
+                "timestamp": 1,
+                "data": {},
+            }
+        ),
+        timeout=0.2,
+    )
+
+    assert healthy.messages[0]["biz_code"] == "device_osd"
+    assert healthy in hub.connections
+    assert slow not in hub.connections

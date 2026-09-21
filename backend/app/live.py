@@ -24,10 +24,12 @@ class LiveTelemetryHub:
         *,
         channel: str = "m3:live",
         reconnect_delay_s: float = 1.0,
+        send_timeout_s: float = 1.0,
     ):
         self.redis = redis
         self.channel = channel
         self.reconnect_delay_s = reconnect_delay_s
+        self.send_timeout_s = max(0.05, float(send_timeout_s))
         self.connections: set[WebSocket] = set()
         self._task: asyncio.Task[None] | None = None
 
@@ -60,15 +62,27 @@ class LiveTelemetryHub:
     def disconnect(self, websocket: WebSocket) -> None:
         self.connections.discard(websocket)
 
+    async def _send(self, websocket: WebSocket, event: dict[str, Any]) -> bool:
+        try:
+            await asyncio.wait_for(
+                websocket.send_json(event),
+                timeout=self.send_timeout_s,
+            )
+            return True
+        except Exception:
+            return False
+
     async def broadcast(self, event: dict[str, Any]) -> None:
-        dead: list[WebSocket] = []
-        for websocket in tuple(self.connections):
-            try:
-                await websocket.send_json(event)
-            except Exception:
-                dead.append(websocket)
-        for websocket in dead:
-            self.disconnect(websocket)
+        sockets = tuple(self.connections)
+        if not sockets:
+            return
+
+        results = await asyncio.gather(
+            *(self._send(websocket, event) for websocket in sockets)
+        )
+        for websocket, ok in zip(sockets, results, strict=True):
+            if not ok:
+                self.disconnect(websocket)
 
     async def _subscriber_loop(self) -> None:
         while True:
