@@ -683,6 +683,10 @@ class ProcessingManager:
                 raise LookupError("Processing job not found")
             if job.kind != "THERMOGRAM" or job.platform != "M3T":
                 raise ValueError("External status is only supported for M3T Thermogram jobs")
+            # Network clients may retry after the server committed a transition but the
+            # response was lost. Repeating the exact current state is therefore a no-op.
+            if job.status == new_status:
+                return job
             if new_status not in allowed.get(job.status, set()):
                 raise ValueError(
                     f"Cannot transition Thermogram job from {job.status} to {new_status}"
