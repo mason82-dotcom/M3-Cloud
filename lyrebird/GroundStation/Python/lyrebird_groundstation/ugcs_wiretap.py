@@ -634,9 +634,7 @@ class UgcsWiretapProxy:
             return True
 
         blocked, reason = (
-            should_block_dry_run_datagram(data)
-            if self.safe_dry_run
-            else (False, None)
+            should_block_dry_run_datagram(data) if self.safe_dry_run else (False, None)
         )
         self.recorder.record(
             "VSM_TO_RC",
@@ -946,9 +944,7 @@ def _compare_mission_identity(
         rc_trace,
     )
     differences = [
-        difference
-        for difference in (digest_difference, plan_difference)
-        if difference is not None
+        difference for difference in (digest_difference, plan_difference) if difference is not None
     ]
     return differences, wire_digest, rc_digest, wire_plan_id, rc_plan_id
 
