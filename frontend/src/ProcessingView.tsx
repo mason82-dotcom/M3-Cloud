@@ -11,6 +11,7 @@ import {
   fetchProcessingScenes,
   fetchProcessingJobs,
   fetchProcessingProfiles,
+  fetchThermalCapturePoints,
   fetchThermogramHandoff,
   importExternalResults,
   processingResultDownloadUrl,
@@ -24,10 +25,12 @@ import type {
   ExternalResultStatus,
   ProcessingProfile,
   ProcessingResult,
+  ThermalCapturePointCollection,
   ThermogramHandoff,
 } from "./types";
 import { Processing3DView } from "./Processing3DView";
 import { ProcessingResultMap } from "./ProcessingResultMap";
+import { ThermalCaptureMap } from "./ThermalCaptureMap";
 
 const ACTIVE_STATUSES = new Set([
   "QUEUED",
@@ -147,6 +150,9 @@ export function ProcessingView() {
   const [handoffs, setHandoffs] = useState<Record<string, ThermogramHandoff>>({});
   const [externalResults, setExternalResults] = useState<Record<string, ExternalResultStatus>>({});
   const [results, setResults] = useState<Record<string, ProcessingResult[]>>({});
+  const [thermalCapturePoints, setThermalCapturePoints] = useState<
+    Record<string, ThermalCapturePointCollection>
+  >({});
   const [mapInfo, setMapInfo] = useState<Awaited<ReturnType<typeof fetchProcessingMap>>>(null);
   const [maps, setMaps] = useState<Awaited<ReturnType<typeof fetchProcessingMaps>>>([]);
   const [scenes, setScenes] = useState<Awaited<ReturnType<typeof fetchProcessingScenes>>>([]);
@@ -158,6 +164,27 @@ export function ProcessingView() {
     try {
       const values = await fetchProcessingResults(jobId);
       setResults((current) => ({ ...current, [jobId]: values }));
+
+      const capturePointsResult = values.find(
+        (result) => result.details?.result_kind === "THERMAL_CAPTURE_POINTS",
+      );
+      if (capturePointsResult) {
+        const points = await fetchThermalCapturePoints(
+          jobId,
+          capturePointsResult.id,
+        );
+        setThermalCapturePoints((current) => ({
+          ...current,
+          [jobId]: points,
+        }));
+      } else {
+        setThermalCapturePoints((current) => {
+          const next = { ...current };
+          delete next[jobId];
+          return next;
+        });
+      }
+      setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -744,6 +771,13 @@ export function ProcessingView() {
                           </figcaption>
                         </figure>
                       ))}
+                    </div>
+                  ) : null}
+                  {thermalCapturePoints[job.id]?.features.length > 0 ? (
+                    <ThermalCaptureMap data={thermalCapturePoints[job.id]} />
+                  ) : thermalCapturePoints[job.id] ? (
+                    <div className="thermalCaptureMapEmpty">
+                      No valid capture-center GPS positions are available for this thermal result.
                     </div>
                   ) : null}
                 </div>
