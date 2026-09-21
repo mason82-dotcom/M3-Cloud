@@ -70,6 +70,7 @@ class DecodeResult:
     temperature_c: np.ndarray
     width: int
     height: int
+    api_version: dict[str, int | str]
     rjpeg_version: dict[str, int]
     measurement_params: MeasurementParams | None
     measurement_mode: str
@@ -78,7 +79,16 @@ class DecodeResult:
     measurement_abi: str
 
 
+class _DirpApiVersion(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("api", ctypes.c_uint32),
+        ("magic", ctypes.c_char * 8),
+    ]
+
+
 class _DirpRjpegVersion(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("rjpeg", ctypes.c_uint32),
         ("header", ctypes.c_uint32),
@@ -87,6 +97,7 @@ class _DirpRjpegVersion(ctypes.Structure):
 
 
 class _DirpResolution(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("width", ctypes.c_int32),
         ("height", ctypes.c_int32),
@@ -94,6 +105,7 @@ class _DirpResolution(ctypes.Structure):
 
 
 class _DirpMeasurementParams(ctypes.Structure):
+    _pack_ = 1
     # Modern DJI TSDK ABI (including 1.8) adds ambient_temp after reflection.
     # Keeping the exact field order is required for ctypes/C ABI compatibility.
     _fields_ = [
@@ -242,6 +254,13 @@ class DjiThermalSdk:
         self._destroy.argtypes = [ctypes.c_void_p]
         self._destroy.restype = ctypes.c_int32
 
+        self._get_api_version = self._library.dirp_get_api_version
+        self._get_api_version.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(_DirpApiVersion),
+        ]
+        self._get_api_version.restype = ctypes.c_int32
+
         self._get_version = self._library.dirp_get_rjpeg_version
         self._get_version.argtypes = [
             ctypes.c_void_p,
@@ -354,6 +373,12 @@ class DjiThermalSdk:
             )
             self._check("dirp_create_from_rjpeg", int(code))
             created = True
+
+            api_version = _DirpApiVersion()
+            self._check(
+                "dirp_get_api_version",
+                int(self._get_api_version(handle, ctypes.byref(api_version))),
+            )
 
             version = _DirpRjpegVersion()
             self._check(
@@ -472,6 +497,12 @@ class DjiThermalSdk:
                 temperature_c=temperature,
                 width=width,
                 height=height,
+                api_version={
+                    "api": int(api_version.api),
+                    "magic": bytes(api_version.magic)
+                    .split(b"\x00", 1)[0]
+                    .decode("ascii", errors="replace"),
+                },
                 rjpeg_version={
                     "rjpeg": int(version.rjpeg),
                     "header": int(version.header),
