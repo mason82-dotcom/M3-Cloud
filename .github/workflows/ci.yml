@@ -194,19 +194,25 @@ jobs:
       - name: Validate Bash installer syntax
         run: bash -n scripts/install-dji-cloud-api-reference.sh
 
-      - name: Validate PowerShell installer syntax
+      - name: Validate PowerShell DJI setup syntax
         shell: pwsh
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path "scripts/install-dji-cloud-api-reference.ps1"),
-            [ref]$tokens,
-            [ref]$errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
+          $files = @(
+            "scripts/install-dji-cloud-api-reference.ps1",
+            "scripts/setup-dji-development.ps1"
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$file: $($_.Message)" }
+              exit 1
+            }
           }
 
 
