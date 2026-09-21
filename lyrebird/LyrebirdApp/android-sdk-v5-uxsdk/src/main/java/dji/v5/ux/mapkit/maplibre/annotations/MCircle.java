@@ -10,8 +10,8 @@ import dji.v5.ux.mapkit.core.models.annotations.DJICircleOptions;
 import dji.v5.ux.mapkit.maplibre.map.MaplibreMapDelegate;
 import dji.v5.ux.mapkit.maplibre.utils.MaplibreUtils;
 
-import com.mapbox.geojson.Point;
-import com.mapbox.geojson.Polygon;
+import org.maplibre.geojson.Point;
+import org.maplibre.geojson.Polygon;
 import org.maplibre.android.annotations.Polyline;
 import org.maplibre.android.annotations.PolylineOptions;
 import org.maplibre.android.geometry.LatLng;
