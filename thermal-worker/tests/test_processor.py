@@ -37,6 +37,13 @@ class FakeDecoder:
                 reflection_c=23.0,
                 ambient_temp_c=21.0,
             ),
+            measurement_ranges={
+                "distance_m": {"min": 1.0, "max": 500.0},
+                "humidity_pct": {"min": 0.0, "max": 100.0},
+                "emissivity": {"min": 0.1, "max": 1.0},
+                "reflection_c": {"min": -40.0, "max": 500.0},
+                "ambient_temp_c": {"min": -40.0, "max": 500.0},
+            },
             measurement_mode="sdk_native",
             measurement_error_code=None,
             sdk_label="test-sdk",
@@ -130,6 +137,10 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert metadata["radiometry"]["unit"] == "degree_Celsius"
     assert metadata["radiometry"]["statistics"]["max_c"] == 42.5
     assert metadata["radiometry"]["measurement_abi"] == "AMBIENT_V2"
+    assert metadata["radiometry"]["measurement_ranges"]["distance_m"] == {
+        "min": 1.0,
+        "max": 500.0,
+    }
     assert metadata["radiometry"]["api_version"] == {"api": 8, "magic": "DIRP"}
     assert manifest["capture_groups"][0]["api_version"] == {"api": 8, "magic": "DIRP"}
     assert metadata["registration"]["wide_thermal_coregistered"] is False
