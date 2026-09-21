@@ -5,7 +5,7 @@ import pytest
 
 from app.models import MediaAsset
 from app.processing.profiles import get_profile, profile_catalog
-from app.processing.service import select_profile_assets
+from app.processing.service import select_dronedb_assets
 
 
 NOW = datetime.now(timezone.utc)
@@ -43,22 +43,21 @@ def complete_group(index: int) -> list[MediaAsset]:
     ]
 
 
-def test_m3m_profile_has_radiometric_camera_calibration() -> None:
-    profile = get_profile("m3m-multispectral")
-    options = {item["name"]: item["value"] for item in profile.as_options()}
+def test_m3m_multispectral_is_not_a_webodm_profile() -> None:
+    catalog = {item["key"]: item for item in profile_catalog()}
 
-    assert profile.platforms == ("M3M",)
-    assert profile.workflow == "MULTISPECTRAL"
-    assert options["radiometric-calibration"] == "camera"
-    assert profile.require_complete_groups is True
+    assert "m3m-multispectral" not in catalog
+    with pytest.raises(ValueError, match="Unknown WebODM profile"):
+        get_profile("m3m-multispectral")
 
 
-def test_m3m_selection_keeps_only_complete_capture_groups() -> None:
-    profile = get_profile("m3m-multispectral")
+def test_m3m_dronedb_selection_keeps_only_complete_capture_groups() -> None:
     assets = complete_group(1) + complete_group(2)
-    assets.append(media("MS_NIR", "M3M/field/DJI_0003", "DJI_0003_MS_NIR.TIF"))
+    assets.append(
+        media("MS_NIR", "M3M/field/DJI_0003", "DJI_0003_MS_NIR.TIF")
+    )
 
-    selected = select_profile_assets(assets, profile)
+    selected = select_dronedb_assets(assets)
 
     assert len(selected) == 10
     assert {asset.capture_group for asset in selected} == {
@@ -67,16 +66,21 @@ def test_m3m_selection_keeps_only_complete_capture_groups() -> None:
     }
 
 
-def test_m3m_selection_rejects_single_complete_group() -> None:
-    profile = get_profile("m3m-multispectral")
-
-    with pytest.raises(ValueError, match="at least 2 complete capture groups"):
-        select_profile_assets(complete_group(1), profile)
+def test_m3m_dronedb_selection_rejects_single_complete_group() -> None:
+    with pytest.raises(ValueError, match="at least two complete M3M"):
+        select_dronedb_assets(complete_group(1))
 
 
-def test_profile_catalog_exposes_workflow_contract() -> None:
-    catalog = {item["key"]: item for item in profile_catalog()}
+def test_m3m_dronedb_selection_ignores_non_m3m_and_incomplete_groups() -> None:
+    assets = complete_group(1) + complete_group(2)
+    assets.append(
+        media("MS_RED", "M3M/field/DJI_0003", "DJI_0003_MS_R.TIF")
+    )
+    foreign = media("RGB", "M3M/field/DJI_0004", "DJI_0004_D.JPG")
+    foreign.platform = "M3E"
+    assets.append(foreign)
 
-    assert catalog["m3m-multispectral"]["workflow"] == "MULTISPECTRAL"
-    assert catalog["m3m-multispectral"]["platforms"] == ["M3M"]
-    assert "MS_NIR" in catalog["m3m-multispectral"]["media_kinds"]
+    selected = select_dronedb_assets(assets)
+
+    assert len(selected) == 10
+    assert all(asset.platform == "M3M" for asset in selected)
