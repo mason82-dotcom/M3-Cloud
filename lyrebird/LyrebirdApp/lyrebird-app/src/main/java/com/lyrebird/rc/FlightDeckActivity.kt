@@ -5743,8 +5743,29 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         mavlinkCommandSink.nudgeGimbal(pitchStep, yawStep)
     }
 
-    private fun getGimbalAttitude(): Attitude = sanitisedAttitude(gimbalAttitudeKey.get())
-    private fun getGimbalJointAttitude(): Attitude = sanitisedAttitude(gimbalJointAttitudeKey.get())
+    private fun rawPlausibleGimbalAttitude(attitude: Attitude?): Attitude? {
+        if (attitude == null) return null
+        fun valid(value: Double?): Boolean =
+            value != null && value.isFinite() &&
+                kotlin.math.abs(value) <= MAX_PLAUSIBLE_GIMBAL_DEG
+        return if (valid(attitude.pitch) && valid(attitude.roll) && valid(attitude.yaw)) {
+            attitude
+        } else {
+            null
+        }
+    }
+
+    private fun getRawGimbalAttitude(): Attitude? =
+        rawPlausibleGimbalAttitude(gimbalAttitudeKey.get())
+
+    private fun getRawGimbalJointAttitude(): Attitude? =
+        rawPlausibleGimbalAttitude(gimbalJointAttitudeKey.get())
+
+    private fun getGimbalAttitude(): Attitude =
+        getRawGimbalAttitude() ?: Attitude(0.0, 0.0, 0.0)
+
+    private fun getGimbalJointAttitude(): Attitude =
+        getRawGimbalJointAttitude() ?: Attitude(0.0, 0.0, 0.0)
 
     /**
      * A gimbal attitude with DJI's unset marker replaced by zero.
@@ -5755,12 +5776,6 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
      * number took it seriously. A sweep of the aircraft by hand produced it in 23 of 91 samples,
      * so this is the normal case at the edges of travel rather than a rare fault.
      */
-    private fun sanitisedAttitude(attitude: Attitude?): Attitude {
-        if (attitude == null) return Attitude(0.0, 0.0, 0.0)
-        fun axis(value: Double?): Double =
-            if (value == null || kotlin.math.abs(value) > MAX_PLAUSIBLE_GIMBAL_DEG) 0.0 else value
-        return Attitude(axis(attitude.pitch), axis(attitude.roll), axis(attitude.yaw))
-    }
     private fun getHeading(): Double = compassHeadKey.get(0.0)
     private fun getHomeLocation(): LocationCoordinate2D = homeLocationKey.get(LocationCoordinate2D())
     private fun getSpeed(): Velocity3D = flightSpeedKey.get(Velocity3D(0.0, 0.0, 0.0))
@@ -6081,8 +6096,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         val attitude = getAttitude()
         val altitudeRelativeTakeoff = getAltitude()
         val takeoffAltitudeAmsl = getTakeoffAltitudeAmsl()
-        val gimbalAttitude = getGimbalAttitude()
-        val gimbalJoint = getGimbalJointAttitude()
+        val rawGimbalAttitude = getRawGimbalAttitude()
+        val rawGimbalJoint = getRawGimbalJointAttitude()
+        val gimbalAttitude = rawGimbalAttitude ?: Attitude(0.0, 0.0, 0.0)
+        val gimbalJoint = rawGimbalJoint ?: Attitude(0.0, 0.0, 0.0)
         val goHomeInfo = goHomeAssessmentProcessor.value
         val lrfTarget = lrfTargetLocation
         val rtk = rtkSnapshot ?: rtkTelemetryMonitor.snapshot()
@@ -6171,6 +6188,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             missionActive = mavlinkMissionSink.isRunning,
             isRecording = isRecordingKey.get() ?: false,
 
+            gimbalTelemetryValid = rawGimbalAttitude != null,
             gimbalRollDeg = gimbalAttitude.roll,
             gimbalPitchDeg = gimbalAttitude.pitch,
             gimbalYawDeg = gimbalAttitude.yaw,

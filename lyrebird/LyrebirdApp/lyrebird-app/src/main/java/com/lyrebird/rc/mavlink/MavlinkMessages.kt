@@ -586,29 +586,16 @@ internal object MavlinkMessages {
             .build()
 
     /**
-     * time_boot_ms(u32), q(float[4]), angular_velocity_x/y/z(f32), failure_flags(u32),
-     * flags(u16), target_system(u8), target_component(u8),
-     * [ext] delta_yaw(f32), delta_yaw_velocity(f32), gimbal_device_id(u8)
+     * GIMBAL_DEVICE_ATTITUDE_STATUS.
      *
-     * The order is mavgen's, not the XML's: MAVLink packs fields largest-first, so failure_flags
-     * precedes flags despite being declared after it. Getting that backwards produces a frame
-     * with a valid checksum that decodes into nonsense, which is the same failure this package
-     * has shipped once before.
+     * DJI KeyGimbalAttitude is a world/NED attitude, so the quaternion is explicitly advertised
+     * with MAVLink's YAW_IN_EARTH_FRAME flag. The former code marked that same quaternion as
+     * vehicle-frame and inserted KeyGimbalJointAttitude.yaw into delta_yaw; those values describe
+     * different coordinate meanings.
      *
-     * The standard gimbal v2 attitude report, which Lyrebird is already entitled to send: the
-     * camera component advertises the gimbal capability, and a ground station that understands
-     * gimbals reads the pointing direction from here rather than from anything Lyrebird-specific.
-     *
-     * DJI reports two gimbal attitudes — one in the world frame and one relative to the aircraft.
-     * The quaternion carries the world-frame attitude, and `delta_yaw` carries the difference,
-     * which is exactly the field MAVLink defines for "yaw relative to the vehicle".
-     *
-     * The wire specifies `delta_yaw` in radians, not degrees. Sending the joint angle as degrees
-     * is a units bug that is invisible while the aircraft is still — the joint yaw sits near zero
-     * and a zero is a zero in either unit — and shows up the moment the aircraft moves and the
-     * gimbal compensates: a receiver converts the field from radians, so a 30-degree joint yaw
-     * sent as 30.0 reads back as 1719 degrees. The field was shipped this way once; the
-     * regression test pins the radians encoding.
+     * MAVLink defines delta_yaw as the transform between vehicle-frame and earth-frame
+     * quaternions. A DJI mechanical joint yaw is not proven to be that transform, so RC1 sends
+     * NaN until the exact MSDK relation is validated on the target payload.
      */
     fun gimbalDeviceAttitudeStatus(snapshot: MavlinkSnapshot, timeBootMs: Long): ByteArray {
         val (w, x, y, z) = eulerToQuaternion(
@@ -617,15 +604,13 @@ internal object MavlinkMessages {
         return PayloadWriter()
             .u32(timeBootMs)
             .f32(w).f32(x).f32(y).f32(z)
-            // Angular rates are not reported by DJI. NaN is MAVLink's "unknown" here, which is
-            // honest where zero would claim a stationary gimbal.
             .f32(Float.NaN).f32(Float.NaN).f32(Float.NaN)
-            .u32(0) // failure_flags: nothing wrong
-            .u16(GIMBAL_FLAGS_YAW_IN_VEHICLE_FRAME)
+            .u32(0) // failure_flags: no independent DJI fault bitmap mapped here
+            .u16(GIMBAL_FLAGS_YAW_IN_EARTH_FRAME)
             .u8(0) // target_system: broadcast
             .u8(0) // target_component
-            .f32((snapshot.gimbalJointYawDeg * DEG_TO_RAD).toFloat()) // delta_yaw, radians per spec
-            .f32(Float.NaN) // delta_yaw_velocity
+            .f32(Float.NaN) // delta_yaw: frame transform not proven from MSDK values
+            .f32(Float.NaN) // delta_yaw_velocity: unknown
             .u8(GIMBAL_DEVICE_ID)
             .build()
     }
@@ -1168,8 +1153,8 @@ internal object MavlinkMessages {
     /** PARAM_EXT_SET / _VALUE / _ACK carry the value as a fixed 128-byte field. */
     private const val PARAM_EXT_VALUE_LENGTH = 128
 
-    /** GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME: delta_yaw is relative to the aircraft. */
-    private const val GIMBAL_FLAGS_YAW_IN_VEHICLE_FRAME = 16
+    /** MAVLink GIMBAL_DEVICE_FLAGS_YAW_IN_EARTH_FRAME. */
+    private const val GIMBAL_FLAGS_YAW_IN_EARTH_FRAME = 64
 
     /** Lyrebird has one gimbal; 0 means "the only one". */
     private const val GIMBAL_DEVICE_ID = 0

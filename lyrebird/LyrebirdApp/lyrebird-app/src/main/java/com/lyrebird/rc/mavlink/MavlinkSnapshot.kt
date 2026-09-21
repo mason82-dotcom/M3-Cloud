@@ -149,7 +149,13 @@ internal data class MavlinkSnapshot(
 
     // -- Payload and gimbal ------------------------------------------------------------------
 
-    /** Gimbal attitude in the world frame, degrees. */
+    /**
+     * True only when DJI's world-frame gimbal attitude is present and all axes are plausible.
+     * Invalid/unset markers must not be serialized as a real 0-degree attitude.
+     */
+    val gimbalTelemetryValid: Boolean = false,
+
+    /** Gimbal attitude in DJI's world/NED frame, degrees. */
     val gimbalRollDeg: Double = 0.0,
     val gimbalPitchDeg: Double = 0.0,
     val gimbalYawDeg: Double = 0.0,
@@ -162,9 +168,9 @@ internal data class MavlinkSnapshot(
      * measured over a hand-tilted sweep -- because the joint angles carry a mounting offset the
      * world attitude does not describe.
      *
-     * On the wire, pitch and roll travel as centidegrees in LYREBIRD_STATUS, and yaw travels
-     * as `delta_yaw` in GIMBAL_DEVICE_ATTITUDE_STATUS -- which MAVLink specifies in radians, so
-     * the builder converts.
+     * Pitch and roll still travel as centidegrees in LYREBIRD_STATUS for legacy diagnostics.
+     * Joint yaw is deliberately not used as MAVLink `delta_yaw`: a mechanical joint angle is
+     * not the frame-transform quantity defined by the MAVLink gimbal-v2 protocol.
      */
     val gimbalJointPitchDeg: Double = 0.0,
     val gimbalJointRollDeg: Double = 0.0,

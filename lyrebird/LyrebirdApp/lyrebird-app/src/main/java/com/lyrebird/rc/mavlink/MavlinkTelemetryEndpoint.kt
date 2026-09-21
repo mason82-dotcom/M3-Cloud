@@ -447,7 +447,12 @@ internal class MavlinkTelemetryEndpoint(
                 )
             },
             // The gimbal's pointing direction, from the component that owns the gimbal.
-            Stream(MavlinkMsgId.GIMBAL_DEVICE_ATTITUDE_STATUS, GIMBAL_INTERVAL_MS, camera = true) {
+            Stream(
+                MavlinkMsgId.GIMBAL_DEVICE_ATTITUDE_STATUS,
+                GIMBAL_INTERVAL_MS,
+                camera = true,
+                sendIf = { it.gimbalTelemetryValid }
+            ) {
                 MavlinkMessages.gimbalDeviceAttitudeStatus(it, timeBootMs())
             },
             // Only while the laser holds a lock: a rangefinder that reports a stale range is

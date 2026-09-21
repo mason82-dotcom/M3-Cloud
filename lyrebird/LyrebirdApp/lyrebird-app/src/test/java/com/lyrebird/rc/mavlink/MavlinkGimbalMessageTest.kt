@@ -3,35 +3,48 @@ package com.lyrebird.rc.mavlink
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * GIMBAL_DEVICE_ATTITUDE_STATUS encoding, checked against the wire contract rather than a golden
- * blob.
+ * GIMBAL_DEVICE_ATTITUDE_STATUS encoding.
  *
- * The one field this pins is `delta_yaw`, which the MAVLink definition specifies in radians.
- * Sending degrees there is invisible while the aircraft is still — the gimbal's yaw relative to
- * the body sits near zero, and a zero is a zero in either unit — and appears the moment the
- * aircraft moves and the gimbal compensates: a receiver converts the field from radians, so 30
- * degrees sent as 30.0 comes back as 1719 degrees and the two wires disagree in the MAVLink tab.
+ * DJI's world-frame attitude is sent as an earth-frame quaternion. The mechanical joint yaw is
+ * intentionally not reused as MAVLink delta_yaw; until the exact frame transform is proven, the
+ * standards-compliant value is NaN.
  */
 class MavlinkGimbalMessageTest {
 
     @Test
-    fun deltaYawIsEncodedInRadians() {
+    fun worldAttitudeIsAdvertisedInEarthFrame() {
         val payload = MavlinkMessages.gimbalDeviceAttitudeStatus(
-            MavlinkSnapshot(gimbalJointYawDeg = 30.0),
+            MavlinkSnapshot(
+                gimbalTelemetryValid = true,
+                gimbalRollDeg = 0.0,
+                gimbalPitchDeg = -45.0,
+                gimbalYawDeg = 30.0,
+                gimbalJointYawDeg = 12.0
+            ),
             timeBootMs = 1234L
         )
-        // Base fields end at byte 40: time_boot_ms(u32), q(float[4]), angular rates(3*f32),
-        // failure_flags(u32), flags(u16), target_system(u8), target_component(u8); delta_yaw is
-        // the first extension field.
-        val deltaYaw = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN).getFloat(40)
-        assertEquals(
-            "delta_yaw is specified in radians, not degrees",
-            Math.PI / 6.0,
-            deltaYaw.toDouble(),
-            1e-6
+        val fields = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+
+        assertEquals(64, fields.getShort(36).toInt() and 0xFFFF)
+        assertTrue(fields.getFloat(40).isNaN())
+    }
+
+    @Test
+    fun jointYawDoesNotLeakIntoDeltaYaw() {
+        val a = MavlinkMessages.gimbalDeviceAttitudeStatus(
+            MavlinkSnapshot(gimbalTelemetryValid = true, gimbalJointYawDeg = -90.0),
+            1L
         )
+        val b = MavlinkMessages.gimbalDeviceAttitudeStatus(
+            MavlinkSnapshot(gimbalTelemetryValid = true, gimbalJointYawDeg = 90.0),
+            1L
+        )
+
+        assertTrue(ByteBuffer.wrap(a).order(ByteOrder.LITTLE_ENDIAN).getFloat(40).isNaN())
+        assertTrue(ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).getFloat(40).isNaN())
     }
 }
