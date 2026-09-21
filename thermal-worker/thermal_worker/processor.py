@@ -315,7 +315,13 @@ def _existing_manifest(
     for group in groups:
         if not isinstance(group, Mapping):
             raise FileExistsError("Existing thermal result manifest has an invalid capture group")
-        for key in ("temperature_tif", "preview_png", "thermal_json"):
+        for key in (
+            "temperature_tif",
+            "preview_png",
+            "thermal_json",
+            "hotspot_mask_png",
+            "hotspots_json",
+        ):
             relative = group.get(key)
             if not isinstance(relative, str):
                 raise FileExistsError(f"Existing thermal result manifest is missing {key}")
