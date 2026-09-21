@@ -701,6 +701,13 @@ export function processingResultDownloadUrl(
   return `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/results/${encodeURIComponent(resultId)}/download`;
 }
 
+export function processingResultInlineUrl(
+  jobId: string,
+  resultId: string,
+): string {
+  return `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/results/${encodeURIComponent(resultId)}/view`;
+}
+
 export async function fetchSystemHealth(): Promise<SystemHealth> {
   const response = await fetch("/api/v1/system/health");
   if (!response.ok) {
