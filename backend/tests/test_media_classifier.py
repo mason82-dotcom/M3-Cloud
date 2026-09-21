@@ -74,3 +74,31 @@ def test_filename_without_dji_timestamp_has_no_capture_time() -> None:
         PurePosixPath("M3E/site/DJI_0001_W.JPG"),
         timezone_name="UTC",
     ) is None
+
+def test_m3t_rjpeg_r_suffix_is_thermal_and_groups_with_wide() -> None:
+    paths = [
+        PurePosixPath("flight/DJI_0001_W.JPG"),
+        PurePosixPath("flight/DJI_0001_R.JPG"),
+    ]
+    items = [(path, classify_media(path)) for path in paths]
+    reconciled = reconcile_group_platforms(items)
+
+    assert {item.platform for item in reconciled.values()} == {"M3T"}
+    assert {item.media_kind for item in reconciled.values()} == {
+        "WIDE",
+        "THERMAL",
+    }
+    assert {item.capture_group for item in reconciled.values()} == {
+        "flight/DJI_0001"
+    }
+
+
+def test_m3m_red_band_is_not_confused_with_m3t_rjpeg_suffix() -> None:
+    classified = classify_media(
+        PurePosixPath("M3M/flight/DJI_0002_MS_R.TIF")
+    )
+
+    assert classified.platform == "M3M"
+    assert classified.media_kind == "MS_RED"
+    assert classified.capture_group == "M3M/flight/DJI_0002"
+
