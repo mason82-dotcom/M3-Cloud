@@ -103,6 +103,16 @@ camera/R-JPEG-specific DJI ranges rather than relying on a hard-coded distance l
 The adapter targets the modern DIRP measurement ABI used by current TSDK,
 including the `ambient_temp` field present in the current header layout.
 
+DIRP's `dirp_get_api_version` call changed ABI across SDK generations. Older
+headers such as TSDK 1.4 expose the global
+`dirp_get_api_version(version)` form, while TSDK 1.5/1.8 headers expose
+`dirp_get_api_version(handle, version)`. The worker detects that call shape
+from the installed `dirp_api.h` and binds the matching ctypes signature.
+If only a bare `libdirp` binary is supplied with no confirming header, the
+worker still decodes the R-JPEG but skips this provenance-only API-version
+query rather than guessing an unsafe C function arity. The result is marked
+with `API_VERSION_ABI_UNCONFIRMED`.
+
 
 
 Generic hotspot candidate analysis defaults to a threshold of 10 °C above the
