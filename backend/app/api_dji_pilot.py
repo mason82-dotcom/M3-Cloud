@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import secrets
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, Response, status
 
 from app.config import settings
 
@@ -81,8 +82,9 @@ def _validated_bootstrap() -> dict[str, object]:
     }
 
 
-@router.get("/bootstrap")
+@router.post("/bootstrap")
 async def pilot_bootstrap(
+    response: Response,
     x_m3_pilot_bootstrap: str | None = Header(default=None),
 ) -> dict[str, object]:
     expected = settings.dji_pilot_bootstrap_token
@@ -91,9 +93,46 @@ async def pilot_bootstrap(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="M3CLOUD_DJI_PILOT_BOOTSTRAP_TOKEN is not configured",
         )
-    if x_m3_pilot_bootstrap != expected:
+    supplied = x_m3_pilot_bootstrap or ""
+    if not secrets.compare_digest(supplied, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Pilot 2 bootstrap token",
         )
+
+    # The response intentionally contains DJI license material and Pilot MQTT credentials.
+    # It must never be cached by Pilot WebView, nginx, browsers or intermediate proxies.
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
     return _validated_bootstrap()
+
+
+@router.get("/status")
+async def pilot_status() -> dict[str, object]:
+    """Safe readiness view: never returns license, MQTT password or bootstrap token."""
+    configured = {
+        "app_id": bool(settings.dji_cloud_app_id.strip()),
+        "app_key": bool(settings.dji_cloud_app_key.strip()),
+        "app_license": bool(settings.dji_cloud_app_license.strip()),
+        "mqtt_url": bool(settings.dji_pilot_mqtt_url.strip()),
+        "workspace_id": bool(settings.dji_workspace_id.strip()),
+        "bootstrap_token": bool(settings.dji_pilot_bootstrap_token),
+    }
+    return {
+        "enabled": settings.dji_pilot_enabled,
+        "mqtt_ingest_enabled": settings.dji_mqtt_enabled,
+        "configured": configured,
+        "ready": settings.dji_pilot_enabled
+        and settings.dji_mqtt_enabled
+        and all(configured.values()),
+        "modules": {
+            "thing": True,
+            "api": False,
+            "ws": False,
+            "map": False,
+            "tsa": False,
+            "media": False,
+            "mission": False,
+            "liveshare": False,
+        },
+    }

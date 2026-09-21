@@ -101,6 +101,14 @@ Workspace     M3-Cloud
 The backend should then receive `sys/product/<RC-SN>/status` and the aircraft
 `thing/product/<aircraft-SN>/osd|state` topics.
 
+The bootstrap operation uses `POST /api/v1/dji/pilot/bootstrap` and marks the response
+`Cache-Control: no-store`, because it necessarily contains the Cloud API license material and
+Pilot MQTT credentials. A non-secret readiness view is available at:
+
+```text
+GET /api/v1/dji/pilot/status
+```
+
 ## Platform separation
 
 M3-Cloud keeps platform identity explicit:
@@ -114,8 +122,10 @@ Do not infer one platform's camera channels from another platform's payload fiel
 The current DJI Cloud API product-support table explicitly lists M3E (type 77/sub-type 0), M3T
 (type 77/sub-type 1), M3TA (77/3) and RC Pro Enterprise (type 144/sub-type 0), but does not list an
 M3M aircraft entry there. DJI's current WPML documentation does list M3M as a supported mission
-platform. Therefore M3M Cloud-API topology/telemetry remains a hardware-verification item; M3-Cloud
-must not silently treat an unverified M3M Cloud API identity as equivalent to M3E or M3T.
+platform. Therefore M3M Cloud-API topology/telemetry remains a hardware-verification item. The registry
+does **not** map an undocumented `77/2` value to M3M; unknown values remain
+`DJI_TYPE_<type>_<subtype>` until an actual Pilot 2/M3M run or updated DJI Cloud API
+documentation establishes the identity.
 
 ## Security boundary
 

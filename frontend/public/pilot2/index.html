@@ -129,6 +129,7 @@
       if (!token) throw new Error("Bootstrap Token fehlt.");
 
       const response = await fetch("/api/v1/dji/pilot/bootstrap", {
+        method: "POST",
         headers: { "X-M3-Pilot-Bootstrap": token },
         cache: "no-store",
       });
@@ -149,6 +150,9 @@
         config.license.app_key,
         config.license.app_license
       );
+      const verified = bridgeCall("platformIsVerified");
+      const verifiedValue = verified === true || verified.data === true;
+      if (!verifiedValue) throw new Error("DJI Pilot 2 reports license as not verified.");
       setState("license", "VERIFIED", "ok");
 
       const thingParam = JSON.stringify({
@@ -158,6 +162,9 @@
         password: config.mqtt.password,
       });
       bridgeCall("platformLoadComponent", "thing", thingParam);
+      const componentLoaded = bridgeCall("platformIsComponentLoaded", "thing");
+      const loadedValue = componentLoaded === true || componentLoaded.data === true;
+      if (!loadedValue) throw new Error("DJI Pilot 2 did not load the thing module.");
       setState("thing", "geladen / MQTT verbindet…", "warn");
 
       try {
@@ -191,6 +198,17 @@
     } finally {
       button.disabled = false;
     }
+  };
+
+  window.onStopPlatform = () => {
+    try {
+      if (window.djiBridge && typeof window.djiBridge.thingDisconnect === "function") {
+        bridgeCall("thingDisconnect");
+      }
+    } catch (error) {
+      log("thingDisconnect", String(error));
+    }
+    return false;
   };
 
   $("connect").addEventListener("click", () => void connect());

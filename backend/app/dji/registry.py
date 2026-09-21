@@ -30,10 +30,14 @@ class DeviceIdentity:
     updated_at_ms: int
 
 
+# Only identifiers documented in DJI Cloud API's product-support table belong here.
+# M3M is supported elsewhere in DJI's ecosystem (for example WPML), but the current Cloud API
+# table does not assign it a 77/x aircraft identity. Preserve any such runtime identity as
+# DJI_TYPE_<type>_<subtype> until verified from hardware/documentation instead of guessing.
 _MODEL_BY_TYPE: dict[tuple[int, int], str] = {
     (77, 0): "DJI_MAVIC_3E",
     (77, 1): "DJI_MAVIC_3T",
-    (77, 2): "DJI_MAVIC_3M",
+    (77, 3): "DJI_MAVIC_3TA",
     (144, 0): "DJI_RC_PRO_ENTERPRISE",
 }
 

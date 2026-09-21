@@ -24,13 +24,13 @@ def _configure(monkeypatch):
 
 def test_pilot_bootstrap_is_fail_closed(monkeypatch):
     _configure(monkeypatch)
-    response = client.get("/api/v1/dji/pilot/bootstrap")
+    response = client.post("/api/v1/dji/pilot/bootstrap")
     assert response.status_code == 401
 
 
 def test_pilot_bootstrap_returns_only_implemented_modules(monkeypatch):
     _configure(monkeypatch)
-    response = client.get(
+    response = client.post(
         "/api/v1/dji/pilot/bootstrap",
         headers={"X-M3-Pilot-Bootstrap": "bootstrap-secret"},
     )
@@ -54,9 +54,34 @@ def test_pilot_bootstrap_returns_only_implemented_modules(monkeypatch):
 def test_pilot_bootstrap_rejects_non_jsbridge_mqtt_scheme(monkeypatch):
     _configure(monkeypatch)
     monkeypatch.setattr(settings, "dji_pilot_mqtt_url", "mqtt://m3-cloud.local:1883")
-    response = client.get(
+    response = client.post(
         "/api/v1/dji/pilot/bootstrap",
         headers={"X-M3-Pilot-Bootstrap": "bootstrap-secret"},
     )
     assert response.status_code == 503
     assert "tcp:// or ws://" in response.json()["detail"]
+
+
+def test_pilot_bootstrap_is_not_cacheable(monkeypatch):
+    _configure(monkeypatch)
+    response = client.post(
+        "/api/v1/dji/pilot/bootstrap",
+        headers={"X-M3-Pilot-Bootstrap": "bootstrap-secret"},
+    )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, max-age=0"
+    assert response.headers["pragma"] == "no-cache"
+
+
+def test_pilot_status_never_exposes_secrets(monkeypatch):
+    _configure(monkeypatch)
+    monkeypatch.setattr(settings, "dji_mqtt_enabled", True)
+    response = client.get("/api/v1/dji/pilot/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ready"] is True
+    serialized = response.text
+    assert "bootstrap-secret" not in serialized
+    assert "app-key" not in serialized
+    assert "app-license" not in serialized
+    assert '"thing":true' in serialized
