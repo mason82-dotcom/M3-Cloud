@@ -150,3 +150,20 @@ def test_lyrebird_zero_zero_is_preserved_when_position_has_a_real_fix():
     assert result["longitude"]==0.0
     assert result["amsl_altitude_m"]==4.0
     assert result["distance_to_home_m"]==0.0
+
+def test_lyrebird_home_position_is_exposed_in_canonical_aircraft_state():
+    telemetry={
+        "home":{"latitude":49.1234,"longitude":8.5678,"amsl_altitude_m":112.5},
+        "home_set":True,
+        "distance_to_home_m":42.0,
+        "flight_state":{"mode":"POSITION_HOLD"},
+    }
+    result=normalize_aircraft_state(telemetry,source="lyrebird")
+    assert result["home_set"] is True
+    assert result["aircraft_state"]["home"]=={
+        "latitude":49.1234,
+        "longitude":8.5678,
+        "amsl_altitude_m":112.5,
+        "distance_m":42.0,
+    }
+

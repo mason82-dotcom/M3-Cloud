@@ -158,28 +158,30 @@ function plannerPointData(
 
 function plannerReferenceData(
   reference: MissionPlannerPoint | null,
+  returnReference: MissionPlannerPoint | null,
 ): FeatureCollection<Point> {
+  const references = [
+    reference ? { point: reference, kind: "start" } : null,
+    returnReference ? { point: returnReference, kind: "home" } : null,
+  ].filter((item): item is { point: MissionPlannerPoint; kind: string } => item !== null);
   return {
     type: "FeatureCollection",
-    features: reference
-      ? [{
-          type: "Feature",
-          geometry: {
-            type: "Point",
-            coordinates: [reference.longitude_deg, reference.latitude_deg],
-          },
-          properties: {},
-        }]
-      : [],
+    features: references.map(({ point, kind }) => ({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [point.longitude_deg, point.latitude_deg],
+      },
+      properties: { kind },
+    })),
   };
 }
 
 function plannerTransitData(
   items: MissionPlanItem[],
-  reference: MissionPlannerPoint | null,
-  returnToReference: boolean,
+  startReference: MissionPlannerPoint | null,
+  returnReference: MissionPlannerPoint | null,
 ): FeatureCollection<LineString> {
-  if (!reference) return { type: "FeatureCollection", features: [] };
   const waypoints = items
     .filter((item) => item.command === 16)
     .map((item) => [item.longitude_deg, item.latitude_deg]);
@@ -188,18 +190,22 @@ function plannerTransitData(
     return { type: "FeatureCollection", features: [] };
   }
 
-  const origin = [reference.longitude_deg, reference.latitude_deg];
-  const features: FeatureCollection<LineString>["features"] = [{
-    type: "Feature",
-    geometry: { type: "LineString", coordinates: [origin, waypoints[0]] },
-    properties: { leg: "ingress" },
-  }];
-  if (returnToReference) {
+  const features: FeatureCollection<LineString>["features"] = [];
+  if (startReference) {
+    const origin = [startReference.longitude_deg, startReference.latitude_deg];
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: [origin, waypoints[0]] },
+      properties: { leg: "ingress" },
+    });
+  }
+  if (returnReference) {
+    const destination = [returnReference.longitude_deg, returnReference.latitude_deg];
     features.push({
       type: "Feature",
       geometry: {
         type: "LineString",
-        coordinates: [waypoints[waypoints.length - 1], origin],
+        coordinates: [waypoints[waypoints.length - 1], destination],
       },
       properties: { leg: "return" },
     });
@@ -234,11 +240,19 @@ function validPlannerPoint(
 }
 
 function plannerStartReference(vehicle: Vehicle | undefined): MissionPlannerPoint | null {
-  const home = vehicle?.telemetry?.aircraft_state?.home;
-  return (
-    validPlannerPoint(home?.latitude, home?.longitude) ??
-    validPlannerPoint(vehicle?.telemetry?.latitude, vehicle?.telemetry?.longitude)
+  const current = validPlannerPoint(
+    vehicle?.telemetry?.latitude,
+    vehicle?.telemetry?.longitude,
   );
+  if (current) return current;
+  const home = vehicle?.telemetry?.aircraft_state?.home;
+  return validPlannerPoint(home?.latitude, home?.longitude);
+}
+
+function plannerHomeReference(vehicle: Vehicle | undefined): MissionPlannerPoint | null {
+  if (vehicle?.telemetry?.home_set !== true) return null;
+  const home = vehicle?.telemetry?.aircraft_state?.home;
+  return validPlannerPoint(home?.latitude, home?.longitude);
 }
 
 function planningStartReference(
@@ -249,6 +263,17 @@ function planningStartReference(
   return validPlannerPoint(
     parameters.start_reference_latitude_deg,
     parameters.start_reference_longitude_deg,
+  );
+}
+
+function planningHomeReference(
+  planning: MissionPlanningContext | null,
+): MissionPlannerPoint | null {
+  if (planning?.planner !== "M3_CLOUD_GRID") return null;
+  const parameters = planning.parameters ?? {};
+  return validPlannerPoint(
+    parameters.home_reference_latitude_deg,
+    parameters.home_reference_longitude_deg,
   );
 }
 
@@ -270,14 +295,14 @@ function MissionMap({
   plannerPolygon,
   plannerDrawing,
   plannerReference,
-  plannerReturnToReference,
+  plannerReturnReference,
   onPlannerClick,
 }: {
   items: MissionPlanItem[];
   plannerPolygon: MissionPlannerPoint[];
   plannerDrawing: boolean;
   plannerReference: MissionPlannerPoint | null;
-  plannerReturnToReference: boolean;
+  plannerReturnReference: MissionPlannerPoint | null;
   onPlannerClick?: (point: MissionPlannerPoint) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -293,12 +318,12 @@ function MissionMap({
   const plannerArea = useMemo(() => plannerAreaData(plannerPolygon), [plannerPolygon]);
   const plannerPoints = useMemo(() => plannerPointData(plannerPolygon), [plannerPolygon]);
   const plannerReferencePoint = useMemo(
-    () => plannerReferenceData(plannerReference),
-    [plannerReference],
+    () => plannerReferenceData(plannerReference, plannerReturnReference),
+    [plannerReference, plannerReturnReference],
   );
   const plannerTransit = useMemo(
-    () => plannerTransitData(items, plannerReference, plannerReturnToReference),
-    [items, plannerReference, plannerReturnToReference],
+    () => plannerTransitData(items, plannerReference, plannerReturnReference),
+    [items, plannerReference, plannerReturnReference],
   );
   const routeRef = useRef(route);
   const pointsRef = useRef(points);
@@ -307,6 +332,7 @@ function MissionMap({
   const plannerReferenceRef = useRef(plannerReferencePoint);
   const plannerTransitRef = useRef(plannerTransit);
   const plannerReferenceValueRef = useRef(plannerReference);
+  const plannerReturnReferenceValueRef = useRef(plannerReturnReference);
   routeRef.current = route;
   pointsRef.current = points;
   plannerAreaRef.current = plannerArea;
@@ -314,11 +340,13 @@ function MissionMap({
   plannerReferenceRef.current = plannerReferencePoint;
   plannerTransitRef.current = plannerTransit;
   plannerReferenceValueRef.current = plannerReference;
+  plannerReturnReferenceValueRef.current = plannerReturnReference;
 
   const fit = useCallback((
     map: Map,
     current: MissionPlanItem[],
     reference: MissionPlannerPoint | null,
+    returnReference: MissionPlannerPoint | null,
   ) => {
     const coordinates = current
       .filter((item) => item.command === 16)
@@ -334,6 +362,9 @@ function MissionMap({
       );
     if (reference) {
       coordinates.push([reference.longitude_deg, reference.latitude_deg]);
+    }
+    if (returnReference) {
+      coordinates.push([returnReference.longitude_deg, returnReference.latitude_deg]);
     }
 
     if (coordinates.length === 0) return;
@@ -461,7 +492,12 @@ function MissionMap({
           "circle-color": "#e8a93b",
         },
       });
-      fit(map, itemsRef.current, plannerReferenceValueRef.current);
+      fit(
+        map,
+        itemsRef.current,
+        plannerReferenceValueRef.current,
+        plannerReturnReferenceValueRef.current,
+      );
     });
 
     map.on("click", (event) => {
@@ -494,7 +530,7 @@ function MissionMap({
     (map.getSource(PLANNER_POINT_SOURCE) as GeoJSONSource | undefined)?.setData(plannerPoints);
     (map.getSource(PLANNER_REFERENCE_SOURCE) as GeoJSONSource | undefined)?.setData(plannerReferencePoint);
     (map.getSource(PLANNER_TRANSIT_SOURCE) as GeoJSONSource | undefined)?.setData(plannerTransit);
-    fit(map, items, plannerReference);
+    fit(map, items, plannerReference, plannerReturnReference);
   }, [
     fit,
     items,
@@ -502,6 +538,7 @@ function MissionMap({
     plannerPoints,
     plannerReference,
     plannerReferencePoint,
+    plannerReturnReference,
     plannerTransit,
     points,
     route,
@@ -729,12 +766,19 @@ export function MissionsView() {
     (vehicle) => vehicle.sn === selected?.aircraft_sn,
   );
   const plannerReference = plannerStartReference(selectedVehicle);
+  const plannerHome = plannerHomeReference(selectedVehicle);
   const plannerMaxFlightHeight =
     selectedVehicle?.telemetry?.limits?.max_flight_height_m;
   const plannerMaxFlightDistance =
     selectedVehicle?.telemetry?.limits?.max_flight_distance_m;
   const plannerDistanceLimitEnabled =
     selectedVehicle?.telemetry?.limits?.distance_limit_enabled === true;
+  const plannerDistanceWarningMargin =
+    plannerDistanceLimitEnabled &&
+    typeof plannerMaxFlightDistance === "number" &&
+    plannerMaxFlightDistance > 0
+      ? Math.max(25, plannerMaxFlightDistance * 0.05)
+      : null;
   const gridPlannerActive =
     plannerPreview !== null ||
     draftPlanning?.planner === "M3_CLOUD_GRID" ||
@@ -747,12 +791,21 @@ export function MissionsView() {
         plannerReference
       )
     : null;
-  const mapPlannerReturnToReference =
+  const mapPlannerHomeReference = gridPlannerActive
+    ? (
+        plannerPreview?.input.home_reference ??
+        planningHomeReference(draftPlanning) ??
+        plannerHome
+      )
+    : null;
+  const mapPlannerReturnReference =
     gridPlannerActive &&
     (
       plannerPreview?.input.finish_action ??
       draftPlanning?.parameters?.finish_action
-    ) === "RTH";
+    ) === "RTH"
+      ? (mapPlannerHomeReference ?? mapPlannerReference)
+      : null;
 
   const availablePlannerProfiles = useMemo(
     () => plannerProfiles.filter((profile) => profile.platform === plannerPlatform),
@@ -801,6 +854,7 @@ export function MissionsView() {
         finish_action: plannerFinishAction,
         optimize_direction: plannerOptimizeDirection,
         start_reference: plannerReference,
+        home_reference: plannerHome,
       });
       setPlannerPreview(preview);
       setPlannerDirection(preview.input.direction_deg);
@@ -1034,7 +1088,7 @@ export function MissionsView() {
                 plannerPolygon={plannerPoints}
                 plannerDrawing={plannerDrawing}
                 plannerReference={mapPlannerReference}
-                plannerReturnToReference={mapPlannerReturnToReference}
+                plannerReturnReference={mapPlannerReturnReference}
                 onPlannerClick={plannerDrawing
                   ? (point) => {
                       setPlannerPoints((current) => [...current, point]);
@@ -1407,8 +1461,8 @@ export function MissionsView() {
                 <small className="missionPlannerHint">
                   Enable drawing, click at least three polygon vertices on the map, then generate.
                   The preview replaces the editable draft only; Save plan creates the immutable
-                  revision. Auto direction minimizes planned travel and, when aircraft/home
-                  telemetry is available, chooses the nearer grid entry. Camera-specific planner
+                  revision. Auto direction minimizes planned travel and uses the current aircraft
+                  position for ingress while confirmed home telemetry anchors RTH/radius checks.
                   context is stored with that revision and preflight blocks a later M3E/M3T/M3M mismatch.
                 </small>
 
@@ -1430,7 +1484,10 @@ export function MissionsView() {
                     <span>Ingress <b>{plannerPreview.geometry.ingress_distance_m.toFixed(0)} m</b></span>
                     <span>Return <b>{plannerPreview.geometry.return_distance_m.toFixed(0)} m</b></span>
                     {plannerPreview.geometry.max_reference_distance_m !== null ? (
-                      <span>Max radius <b>{plannerPreview.geometry.max_reference_distance_m.toFixed(0)} m</b></span>
+                      <span>Max from start <b>{plannerPreview.geometry.max_reference_distance_m.toFixed(0)} m</b></span>
+                    ) : null}
+                    {plannerPreview.geometry.max_home_distance_m !== null ? (
+                      <span>Home radius <b>{plannerPreview.geometry.max_home_distance_m.toFixed(0)} m</b></span>
                     ) : null}
                     {plannerDistanceLimitEnabled &&
                     typeof plannerMaxFlightDistance === "number" ? (
@@ -1453,15 +1510,59 @@ export function MissionsView() {
                     Saving is allowed for revision/audit, but preflight will block handoff.
                   </div>
                 ) : null}
+                {plannerPreview && typeof plannerMaxFlightHeight === "number" &&
+                plannerPreview.geometry.altitude_m <= plannerMaxFlightHeight &&
+                plannerMaxFlightHeight - plannerPreview.geometry.altitude_m < 5 ? (
+                  <div className="missionPlannerWarning">
+                    Planned altitude {plannerPreview.geometry.altitude_m.toFixed(1)} m is within
+                    5 m of the aircraft max-flight-height setting of
+                    {" "}{plannerMaxFlightHeight.toFixed(0)} m.
+                  </div>
+                ) : null}
+                {plannerPreview &&
+                plannerDistanceLimitEnabled &&
+                (typeof plannerMaxFlightDistance !== "number" ||
+                  plannerMaxFlightDistance <= 0) ? (
+                  <div className="missionPlannerWarning">
+                    Aircraft reports an active flight-radius limit, but no usable maximum distance
+                    is available. Preflight will block handoff.
+                  </div>
+                ) : null}
                 {plannerPreview &&
                 plannerDistanceLimitEnabled &&
                 typeof plannerMaxFlightDistance === "number" &&
-                plannerPreview.geometry.max_reference_distance_m !== null &&
-                plannerPreview.geometry.max_reference_distance_m > plannerMaxFlightDistance ? (
+                plannerMaxFlightDistance > 0 &&
+                plannerPreview.geometry.max_home_distance_m === null ? (
                   <div className="missionPlannerWarning">
-                    Grid radius {plannerPreview.geometry.max_reference_distance_m.toFixed(0)} m
+                    Active flight-radius limit cannot be validated because no confirmed DJI home
+                    point is available. Rebuild the grid after home is recorded; preflight will
+                    block handoff until then.
+                  </div>
+                ) : null}
+                {plannerPreview &&
+                plannerDistanceLimitEnabled &&
+                typeof plannerMaxFlightDistance === "number" &&
+                plannerMaxFlightDistance > 0 &&
+                plannerPreview.geometry.max_home_distance_m !== null &&
+                plannerPreview.geometry.max_home_distance_m > plannerMaxFlightDistance ? (
+                  <div className="missionPlannerWarning">
+                    Home-point radius {plannerPreview.geometry.max_home_distance_m.toFixed(0)} m
                     exceeds the active max-flight-distance setting of
                     {" "}{plannerMaxFlightDistance.toFixed(0)} m. Preflight will block handoff.
+                  </div>
+                ) : null}
+                {plannerPreview &&
+                plannerDistanceLimitEnabled &&
+                typeof plannerMaxFlightDistance === "number" &&
+                plannerDistanceWarningMargin !== null &&
+                plannerPreview.geometry.max_home_distance_m !== null &&
+                plannerPreview.geometry.max_home_distance_m <= plannerMaxFlightDistance &&
+                plannerMaxFlightDistance - plannerPreview.geometry.max_home_distance_m <
+                  plannerDistanceWarningMargin ? (
+                  <div className="missionPlannerWarning">
+                    Home-point radius {plannerPreview.geometry.max_home_distance_m.toFixed(0)} m is
+                    within {plannerDistanceWarningMargin.toFixed(0)} m of the active radius limit
+                    of {plannerMaxFlightDistance.toFixed(0)} m.
                   </div>
                 ) : null}
                 {availablePlannerProfiles.find((profile) => profile.key === plannerProfile)?.note ? (

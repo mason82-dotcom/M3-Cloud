@@ -82,6 +82,7 @@ class GridPlannerPreviewRequest(BaseModel):
     finish_action: Literal["RTH", "LAND", "NONE"] = "RTH"
     optimize_direction: bool = False
     start_reference: GridPlannerPoint | None = None
+    home_reference: GridPlannerPoint | None = None
 
 
 def _base_payload(mission: Mission) -> dict[str, Any]:
@@ -238,6 +239,14 @@ async def mission_grid_preview(body: GridPlannerPreviewRequest) -> dict[str, Any
                     body.start_reference.longitude_deg,
                 )
                 if body.start_reference is not None
+                else None
+            ),
+            home_reference=(
+                (
+                    body.home_reference.latitude_deg,
+                    body.home_reference.longitude_deg,
+                )
+                if body.home_reference is not None
                 else None
             ),
         )

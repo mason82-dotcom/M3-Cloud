@@ -237,48 +237,77 @@ def evaluate_preflight(
                     details,
                 )
 
-        max_reference_distance_m = derived.get("max_reference_distance_m")
+        max_home_distance_m = derived.get("max_home_distance_m")
         max_flight_distance_m = limits.get("max_flight_distance_m")
         distance_limit_enabled = limits.get("distance_limit_enabled")
-        if (
-            distance_limit_enabled is True
-            and isinstance(max_reference_distance_m, (int, float))
-            and not isinstance(max_reference_distance_m, bool)
-            and isinstance(max_flight_distance_m, (int, float))
-            and not isinstance(max_flight_distance_m, bool)
-        ):
-            distance_margin_m = (
-                float(max_flight_distance_m) - float(max_reference_distance_m)
+        if distance_limit_enabled is True:
+            has_distance_limit = (
+                isinstance(max_flight_distance_m, (int, float))
+                and not isinstance(max_flight_distance_m, bool)
+                and float(max_flight_distance_m) > 0.0
             )
-            warning_margin_m = max(25.0, float(max_flight_distance_m) * 0.05)
-            details = {
-                "max_reference_distance_m": float(max_reference_distance_m),
-                "max_flight_distance_m": float(max_flight_distance_m),
-                "margin_m": distance_margin_m,
-                "warning_margin_m": warning_margin_m,
-                "distance_limit_enabled": True,
-            }
-            if distance_margin_m < 0:
+            has_home_radius = (
+                isinstance(max_home_distance_m, (int, float))
+                and not isinstance(max_home_distance_m, bool)
+                and float(max_home_distance_m) >= 0.0
+            )
+            if not has_distance_limit:
                 add(
                     "planner_distance_limit",
                     "BLOCK",
-                    "Grid extends beyond the active max-flight-distance setting.",
-                    details,
+                    "Aircraft reports an active distance limit but no usable max-flight-distance value.",
+                    {
+                        "max_flight_distance_m": max_flight_distance_m,
+                        "distance_limit_enabled": True,
+                    },
                 )
-            elif distance_margin_m < warning_margin_m:
+            elif not has_home_radius:
                 add(
                     "planner_distance_limit",
-                    "WARN",
-                    "Grid approaches the active max-flight-distance setting.",
-                    details,
+                    "BLOCK",
+                    "Active max-flight-distance setting cannot be validated because the grid has "
+                    "no confirmed home-point radius. Rebuild the grid after home is recorded.",
+                    {
+                        "max_home_distance_m": max_home_distance_m,
+                        "max_flight_distance_m": float(max_flight_distance_m),
+                        "distance_limit_enabled": True,
+                        "reference": "DJI_HOME_POINT",
+                    },
                 )
             else:
-                add(
-                    "planner_distance_limit",
-                    "PASS",
-                    "Grid remains inside the active max-flight-distance setting.",
-                    details,
+                distance_margin_m = (
+                    float(max_flight_distance_m) - float(max_home_distance_m)
                 )
+                warning_margin_m = max(25.0, float(max_flight_distance_m) * 0.05)
+                details = {
+                    "max_home_distance_m": float(max_home_distance_m),
+                    "max_flight_distance_m": float(max_flight_distance_m),
+                    "margin_m": distance_margin_m,
+                    "warning_margin_m": warning_margin_m,
+                    "distance_limit_enabled": True,
+                    "reference": "DJI_HOME_POINT",
+                }
+                if distance_margin_m < 0:
+                    add(
+                        "planner_distance_limit",
+                        "BLOCK",
+                        "Grid extends beyond the active home-point flight-radius setting.",
+                        details,
+                    )
+                elif distance_margin_m < warning_margin_m:
+                    add(
+                        "planner_distance_limit",
+                        "WARN",
+                        "Grid approaches the active home-point flight-radius setting.",
+                        details,
+                    )
+                else:
+                    add(
+                        "planner_distance_limit",
+                        "PASS",
+                        "Grid remains inside the active home-point flight-radius setting.",
+                        details,
+                    )
 
         if mission.preferred_executor != "DJI_NATIVE":
             add(

@@ -184,6 +184,57 @@ def test_reference_point_prefers_the_nearer_grid_entry_and_counts_rth_transit():
     assert referenced["geometry"]["nominal_total_time_s"] > referenced["geometry"]["nominal_route_time_s"]
 
 
+def test_home_radius_is_computed_from_home_not_start_reference():
+    polygon = rectangle(width_m=300.0, height_m=180.0)
+    baseline = build_grid_preview(
+        platform="M3E",
+        capture_profile="M3E_MAPPING",
+        polygon=polygon,
+        gsd_cm=2.0,
+        forward_overlap_pct=80.0,
+        side_overlap_pct=70.0,
+        direction_deg=90.0,
+        speed_mps=8.0,
+    )
+    waypoints = [item for item in baseline["plan"]["items"] if item["command"] == 16]
+    start_reference = (
+        waypoints[-1]["latitude_deg"],
+        waypoints[-1]["longitude_deg"],
+    )
+    home_reference = (49.0, 7.99)
+
+    preview = build_grid_preview(
+        platform="M3E",
+        capture_profile="M3E_MAPPING",
+        polygon=polygon,
+        gsd_cm=2.0,
+        forward_overlap_pct=80.0,
+        side_overlap_pct=70.0,
+        direction_deg=90.0,
+        speed_mps=8.0,
+        start_reference=start_reference,
+        home_reference=home_reference,
+    )
+
+    assert preview["geometry"]["max_reference_distance_m"] is not None
+    assert preview["geometry"]["max_home_distance_m"] is not None
+    assert preview["geometry"]["return_distance_m"] > 500.0
+    assert (
+        preview["geometry"]["max_home_distance_m"]
+        > preview["geometry"]["max_reference_distance_m"] + 500.0
+    )
+    assert preview["input"]["home_reference"] == {
+        "latitude_deg": home_reference[0],
+        "longitude_deg": home_reference[1],
+    }
+    planning = preview["plan"]["planning"]
+    assert planning["parameters"]["home_reference_latitude_deg"] == home_reference[0]
+    assert planning["parameters"]["home_reference_longitude_deg"] == home_reference[1]
+    assert planning["derived"]["max_home_distance_m"] == pytest.approx(
+        preview["geometry"]["max_home_distance_m"]
+    )
+
+
 def test_grid_finish_action_can_land_or_be_explicitly_disabled():
     land = build_grid_preview(
         platform="M3E",

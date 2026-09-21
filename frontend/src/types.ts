@@ -248,6 +248,7 @@ export interface MissionGridPreview {
     gimbal_pitch_deg: number;
     finish_action: "RTH" | "LAND" | "NONE";
     start_reference: MissionPlannerPoint | null;
+    home_reference: MissionPlannerPoint | null;
   };
   geometry: {
     area_m2: number;
@@ -265,6 +266,7 @@ export interface MissionGridPreview {
     return_distance_m: number;
     total_planned_distance_m: number;
     max_reference_distance_m: number | null;
+    max_home_distance_m: number | null;
     capture_distance_m: number;
     expected_photos_upper_bound: number;
     expected_media_assets_upper_bound: number;

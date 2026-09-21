@@ -378,25 +378,29 @@ def _candidate_headings(
 
 def _orient_for_reference(
     segments: list[tuple[tuple[float, float], tuple[float, float]]],
-    reference_xy: tuple[float, float] | None,
+    start_reference_xy: tuple[float, float] | None,
     *,
-    return_to_reference: bool,
+    return_reference_xy: tuple[float, float] | None,
 ) -> tuple[
     list[tuple[tuple[float, float], tuple[float, float]]],
     bool,
     float,
     float,
 ]:
-    if reference_xy is None:
+    if start_reference_xy is None and return_reference_xy is None:
         return segments, False, 0.0, 0.0
 
     def external_distance(
         candidate: list[tuple[tuple[float, float], tuple[float, float]]],
     ) -> tuple[float, float, float]:
-        ingress = _distance(reference_xy, candidate[0][0])
+        ingress = (
+            _distance(start_reference_xy, candidate[0][0])
+            if start_reference_xy is not None
+            else 0.0
+        )
         egress = (
-            _distance(candidate[-1][1], reference_xy)
-            if return_to_reference
+            _distance(candidate[-1][1], return_reference_xy)
+            if return_reference_xy is not None
             else 0.0
         )
         return ingress + egress, ingress, egress
@@ -405,8 +409,8 @@ def _orient_for_reference(
     reversed_segments = _reverse_segments(segments)
     reverse_total, reverse_ingress, reverse_egress = external_distance(reversed_segments)
 
-    # For RTH, reversing a route often leaves ingress+return unchanged. In that tie,
-    # prefer the traversal with the shorter ingress so the first survey leg begins nearer home.
+    # When two traversals have the same total external travel, prefer the shorter ingress so
+    # the first survey leg begins nearer the aircraft's current/start reference.
     if (
         reverse_total + 1e-9 < forward_total
         or (
@@ -426,8 +430,8 @@ def _select_scan_segments(
     line_spacing_m: float,
     footprint_cross_m: float,
     overshoot_m: float,
-    reference_xy: tuple[float, float] | None,
-    return_to_reference: bool,
+    start_reference_xy: tuple[float, float] | None,
+    return_reference_xy: tuple[float, float] | None,
     max_segments: int | None = None,
 ) -> tuple[
     list[tuple[tuple[float, float], tuple[float, float]]],
@@ -465,8 +469,8 @@ def _select_scan_segments(
         )
         oriented, reversed_for_reference, ingress_m, egress_m = _orient_for_reference(
             segments,
-            reference_xy,
-            return_to_reference=return_to_reference,
+            start_reference_xy,
+            return_reference_xy=return_reference_xy,
         )
         route_m = _route_distance(oriented)
         score = route_m + ingress_m + egress_m
@@ -517,6 +521,7 @@ def build_grid_preview(
     finish_action: str = "RTH",
     optimize_direction: bool = False,
     start_reference: tuple[float, float] | None = None,
+    home_reference: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     profile = planning_profile(platform, capture_profile)
     vertices = _normalise_polygon(polygon)
@@ -570,6 +575,18 @@ def build_grid_preview(
         reference_geo = (reference_lat, reference_lon)
         reference_xy = project(reference_lat, reference_lon)
 
+    home_reference_geo: tuple[float, float] | None = None
+    home_reference_xy: tuple[float, float] | None = None
+    if home_reference is not None:
+        home_lat = _finite(home_reference[0], "home reference latitude")
+        home_lon = _finite(home_reference[1], "home reference longitude")
+        if not -90.0 <= home_lat <= 90.0:
+            raise ValueError("Home reference latitude out of range")
+        if not -180.0 <= home_lon <= 180.0:
+            raise ValueError("Home reference longitude out of range")
+        home_reference_geo = (home_lat, home_lon)
+        home_reference_xy = project(home_lat, home_lon)
+
     horizontal_half_tan = math.tan(math.radians(profile.horizontal_fov_deg) / 2.0)
     vertical_half_tan = math.tan(math.radians(profile.vertical_fov_deg) / 2.0)
 
@@ -614,8 +631,10 @@ def build_grid_preview(
         line_spacing_m=desired_line_spacing_m,
         footprint_cross_m=footprint_width_m,
         overshoot_m=effective_overshoot_m,
-        reference_xy=reference_xy,
-        return_to_reference=finish == "RTH",
+        start_reference_xy=reference_xy,
+        return_reference_xy=(
+            home_reference_xy if home_reference_xy is not None else reference_xy
+        ) if finish == "RTH" else None,
         max_segments=max_capture_segments,
     )
 
@@ -735,6 +754,11 @@ def build_grid_preview(
         if reference_xy is not None and route_xy
         else None
     )
+    max_home_distance_m = (
+        max(_distance(home_reference_xy, point) for point in route_xy)
+        if home_reference_xy is not None and route_xy
+        else None
+    )
     # DJI's native fly-to-wayline transition is configured at 10 m/s. Never assume a faster
     # ingress/RTH contribution just because the survey legs themselves can run faster.
     transit_speed_mps = min(effective_speed_mps, 10.0)
@@ -776,6 +800,12 @@ def build_grid_preview(
             "start_reference_longitude_deg": (
                 reference_geo[1] if reference_geo is not None else None
             ),
+            "home_reference_latitude_deg": (
+                home_reference_geo[0] if home_reference_geo is not None else None
+            ),
+            "home_reference_longitude_deg": (
+                home_reference_geo[1] if home_reference_geo is not None else None
+            ),
         },
         "derived": {
             "altitude_m": altitude_m,
@@ -793,6 +823,7 @@ def build_grid_preview(
             "return_distance_m": return_distance_m,
             "total_planned_distance_m": total_planned_distance_m,
             "max_reference_distance_m": max_reference_distance_m,
+            "max_home_distance_m": max_home_distance_m,
         },
     }
     plan = normalize_plan(items, planning=planning_context)
@@ -843,6 +874,14 @@ def build_grid_preview(
                 if reference_geo is not None
                 else None
             ),
+            "home_reference": (
+                {
+                    "latitude_deg": home_reference_geo[0],
+                    "longitude_deg": home_reference_geo[1],
+                }
+                if home_reference_geo is not None
+                else None
+            ),
         },
         "geometry": {
             "area_m2": area_m2,
@@ -860,6 +899,7 @@ def build_grid_preview(
             "return_distance_m": return_distance_m,
             "total_planned_distance_m": total_planned_distance_m,
             "max_reference_distance_m": max_reference_distance_m,
+            "max_home_distance_m": max_home_distance_m,
             "capture_distance_m": active_distance_m,
             "expected_photos_upper_bound": expected_photos,
             "expected_media_assets_upper_bound": expected_media_assets_upper_bound,

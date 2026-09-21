@@ -383,7 +383,7 @@ def test_grid_preflight_honors_active_max_flight_distance():
                     "capture_profile": "M3E_MAPPING",
                     "planning_sensor": "RGB_WIDE_20MP",
                     "derived": {
-                        "max_reference_distance_m": distance_m,
+                        "max_home_distance_m": distance_m,
                     },
                 },
             },
@@ -417,6 +417,38 @@ def test_grid_preflight_honors_active_max_flight_distance():
     )
     assert near["checks_passed"] is True
     assert check["level"] == "WARN"
+
+    unverified_home = mission(
+        preferred_executor="DJI_NATIVE",
+        plan_json={
+            **mission().plan_json,
+            "planning": {
+                "schema_version": 1,
+                "planner": "M3_CLOUD_GRID",
+                "platform": "M3E",
+                "capture_profile": "M3E_MAPPING",
+                "planning_sensor": "RGB_WIDE_20MP",
+                "derived": {
+                    "max_reference_distance_m": 1000.0,
+                },
+            },
+        },
+    )
+    missing_home = evaluate_preflight(
+        unverified_home,
+        vehicle(
+            max_flight_distance_m=2000,
+            distance_limit_enabled=True,
+        ),
+    )
+    check = next(
+        item for item in missing_home["checks"]
+        if item["code"] == "planner_distance_limit"
+    )
+    assert missing_home["checks_passed"] is False
+    assert check["level"] == "BLOCK"
+    assert check["details"]["reference"] == "DJI_HOME_POINT"
+    assert "confirmed home-point radius" in check["message"]
 
     disabled = evaluate_preflight(
         planned(2500.0),

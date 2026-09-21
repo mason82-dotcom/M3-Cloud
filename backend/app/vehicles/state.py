@@ -177,6 +177,11 @@ def normalize_aircraft_state(telemetry: dict[str, Any] | None, *, source: str) -
             "landed_state": native.get("landed_state"),
             "positioning": positioning,
         })
+        home = deepcopy(result.get("home")) if isinstance(result.get("home"), dict) else None
+        if home is not None:
+            if "distance_m" not in home:
+                home["distance_m"] = result.get("distance_to_home_m")
+            common["home"] = home
         common["native"] = {
             "mavlink_custom_mode": native.get("custom_mode"),
             "mavlink_system_status": native.get("system_status"),
