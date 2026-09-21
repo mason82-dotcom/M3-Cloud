@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 
 from app.config import settings
 from app.dji.devices import DJIDeviceService
-from app.dji.events import DJIEventDispatcher
+from app.dji.events import DJIEventDispatcher, DJIEventStateStore
 from app.dji.gateway import DJIGatewayService
 from app.dji.mqtt import DJIMqttTransport
 from app.dji.payload_control import DJIPayloadControl
@@ -29,6 +29,7 @@ class DJIService:
     services: DJIServiceClient
     properties: DJIPropertyClient
     events: DJIEventDispatcher
+    event_state: DJIEventStateStore
     requests: DJIRequestDispatcher
     devices: DJIDeviceService
     gateways: DJIGatewayService
@@ -44,6 +45,8 @@ class DJIService:
         telemetry = TelemetryStore(redis, observer=telemetry_observer)
         transactions = DJITransactionManager()
         events = DJIEventDispatcher()
+        event_state = DJIEventStateStore(redis)
+        event_state.register(events)
         requests = DJIRequestDispatcher()
 
         transport: DJIMqttTransport
@@ -64,6 +67,7 @@ class DJIService:
             telemetry,
             transactions=transactions,
             events=events,
+            event_state=event_state,
             requests=requests,
             devices=devices,
             gateways=gateways,
