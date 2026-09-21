@@ -270,9 +270,10 @@ by default because ODM currently documents it as experimental.
 ### M3T radiometric processing
 
 M3-Cloud limits the thermal workflow to **DJI Mavic 3 Thermal (M3T)** datasets.
-It detects complete `*_W.JPG` + `*_T.JPG` capture pairs, freezes those exact
-`MediaAsset` records in a persistent `THERMOGRAM` processing job, and keeps
-the source folder read-only.
+It detects complete WIDE + THERMAL capture pairs, including DJI thermal
+`*_T.JPG` and radiometric `*_R.JPG` naming, freezes those exact `MediaAsset`
+records in a persistent `THERMOGRAM` processing job, and keeps the source
+folder read-only.
 
 The preferred processing path is the separate x86-64 `thermal-worker/`. It
 loads a locally supplied DJI Thermal SDK (the SDK binaries are not vendored in
