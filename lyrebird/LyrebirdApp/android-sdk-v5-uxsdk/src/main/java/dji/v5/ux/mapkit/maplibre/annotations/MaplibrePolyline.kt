@@ -6,8 +6,8 @@ import dji.v5.ux.mapkit.core.models.annotations.DJIPolyline
 import dji.v5.ux.mapkit.core.models.annotations.DJIPolylineOptions
 import dji.v5.ux.mapkit.core.utils.DJIMapkitLog
 import dji.v5.ux.mapkit.maplibre.utils.*
-import com.mapbox.geojson.LineString
-import com.mapbox.geojson.Point
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.LineLayer
