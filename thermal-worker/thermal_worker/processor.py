@@ -260,6 +260,7 @@ def process_handoff(
                 "dtype": "float32",
                 "unit": "degree_Celsius",
                 "measurement_mode": decoded.measurement_mode,
+                "measurement_abi": decoded.measurement_abi,
                 "measurement_error_code": decoded.measurement_error_code,
                 "measurement_params": (
                     decoded.measurement_params.as_dict()
@@ -298,6 +299,7 @@ def process_handoff(
                 "height": decoded.height,
                 "sdk_label": decoded.sdk_label,
                 "measurement_mode": decoded.measurement_mode,
+                "measurement_abi": decoded.measurement_abi,
             }
         )
 
