@@ -137,6 +137,30 @@ def _parse_exif_datetime(
     return parsed.replace(tzinfo=zone).astimezone(timezone.utc), "EXIF_DATETIME_ORIGINAL_LOCAL"
 
 
+def _parse_dji_utc_at_exposure(
+    value: str | None,
+) -> tuple[datetime | None, str | None]:
+    if not value:
+        return None, None
+    text = value.strip()
+    if re.match(r"^\d{4}:\d{2}:\d{2}[ T]", text):
+        text = (
+            f"{text[:4]}-{text[5:7]}-{text[8:10]}"
+            f"T{text[11:]}"
+        )
+    elif " " in text and "T" not in text:
+        text = text.replace(" ", "T", 1)
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None, None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    return parsed, "XMP_DJI_UTC_AT_EXPOSURE"
+
+
 def _parse_xmp_datetime(
     value: str | None,
     *,
@@ -291,13 +315,22 @@ def extract_media_metadata(
         exif.get(37521) or exif.get(37520),
         default_timezone=default_timezone,
     )
+    dji_utc_time, dji_utc_source = _parse_dji_utc_at_exposure(
+        _xmp_value(xmp, "UTCAtExposure"),
+    )
     xmp_time, xmp_source = _parse_xmp_datetime(
         _xmp_value(xmp, "CreateDate"),
         default_timezone=default_timezone,
     )
-    capture_time = exif_time or xmp_time or fallback_capture_time_utc
+    capture_time = (
+        dji_utc_time
+        or exif_time
+        or xmp_time
+        or fallback_capture_time_utc
+    )
     capture_source = (
-        exif_source
+        dji_utc_source
+        or exif_source
         or xmp_source
         or ("FILENAME" if fallback_capture_time_utc is not None else "NONE")
     )
