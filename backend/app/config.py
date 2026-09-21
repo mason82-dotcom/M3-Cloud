@@ -227,6 +227,35 @@ class Settings(BaseSettings):
         validation_alias="M3CLOUD_PROCESSING_IMPORT_HANDOFF_ROOT",
     )
 
+    dronedb_enabled: bool = Field(
+        default=False,
+        validation_alias="M3CLOUD_DRONEDB_ENABLED",
+    )
+    dronedb_url: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DRONEDB_URL",
+    )
+    dronedb_public_url: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DRONEDB_PUBLIC_URL",
+    )
+    dronedb_username: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DRONEDB_USERNAME",
+    )
+    dronedb_password: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DRONEDB_PASSWORD",
+    )
+    dronedb_org: str = Field(
+        default="m3cloud",
+        validation_alias="M3CLOUD_DRONEDB_ORG",
+    )
+    dronedb_timeout_seconds: float = Field(
+        default=300.0,
+        validation_alias="M3CLOUD_DRONEDB_TIMEOUT_SECONDS",
+    )
+
     webodm_enabled: bool = Field(
         default=False,
         validation_alias="M3CLOUD_WEBODM_ENABLED",
