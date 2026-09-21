@@ -175,18 +175,20 @@ def _normalise_polygon(
 
 def _local_projection(
     points: list[tuple[float, float]],
-) -> tuple[list[tuple[float, float]], Any]:
+) -> tuple[list[tuple[float, float]], Any, Any]:
     lat0 = sum(lat for lat, _ in points) / len(points)
     lon0 = sum(lon for _, lon in points) / len(points)
     cos_lat0 = math.cos(math.radians(lat0))
     if abs(cos_lat0) < 1e-8:
         raise ValueError("Survey polygon is too close to a geographic pole")
 
-    projected: list[tuple[float, float]] = []
-    for lat, lon in points:
-        x = EARTH_RADIUS_M * cos_lat0 * math.radians(lon - lon0)
-        y = EARTH_RADIUS_M * math.radians(lat - lat0)
-        projected.append((x, y))
+    def project(lat: float, lon: float) -> tuple[float, float]:
+        return (
+            EARTH_RADIUS_M * cos_lat0 * math.radians(lon - lon0),
+            EARTH_RADIUS_M * math.radians(lat - lat0),
+        )
+
+    projected = [project(lat, lon) for lat, lon in points]
 
     def inverse(x: float, y: float) -> tuple[float, float]:
         return (
@@ -194,7 +196,7 @@ def _local_projection(
             lon0 + math.degrees(x / (EARTH_RADIUS_M * cos_lat0)),
         )
 
-    return projected, inverse
+    return projected, project, inverse
 
 
 def _cross(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> float:
@@ -326,6 +328,162 @@ def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(b[0] - a[0], b[1] - a[1])
 
 
+def _route_points(
+    segments: list[tuple[tuple[float, float], tuple[float, float]]],
+) -> list[tuple[float, float]]:
+    return [point for segment in segments for point in segment]
+
+
+def _route_distance(
+    segments: list[tuple[tuple[float, float], tuple[float, float]]],
+) -> float:
+    points = _route_points(segments)
+    return sum(
+        _distance(current, following)
+        for current, following in zip(points, points[1:])
+    )
+
+
+def _reverse_segments(
+    segments: list[tuple[tuple[float, float], tuple[float, float]]],
+) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    return [(end, start) for start, end in reversed(segments)]
+
+
+def _candidate_headings(
+    polygon_xy: list[tuple[float, float]],
+    requested_direction_deg: float,
+) -> list[float]:
+    # A coarse global sweep prevents pathological edge-only choices on irregular polygons.
+    # Exact polygon-edge bearings are added so rectangles and parcel boundaries can align exactly.
+    headings = {float(value) for value in range(0, 180, 5)}
+    headings.add(round(requested_direction_deg % 180.0, 6))
+    closed = polygon_xy + [polygon_xy[0]]
+    for current, following in zip(closed, closed[1:]):
+        dx = following[0] - current[0]
+        dy = following[1] - current[1]
+        if math.hypot(dx, dy) < MIN_SEGMENT_M:
+            continue
+        heading = math.degrees(math.atan2(dx, dy)) % 180.0
+        headings.add(round(heading, 6))
+    return sorted(headings)
+
+
+def _orient_for_reference(
+    segments: list[tuple[tuple[float, float], tuple[float, float]]],
+    reference_xy: tuple[float, float] | None,
+    *,
+    return_to_reference: bool,
+) -> tuple[
+    list[tuple[tuple[float, float], tuple[float, float]]],
+    bool,
+    float,
+    float,
+]:
+    if reference_xy is None:
+        return segments, False, 0.0, 0.0
+
+    def external_distance(
+        candidate: list[tuple[tuple[float, float], tuple[float, float]]],
+    ) -> tuple[float, float, float]:
+        ingress = _distance(reference_xy, candidate[0][0])
+        egress = (
+            _distance(candidate[-1][1], reference_xy)
+            if return_to_reference
+            else 0.0
+        )
+        return ingress + egress, ingress, egress
+
+    forward_total, forward_ingress, forward_egress = external_distance(segments)
+    reversed_segments = _reverse_segments(segments)
+    reverse_total, reverse_ingress, reverse_egress = external_distance(reversed_segments)
+
+    if reverse_total + 1e-9 < forward_total:
+        return reversed_segments, True, reverse_ingress, reverse_egress
+    return segments, False, forward_ingress, forward_egress
+
+
+def _select_scan_segments(
+    polygon_xy: list[tuple[float, float]],
+    *,
+    requested_direction_deg: float,
+    optimize_direction: bool,
+    line_spacing_m: float,
+    footprint_cross_m: float,
+    overshoot_m: float,
+    reference_xy: tuple[float, float] | None,
+    return_to_reference: bool,
+) -> tuple[
+    list[tuple[tuple[float, float], tuple[float, float]]],
+    int,
+    float,
+    float,
+    bool,
+    float,
+    float,
+    int,
+]:
+    headings = (
+        _candidate_headings(polygon_xy, requested_direction_deg)
+        if optimize_direction
+        else [requested_direction_deg]
+    )
+    best: tuple[
+        tuple[float, int, float],
+        list[tuple[tuple[float, float], tuple[float, float]]],
+        int,
+        float,
+        float,
+        bool,
+        float,
+        float,
+    ] | None = None
+
+    for heading in headings:
+        segments, scan_line_count, actual_spacing = _scan_segments(
+            polygon_xy,
+            heading_deg=heading,
+            line_spacing_m=line_spacing_m,
+            footprint_cross_m=footprint_cross_m,
+            overshoot_m=overshoot_m,
+        )
+        oriented, reversed_for_reference, ingress_m, egress_m = _orient_for_reference(
+            segments,
+            reference_xy,
+            return_to_reference=return_to_reference,
+        )
+        route_m = _route_distance(oriented)
+        score = route_m + ingress_m + egress_m
+        # Prefer shorter total travel, then fewer capture segments, then the lower heading
+        # for deterministic output when geometrically equivalent candidates tie.
+        rank = (score, len(oriented), heading)
+        if best is None or rank < best[0]:
+            best = (
+                rank,
+                oriented,
+                scan_line_count,
+                actual_spacing,
+                heading,
+                reversed_for_reference,
+                ingress_m,
+                egress_m,
+            )
+
+    if best is None:
+        raise ValueError("Survey optimizer produced no flyable route")
+    _, segments, line_count, spacing, heading, reversed_route, ingress_m, egress_m = best
+    return (
+        segments,
+        line_count,
+        spacing,
+        heading,
+        reversed_route,
+        ingress_m,
+        egress_m,
+        len(headings),
+    )
+
+
 def build_grid_preview(
     *,
     platform: str,
@@ -339,10 +497,12 @@ def build_grid_preview(
     gimbal_pitch_deg: float = -90.0,
     overshoot_m: float | None = None,
     finish_action: str = "RTH",
+    optimize_direction: bool = False,
+    start_reference: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     profile = planning_profile(platform, capture_profile)
     vertices = _normalise_polygon(polygon)
-    polygon_xy, inverse = _local_projection(vertices)
+    polygon_xy, project, inverse = _local_projection(vertices)
     _validate_simple_polygon(polygon_xy)
 
     area_m2 = _polygon_area(polygon_xy)
@@ -380,6 +540,18 @@ def build_grid_preview(
     if finish not in {"RTH", "LAND", "NONE"}:
         raise ValueError("Finish action must be one of RTH, LAND, or NONE")
 
+    reference_geo: tuple[float, float] | None = None
+    reference_xy: tuple[float, float] | None = None
+    if start_reference is not None:
+        reference_lat = _finite(start_reference[0], "start reference latitude")
+        reference_lon = _finite(start_reference[1], "start reference longitude")
+        if not -90.0 <= reference_lat <= 90.0:
+            raise ValueError("Start reference latitude out of range")
+        if not -180.0 <= reference_lon <= 180.0:
+            raise ValueError("Start reference longitude out of range")
+        reference_geo = (reference_lat, reference_lon)
+        reference_xy = project(reference_lat, reference_lon)
+
     horizontal_half_tan = math.tan(math.radians(profile.horizontal_fov_deg) / 2.0)
     vertical_half_tan = math.tan(math.radians(profile.vertical_fov_deg) / 2.0)
 
@@ -402,12 +574,24 @@ def build_grid_preview(
         if effective_overshoot_m < 0.0:
             raise ValueError("Overshoot cannot be negative")
 
-    segments_xy, scan_line_count, actual_line_spacing_m = _scan_segments(
+    (
+        segments_xy,
+        scan_line_count,
+        actual_line_spacing_m,
+        effective_direction_deg,
+        reversed_for_reference,
+        ingress_distance_m,
+        return_distance_m,
+        optimization_candidate_count,
+    ) = _select_scan_segments(
         polygon_xy,
-        heading_deg=direction,
+        requested_direction_deg=direction,
+        optimize_direction=bool(optimize_direction),
         line_spacing_m=desired_line_spacing_m,
         footprint_cross_m=footprint_width_m,
         overshoot_m=effective_overshoot_m,
+        reference_xy=reference_xy,
+        return_to_reference=finish == "RTH",
     )
 
     items: list[dict[str, Any]] = []
@@ -518,7 +702,11 @@ def build_grid_preview(
         _distance(current, following)
         for current, following in zip(route_xy, route_xy[1:])
     )
+    total_planned_distance_m = (
+        route_distance_m + ingress_distance_m + return_distance_m
+    )
     nominal_route_time_s = route_distance_m / effective_speed_mps
+    nominal_total_time_s = total_planned_distance_m / effective_speed_mps
     nominal_capture_time_s = active_distance_m / effective_speed_mps
     expected_media_assets_upper_bound = (
         expected_photos * profile.stored_assets_per_exposure
@@ -539,11 +727,19 @@ def build_grid_preview(
             "gsd_cm": gsd_cm,
             "forward_overlap_pct": forward_overlap_pct,
             "side_overlap_pct": side_overlap_pct,
-            "direction_deg": direction,
+            "direction_deg": effective_direction_deg,
+            "requested_direction_deg": direction,
+            "optimize_direction": bool(optimize_direction),
             "requested_speed_mps": requested_speed,
             "gimbal_pitch_deg": pitch,
             "overshoot_m": effective_overshoot_m,
             "finish_action": finish,
+            "start_reference_latitude_deg": (
+                reference_geo[0] if reference_geo is not None else None
+            ),
+            "start_reference_longitude_deg": (
+                reference_geo[1] if reference_geo is not None else None
+            ),
         },
         "derived": {
             "altitude_m": altitude_m,
@@ -554,6 +750,10 @@ def build_grid_preview(
             "expected_photos_upper_bound": expected_photos,
             "expected_media_assets_upper_bound": expected_media_assets_upper_bound,
             "nominal_route_time_s": nominal_route_time_s,
+            "nominal_total_time_s": nominal_total_time_s,
+            "ingress_distance_m": ingress_distance_m,
+            "return_distance_m": return_distance_m,
+            "total_planned_distance_m": total_planned_distance_m,
         },
     }
     plan = normalize_plan(items, planning=planning_context)
@@ -590,10 +790,20 @@ def build_grid_preview(
             "gsd_cm": gsd_cm,
             "forward_overlap_pct": forward_overlap_pct,
             "side_overlap_pct": side_overlap_pct,
-            "direction_deg": direction,
+            "direction_deg": effective_direction_deg,
+            "requested_direction_deg": direction,
+            "optimize_direction": bool(optimize_direction),
             "requested_speed_mps": requested_speed,
             "gimbal_pitch_deg": pitch,
             "finish_action": finish,
+            "start_reference": (
+                {
+                    "latitude_deg": reference_geo[0],
+                    "longitude_deg": reference_geo[1],
+                }
+                if reference_geo is not None
+                else None
+            ),
         },
         "geometry": {
             "area_m2": area_m2,
@@ -607,12 +817,25 @@ def build_grid_preview(
             "scan_line_count": scan_line_count,
             "capture_segment_count": len(segments_xy),
             "route_distance_m": route_distance_m,
+            "ingress_distance_m": ingress_distance_m,
+            "return_distance_m": return_distance_m,
+            "total_planned_distance_m": total_planned_distance_m,
             "capture_distance_m": active_distance_m,
             "expected_photos_upper_bound": expected_photos,
             "expected_media_assets_upper_bound": expected_media_assets_upper_bound,
             "stored_assets_per_exposure": profile.stored_assets_per_exposure,
             "nominal_route_time_s": nominal_route_time_s,
+            "nominal_total_time_s": nominal_total_time_s,
             "nominal_capture_time_s": nominal_capture_time_s,
+        },
+        "optimization": {
+            "enabled": bool(optimize_direction),
+            "candidate_count": optimization_candidate_count,
+            "requested_direction_deg": direction,
+            "selected_direction_deg": effective_direction_deg,
+            "reversed_for_reference": reversed_for_reference,
+            "reference_used": reference_geo is not None,
+            "score_distance_m": total_planned_distance_m,
         },
         "cadence": {
             "minimum_interval_s": profile.min_interval_s,
