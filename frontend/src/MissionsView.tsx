@@ -478,9 +478,51 @@ export function MissionsView() {
         ? selected.plan.items.map((item) => ({ ...item, frame: item.frame ?? 6 }))
         : [],
     );
-    setDraftPlanning(selected?.plan.planning ?? null);
+    const savedPlanning = selected?.plan.planning ?? null;
+    setDraftPlanning(savedPlanning);
     setPlannerPreview(null);
     setPlannerDrawing(false);
+
+    if (savedPlanning?.planner === "M3_CLOUD_GRID") {
+      const savedPlatform = savedPlanning.platform?.toUpperCase();
+      if (savedPlatform === "M3E" || savedPlatform === "M3T" || savedPlatform === "M3M") {
+        setPlannerPlatform(savedPlatform);
+      }
+      setPlannerProfile(savedPlanning.capture_profile ?? "");
+      setPlannerPoints(
+        Array.isArray(savedPlanning.polygon)
+          ? savedPlanning.polygon.filter(
+              (point) =>
+                Number.isFinite(point.latitude_deg) &&
+                Number.isFinite(point.longitude_deg),
+            )
+          : [],
+      );
+
+      const parameters = savedPlanning.parameters ?? {};
+      const numberParameter = (key: string, fallback: number) => {
+        const value = parameters[key];
+        return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+      };
+      setPlannerGsd(numberParameter("gsd_cm", 2));
+      setPlannerForwardOverlap(numberParameter("forward_overlap_pct", 80));
+      setPlannerSideOverlap(numberParameter("side_overlap_pct", 70));
+      setPlannerDirection(numberParameter("direction_deg", 0));
+      setPlannerSpeed(numberParameter("requested_speed_mps", 8));
+      const finishAction = parameters.finish_action;
+      setPlannerFinishAction(
+        finishAction === "LAND" || finishAction === "NONE" ? finishAction : "RTH",
+      );
+    } else {
+      setPlannerPoints([]);
+      setPlannerGsd(2);
+      setPlannerForwardOverlap(80);
+      setPlannerSideOverlap(70);
+      setPlannerDirection(0);
+      setPlannerSpeed(8);
+      setPlannerFinishAction("RTH");
+    }
+
     if (!selectedId) {
       setRevisions([]);
       setDeployments([]);
@@ -533,9 +575,15 @@ export function MissionsView() {
   );
 
   useEffect(() => {
+    if (selected?.plan.planning?.planner === "M3_CLOUD_GRID") return;
     const assigned = vehiclePlatform(selectedVehicle);
     if (assigned) setPlannerPlatform(assigned);
-  }, [selectedVehicle?.sn, selectedVehicle?.model, selectedVehicle?.telemetry?.payload?.platform]);
+  }, [
+    selected?.plan.planning?.planner,
+    selectedVehicle?.sn,
+    selectedVehicle?.model,
+    selectedVehicle?.telemetry?.payload?.platform,
+  ]);
 
   useEffect(() => {
     if (!availablePlannerProfiles.some((profile) => profile.key === plannerProfile)) {
