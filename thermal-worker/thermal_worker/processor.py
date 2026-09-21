@@ -563,8 +563,14 @@ def _registration_audit(
             for value in flight_attitude_delta_deg.values()
         ),
         "dji_altitude_pair": any(
-            value is not None
-            for value in altitude_delta_m.values()
+            altitude_delta_m[field] is not None
+            for field in (
+                "absolute_ellipsoid_m",
+                "relative_takeoff_m",
+            )
+        ),
+        "gps_altitude_pair": (
+            altitude_delta_m["gps_altitude_m"] is not None
         ),
         "wide_image_dimensions": (
             wide_image["width"] is not None
@@ -1381,6 +1387,7 @@ def process_handoff(
             "gimbal_attitude_pair",
             "flight_attitude_pair",
             "dji_altitude_pair",
+            "gps_altitude_pair",
             "wide_image_dimensions",
             "thermal_image_dimensions",
             "wide_dji_calibration",
