@@ -24,7 +24,7 @@ class DJIPayloadValidationError(ValueError):
     pass
 
 
-def _number(value: Any, *, name: str) -> float:
+def finite_number(value: Any, *, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise DJIPayloadValidationError(f"{name} must be numeric")
     number = float(value)
@@ -46,7 +46,7 @@ def bounded_number(
     minimum: float,
     maximum: float,
 ) -> float:
-    number = _number(value, name=name)
+    number = finite_number(value, name=name)
     if not minimum <= number <= maximum:
         raise DJIPayloadValidationError(
             f"{name} must be between {minimum} and {maximum}"
