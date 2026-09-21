@@ -92,6 +92,30 @@ class DroneDBClient:
         payload = response.json()
         return dict(payload) if isinstance(payload, dict) else {}
 
+    def _existing_object(
+        self,
+        org_slug: str,
+        dataset_slug: str,
+        remote_path: str,
+    ) -> dict[str, Any] | None:
+        response = self.client.get(
+            self._url(f"orgs/{org_slug}/ds/{dataset_slug}/obj/list"),
+            params={"path": remote_path},
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, list):
+            return None
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path", item.get("Path"))
+            if path == remote_path:
+                return dict(item)
+        return None
+
     def upload_file(
         self,
         org_slug: str,
@@ -99,6 +123,7 @@ class DroneDBClient:
         *,
         source: Path,
         remote_path: str,
+        allow_existing: bool = True,
     ) -> dict[str, Any]:
         mime = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
         with source.open("rb") as handle:
@@ -107,6 +132,12 @@ class DroneDBClient:
                 data={"path": remote_path},
                 files={"file": (source.name, handle, mime)},
             )
+        if response.status_code == 409 and allow_existing:
+            existing = self._existing_object(org_slug, dataset_slug, remote_path)
+            if existing is not None:
+                size = existing.get("size", existing.get("Size"))
+                if size is None or int(size) == source.stat().st_size:
+                    return existing
         response.raise_for_status()
         payload = response.json()
         return dict(payload) if isinstance(payload, dict) else {}
@@ -120,12 +151,19 @@ class DroneDBClient:
         remote_path: str,
         filename: str,
         content_type: str,
+        allow_existing: bool = True,
     ) -> dict[str, Any]:
         response = self.client.post(
             self._url(f"orgs/{org_slug}/ds/{dataset_slug}/obj"),
             data={"path": remote_path},
             files={"file": (filename, data, content_type)},
         )
+        if response.status_code == 409 and allow_existing:
+            existing = self._existing_object(org_slug, dataset_slug, remote_path)
+            if existing is not None:
+                size = existing.get("size", existing.get("Size"))
+                if size is None or int(size) == len(data):
+                    return existing
         response.raise_for_status()
         payload = response.json()
         return dict(payload) if isinstance(payload, dict) else {}
