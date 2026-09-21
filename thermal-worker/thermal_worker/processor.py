@@ -233,6 +233,18 @@ def _camera_model_evidence(
             model = exif.get("Model")
             if isinstance(model, str) and model.strip():
                 values.append(model.strip())
+        xmp = raw.get("xmp")
+        if isinstance(xmp, Mapping):
+            for namespace_values in xmp.values():
+                if not isinstance(namespace_values, Mapping):
+                    continue
+                for key, value in namespace_values.items():
+                    if (
+                        str(key).casefold() == "dronemodel"
+                        and isinstance(value, str)
+                        and value.strip()
+                    ):
+                        values.append(value.strip())
 
     deduped: list[str] = []
     seen: set[str] = set()
@@ -314,10 +326,10 @@ def _m3t_source_identity(
         "wide": wide,
         "thermal": thermal,
         "note": (
-            "Known conflicting DJI model metadata blocks the M3T-only thermal "
-            "workflow. Missing or unrecognized model strings remain "
-            "UNCONFIRMED rather than being guessed from filenames or image "
-            "dimensions."
+            "Known conflicting DJI camera/drone model metadata blocks the "
+            "M3T-only thermal workflow. Missing or unrecognized model strings "
+            "remain UNCONFIRMED rather than being guessed from filenames or "
+            "image dimensions."
         ),
     }
 
