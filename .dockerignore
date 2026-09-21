@@ -1,0 +1,7 @@
+# The repository root is currently used only as the frontend Docker build context.
+# Keep unrelated source trees, local data, Git metadata, and secrets out of the context.
+*
+!frontend/
+!frontend/**
+!nginx/
+!nginx/default.conf
