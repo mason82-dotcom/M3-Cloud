@@ -6,22 +6,22 @@ import dji.v5.ux.mapkit.core.models.annotations.DJICircle
 
 import dji.v5.ux.mapkit.core.utils.DJIMapkitLog
 import dji.v5.ux.mapkit.maplibre.utils.*
-import com.mapbox.geojson.LineString
-import com.mapbox.geojson.Point
-import com.mapbox.geojson.Polygon
-import com.mapbox.mapboxsdk.maps.MapboxMap
-import com.mapbox.mapboxsdk.maps.Style
-import com.mapbox.mapboxsdk.style.layers.FillLayer
-import com.mapbox.mapboxsdk.style.layers.LineLayer
-import com.mapbox.mapboxsdk.style.layers.Property
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory
-import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
-import com.mapbox.turf.TurfConstants
-import com.mapbox.turf.TurfMeta
-import com.mapbox.turf.TurfTransformation
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
+import org.maplibre.geojson.Polygon
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.FillLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.turf.TurfConstants
+import org.maplibre.turf.TurfMeta
+import org.maplibre.turf.TurfTransformation
 import dji.v5.ux.mapkit.core.models.annotations.DJICircleOptions
 
-class MaplibreCircle(private val mapboxMap: MapboxMap,
+class MaplibreCircle(private val mapboxMap: MapLibreMap,
                      private val options: DJICircleOptions,
                      private val onRemoveCircle: (zindex: Int, circle: MaplibreCircle) -> Boolean,
                      private val onAddCircle: (zindex: Int, polyline: MaplibreCircle) -> Unit

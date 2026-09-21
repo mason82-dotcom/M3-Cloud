@@ -221,10 +221,10 @@ dependencies {
     implementation 'org.java-websocket:Java-WebSocket:1.5.3'
 
     // WebRTC for drone video streaming (Stream's maintained fork)
-    implementation 'io.getstream:stream-webrtc-android:1.1.1'
+    implementation 'io.getstream:stream-webrtc-android:1.3.10'
 
     // On-device edge inference for exported YOLO/TFLite models
-    implementation 'org.tensorflow:tensorflow-lite:2.16.1'
+    implementation 'com.google.ai.edge.litert:litert:1.4.2'
 
     testImplementation rootProject.deps.junit4
     testImplementation rootProject.deps.json

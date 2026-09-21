@@ -3,9 +3,9 @@ package dji.v5.ux.mapkit.maplibre.provider;
 import android.content.Context;
 import android.view.Gravity;
 
-import com.mapbox.mapboxsdk.Mapbox;
-import com.mapbox.mapboxsdk.WellKnownTileServer;
-import com.mapbox.mapboxsdk.maps.MapboxMapOptions;
+import org.maplibre.android.MapLibre;
+import org.maplibre.android.WellKnownTileServer;
+import org.maplibre.android.maps.MapLibreMapOptions;
 
 import androidx.annotation.NonNull;
 import dji.v5.ux.mapkit.core.Mapkit;
@@ -33,8 +33,8 @@ public class MaplibreProvider extends MapProvider {
         final int mapType = mapkitOptions.getMapType();
         Mapkit.mapType(mapType);
         Mapkit.mapProvider(providerType);
-        Mapbox.getInstance(context.getApplicationContext(), Mapkit.getMapboxAccessToken(), WellKnownTileServer.Mapbox);
-        MapboxMapOptions options = MapboxMapOptions.createFromAttributes(context);
+        MapLibre.getInstance(context.getApplicationContext(), Mapkit.getMapboxAccessToken(), WellKnownTileServer.MapLibre);
+        MapLibreMapOptions options = MapLibreMapOptions.createFromAttributes(context);
         options.textureMode(true);
         options.attributionGravity(Gravity.BOTTOM | Gravity.RIGHT);
         options.logoGravity(Gravity.BOTTOM | Gravity.RIGHT);

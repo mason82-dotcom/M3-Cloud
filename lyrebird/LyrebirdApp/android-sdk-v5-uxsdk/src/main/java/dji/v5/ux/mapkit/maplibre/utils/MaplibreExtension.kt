@@ -3,9 +3,9 @@
 package dji.v5.ux.mapkit.maplibre.utils
 
 import dji.v5.ux.mapkit.core.utils.DJIMapkitLog
-import com.mapbox.mapboxsdk.maps.Style
-import com.mapbox.mapboxsdk.style.layers.Layer
-import com.mapbox.mapboxsdk.style.sources.Source
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.Layer
+import org.maplibre.android.style.sources.Source
 
 private const val TAG = "MapboxExtension"
 

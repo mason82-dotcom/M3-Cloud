@@ -5,13 +5,13 @@ import dji.v5.ux.mapkit.core.Mapkit
 import dji.v5.ux.mapkit.core.maps.DJIMap
 import dji.v5.ux.mapkit.core.maps.DJIMapView
 import dji.v5.ux.mapkit.core.maps.DJIMapViewInternal
-import com.mapbox.mapboxsdk.maps.MapView
-import com.mapbox.mapboxsdk.maps.MapboxMapOptions
-import com.mapbox.mapboxsdk.maps.Style
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.MapLibreMapOptions
+import org.maplibre.android.maps.Style
 
 class MaplibreMapView @JvmOverloads constructor(
         context: Context,
-        options: MapboxMapOptions = MapboxMapOptions.createFromAttributes(context)
+        options: MapLibreMapOptions = MapLibreMapOptions.createFromAttributes(context)
 ) : MapView(context, options), DJIMapViewInternal {
 
     override fun getDJIMapAsync(callback: DJIMapView.OnDJIMapReadyCallback?) {

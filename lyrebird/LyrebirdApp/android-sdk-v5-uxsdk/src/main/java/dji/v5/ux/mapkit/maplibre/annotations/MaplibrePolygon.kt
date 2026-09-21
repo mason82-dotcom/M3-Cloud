@@ -5,18 +5,18 @@ import dji.v5.ux.mapkit.core.models.annotations.DJIPolygon
 import dji.v5.ux.mapkit.core.models.annotations.DJIPolygonOptions
 import dji.v5.ux.mapkit.core.utils.DJIMapkitLog
 import dji.v5.ux.mapkit.maplibre.utils.*
-import com.mapbox.geojson.LineString
-import com.mapbox.geojson.Point
-import com.mapbox.geojson.Polygon
-import com.mapbox.mapboxsdk.maps.MapboxMap
-import com.mapbox.mapboxsdk.maps.Style
-import com.mapbox.mapboxsdk.style.layers.FillLayer
-import com.mapbox.mapboxsdk.style.layers.LineLayer
-import com.mapbox.mapboxsdk.style.layers.Property
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory
-import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
+import org.maplibre.geojson.Polygon
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.FillLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
 
-class MaplibrePolygon(private val mapboxMap: MapboxMap,
+class MaplibrePolygon(private val mapboxMap: MapLibreMap,
                       private val options: DJIPolygonOptions,
                       private val onRemovePolygon: (zindex: Int, polygon: MaplibrePolygon) -> Boolean
 ) : DJIPolygon {
