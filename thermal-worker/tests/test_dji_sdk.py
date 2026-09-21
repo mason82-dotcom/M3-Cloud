@@ -75,6 +75,7 @@ def _fake_sdk(*, measure_code=0):
 
     sdk = object.__new__(DjiThermalSdk)
     sdk._measurement_abi = "AMBIENT_V2"
+    sdk._api_version_abi = "HANDLE_V2"
     sdk.sdk_label = "fake-tsdk"
     destroyed = []
 
@@ -85,7 +86,7 @@ def _fake_sdk(*, measure_code=0):
         ).contents.value = 0x1234
         return 0
 
-    def get_api_version(version_ptr):
+    def get_api_version(_handle, version_ptr):
         version = ctypes.cast(
             version_ptr,
             ctypes.POINTER(dji._DirpApiVersion),
@@ -187,3 +188,66 @@ def test_decode_destroys_dirp_handle_when_measurement_fails():
         sdk.decode_bytes(b"fake-rjpeg")
 
     assert destroyed == [0x1234]
+
+def _abi_probe(tmp_path, header_source: str):
+    sdk_root = tmp_path / "sdk"
+    header = sdk_root / "tsdk-core" / "api" / "dirp_api.h"
+    header.parent.mkdir(parents=True)
+    header.write_text(header_source, encoding="utf-8")
+    sdk = object.__new__(DjiThermalSdk)
+    sdk.sdk_dir = sdk_root
+    return sdk
+
+
+def test_detects_handle_api_version_abi_for_modern_dji_header(tmp_path):
+    sdk = _abi_probe(
+        tmp_path,
+        """
+        typedef void *DIRP_HANDLE;
+        typedef struct { unsigned int api; char magic[8]; } dirp_api_version_t;
+        int dirp_get_api_version(
+            DIRP_HANDLE h,
+            dirp_api_version_t *version
+        );
+        """,
+    )
+
+    assert sdk._detect_api_version_abi() == "HANDLE_V2"
+
+
+def test_detects_global_api_version_abi_for_legacy_dji_header(tmp_path):
+    sdk = _abi_probe(
+        tmp_path,
+        """
+        typedef struct { unsigned int api; char magic[8]; } dirp_api_version_t;
+        int dirp_get_api_version(
+            dirp_api_version_t *version
+        );
+        """,
+    )
+
+    assert sdk._detect_api_version_abi() == "GLOBAL_V1"
+
+
+def test_api_version_abi_is_unknown_without_confirming_header(tmp_path):
+    sdk = object.__new__(DjiThermalSdk)
+    sdk.sdk_dir = tmp_path / "sdk-without-header"
+    sdk.sdk_dir.mkdir()
+
+    assert sdk._detect_api_version_abi() == "UNKNOWN"
+
+
+def test_decode_skips_api_version_query_when_abi_is_unknown():
+    sdk, destroyed = _fake_sdk()
+    sdk._api_version_abi = "UNKNOWN"
+    sdk._get_api_version = None
+
+    result = sdk.decode_bytes(b"fake-rjpeg")
+
+    assert result.api_version == {
+        "api": 0,
+        "magic": "UNKNOWN",
+        "query_status": "SKIPPED_UNCONFIRMED_ABI",
+    }
+    assert destroyed == [0x1234]
+
