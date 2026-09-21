@@ -199,6 +199,7 @@ export interface MissionPlanningContext {
   capture_profile: string;
   planning_sensor?: string;
   geometry_source?: string;
+  polygon?: MissionPlannerPoint[];
   parameters?: Record<string, number | string | boolean | null>;
   derived?: Record<string, number | string | boolean | null>;
 }
