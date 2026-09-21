@@ -1,0 +1,747 @@
+/* Production UX layer. Existing feature CSS remains the runtime source; this file owns shared application states. */
+
+:root {
+  --focus: #8be8dd;
+  --scroll-track: #0b1118;
+  --scroll-thumb: #34495b;
+  --scroll-thumb-hover: #49647a;
+  --control-height: 36px;
+  --target-size: 40px;
+  --transition-fast: 140ms;
+  --font-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  min-width: 320px;
+  font-size: 14px;
+  line-height: 1.45;
+  text-rendering: optimizeLegibility;
+}
+
+#root,
+#root * {
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+  scrollbar-width: thin;
+}
+
+#root *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+#root *::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+}
+
+#root *::-webkit-scrollbar-thumb {
+  border: 2px solid var(--scroll-track);
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+}
+
+#root *::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+#root *::-webkit-scrollbar-corner {
+  background: var(--scroll-track);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled),
+a[href],
+select:not(:disabled) {
+  cursor: pointer;
+}
+
+:where(button, a[href], input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+input,
+select,
+textarea {
+  min-height: var(--control-height);
+}
+
+input,
+select {
+  font-size: max(12px, 0.75rem);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  transition:
+    border-color var(--transition-fast) ease,
+    background-color var(--transition-fast) ease,
+    color var(--transition-fast) ease,
+    opacity var(--transition-fast) ease;
+}
+
+.skipLink {
+  position: fixed;
+  z-index: 1000;
+  top: 8px;
+  left: 8px;
+  transform: translateY(-160%);
+  border: 1px solid var(--focus);
+  border-radius: 7px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 8px 11px;
+  text-decoration: none;
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+.shell {
+  min-width: 0;
+}
+
+.sidebar {
+  min-width: 0;
+  padding-top: 16px;
+}
+
+.sidebar nav {
+  gap: 3px;
+}
+
+.navItem {
+  min-height: var(--target-size);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.navItem:hover {
+  background: color-mix(in srgb, var(--panel2) 82%, var(--accent) 4%);
+  color: var(--text);
+}
+
+.navItem:active {
+  background: color-mix(in srgb, var(--panel2) 88%, var(--accent) 8%);
+}
+
+.navCode {
+  width: 30px;
+  flex: 0 0 30px;
+  color: color-mix(in srgb, var(--muted) 75%, var(--accent));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+}
+
+.navItem.active .navCode {
+  color: var(--accent);
+}
+
+.main {
+  position: relative;
+  min-height: 0;
+}
+
+.topbar {
+  height: 76px;
+  flex-basis: 76px;
+  padding-inline: 20px;
+}
+
+.topbarTitle {
+  min-width: 0;
+}
+
+.topbarEyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.topbar h1 {
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.topbar p {
+  max-width: 70ch;
+  font-size: 11px;
+}
+
+.topActions {
+  flex: 0 0 auto;
+}
+
+.uiButton {
+  position: relative;
+  min-height: var(--control-height);
+  min-width: 88px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 11px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.uiButtonLabel {
+  grid-area: 1 / 1;
+}
+
+.uiButton .uiSpinner {
+  grid-area: 1 / 1;
+}
+
+.uiButton.is-busy .uiButtonLabel {
+  opacity: 0;
+}
+
+.uiButton-neutral.uiButton-outline {
+  background: var(--panel2);
+  color: var(--text);
+}
+
+.uiButton-neutral.uiButton-outline:hover:not(:disabled) {
+  border-color: #40546a;
+  background: #1c2936;
+}
+
+.uiButton-primary.uiButton-solid {
+  border-color: color-mix(in srgb, var(--accent) 72%, #ffffff 8%);
+  background: color-mix(in srgb, var(--accent) 80%, #07110f);
+  color: #07110f;
+}
+
+.uiButton-primary.uiButton-outline {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel2));
+  color: #82ded4;
+}
+
+.uiButton-primary.uiButton-outline:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 76%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel2));
+}
+
+.uiButton-warning.uiButton-outline {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--line));
+  background: color-mix(in srgb, var(--warn) 8%, var(--panel2));
+  color: #f3cc78;
+}
+
+.uiButton-danger.uiButton-solid {
+  border-color: var(--bad);
+  background: #b94444;
+  color: #ffffff;
+}
+
+.uiButton-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.uiSpinner {
+  display: inline-grid;
+  place-items: center;
+}
+
+.uiSpinner > span {
+  width: 17px;
+  height: 17px;
+  border: 2px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: ui-spin 700ms linear infinite;
+}
+
+.uiSpinner-sm > span {
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes ui-spin {
+  to { transform: rotate(360deg); }
+}
+
+.uiLoadingBlock {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.uiLoadingBlock.compact {
+  min-height: 56px;
+}
+
+.uiNotice {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.uiNoticeCopy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.uiNoticeCopy strong {
+  font-size: 11px;
+}
+
+.uiNoticeCopy span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.uiNotice-error {
+  border-color: color-mix(in srgb, var(--bad) 58%, var(--line));
+  background: color-mix(in srgb, var(--bad) 8%, var(--panel));
+}
+
+.uiNotice-warning {
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--line));
+  background: color-mix(in srgb, var(--warn) 7%, var(--panel));
+}
+
+.uiNotice-success {
+  border-color: color-mix(in srgb, var(--good) 42%, var(--line));
+}
+
+.opsContextStrip {
+  min-height: 50px;
+  flex: 0 0 50px;
+  display: grid;
+  grid-template-columns: minmax(145px, 0.9fr) minmax(190px, 1.35fr) minmax(120px, 0.8fr) minmax(150px, 1fr);
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+  background: #0b1219;
+}
+
+.opsContextItem {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 7px 14px;
+  border-right: 1px solid #1e2a36;
+}
+
+.opsContextItem:last-child {
+  border-right: 0;
+}
+
+.opsContextItem dt {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.opsContextItem dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.contextStatus::before {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  content: "";
+}
+
+.contextStatus.good::before {
+  background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 14%, transparent);
+}
+
+.contextStatus.warn::before {
+  background: var(--warn);
+}
+
+.contextStatus.info::before {
+  background: var(--info);
+}
+
+.contextStatus.bad::before {
+  background: var(--bad);
+}
+
+.contextFreshness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.contextFreshness .uiButton {
+  min-width: auto;
+  min-height: 26px;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.view {
+  scrollbar-gutter: stable;
+  scroll-padding: 14px 0 18px;
+}
+
+.view :is(button, input, select, textarea, label, small, th, td) {
+  font-size: max(11px, 0.6875rem);
+}
+
+.systemNotice {
+  margin-bottom: 10px;
+}
+
+.panel,
+.fleetPanel,
+.mapCard,
+.metrics article {
+  border-color: #253545;
+}
+
+.panelHead h2,
+.liveHead h2,
+.missionHeader h2,
+.surveyTitle h2 {
+  letter-spacing: 0.01em;
+}
+
+.panelHead small,
+.panelHead > span,
+.metrics small,
+.fleetItem small,
+.liveHead p,
+.empty {
+  line-height: 1.45;
+}
+
+.metrics span,
+.liveMetric span {
+  font-size: 11px;
+}
+
+.metrics strong,
+.liveMetric strong,
+.telemetry b {
+  font-variant-numeric: tabular-nums;
+}
+
+.status,
+.badge {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.fleetItem,
+.projectItem,
+.surveyItem,
+.missionItem,
+.historyFlight {
+  min-height: 48px;
+}
+
+.fleetItem:hover,
+.projectItem:hover,
+.surveyItem:hover,
+.missionItem:hover,
+.historyFlight:hover {
+  border-color: #385067;
+  background: #111c26;
+}
+
+.fleetItem.selected,
+.projectItem.selected,
+.surveyItem.selected,
+.missionItem.selected,
+.historyFlight.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, #0e151e);
+}
+
+.mapNotice {
+  position: absolute;
+  z-index: 10;
+  top: 14px;
+  left: 50%;
+  width: min(600px, calc(100% - 30px));
+  transform: translateX(-50%);
+  box-shadow: 0 12px 34px rgb(0 0 0 / 34%);
+}
+
+.accent-m4t {
+  border-left: 3px solid var(--warn);
+}
+
+.fleetOverview {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.75fr) minmax(0, 1.25fr);
+  gap: 10px;
+  min-height: 100%;
+}
+
+.fleetOverview .fleetPanel {
+  min-height: 420px;
+}
+
+.fleetOverviewDetail {
+  min-width: 0;
+}
+
+.fleetOverviewDetail .payloadPanel {
+  margin-top: 0;
+}
+
+.fleetOverviewFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.fleetOverviewFacts > span {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.fleetOverviewFacts b {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+code,
+pre,
+.thermogramPath code,
+.missionCommand {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (forced-colors: active) {
+  #root,
+  #root * {
+    scrollbar-color: auto;
+  }
+
+  :where(button, a[href], input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+
+  .contextStatus::before {
+    border: 1px solid CanvasText;
+  }
+}
+
+@media (max-width: 1100px) {
+  .opsContextStrip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .opsContextItem {
+    padding-inline: 10px;
+  }
+
+  .fleetOverview {
+    grid-template-columns: 1fr;
+  }
+
+  .fleetOverview .fleetPanel {
+    min-height: 300px;
+    max-height: 380px;
+  }
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .sidebar {
+    min-height: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 7px 10px;
+    scrollbar-gutter: stable;
+  }
+
+  .brand {
+    flex: 0 0 auto;
+    padding: 0 10px 0 0;
+  }
+
+  .brand > div {
+    display: block;
+  }
+
+  .brand small {
+    display: none;
+  }
+
+  .brandMark {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+  }
+
+  .sidebar nav {
+    min-width: max-content;
+    display: flex;
+    gap: 4px;
+  }
+
+  .navItem {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  .navItem::before {
+    content: none;
+  }
+
+  .navCode {
+    display: none;
+  }
+
+  .sourceLegend {
+    display: none;
+  }
+
+  .main {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .topbar {
+    height: auto;
+    min-height: 86px;
+    flex-basis: auto;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .topbar p {
+    max-width: 46ch;
+    font-size: 11px;
+  }
+
+  .opsContextStrip {
+    min-height: 54px;
+    flex-basis: 54px;
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
+    overflow-x: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .opsContextItem {
+    min-width: 140px;
+  }
+
+  .view {
+    padding: 10px;
+  }
+
+  .fleetOverviewFacts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    transition-duration: 0.01ms;
+  }
+
+  .uiSpinner > span {
+    animation-duration: 1.8s;
+    border-color: currentColor;
+    border-right-color: transparent;
+  }
+}

@@ -20,6 +20,7 @@ import {
   missionRevisionDownloadUrl,
   previewMissionGrid,
 } from "./api";
+import { ActionButton } from "./ui";
 import type {
   Mission,
   MissionDeployment,
@@ -615,6 +616,7 @@ export function MissionsView() {
   const [newExecutor, setNewExecutor] =
     useState<"DJI_NATIVE" | "ONBOARD" | "">("DJI_NATIVE");
   const [busy, setBusy] = useState(false);
+  const [uploadingDeploymentId, setUploadingDeploymentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -870,8 +872,9 @@ export function MissionsView() {
   };
 
   const uploadHandoff = async (deployment: MissionDeployment) => {
-    if (!selected) return;
+    if (!selected || busy || uploadingDeploymentId) return;
     setBusy(true);
+    setUploadingDeploymentId(deployment.id);
     try {
       const updated = await uploadMissionDeployment(selected.id, deployment.id);
       setDeployments((current) =>
@@ -882,6 +885,7 @@ export function MissionsView() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      setUploadingDeploymentId(null);
       setBusy(false);
     }
   };
@@ -1215,13 +1219,16 @@ export function MissionsView() {
                           {deployment.package.wire ? ` · ${deployment.package.wire.items.length} wire items` : ""}
                         </a>
                         <span>{deployment.upload_status}</span>
-                        <button
+                        <ActionButton
+                          busy={uploadingDeploymentId === deployment.id}
                           disabled={busy || !deployment.upload_action_available}
                           onClick={() => void uploadHandoff(deployment)}
                           type="button"
+                          intent="primary"
+                          emphasis="outline"
                         >
-                          Upload to Lyrebird
-                        </button>
+                          Upload & verify
+                        </ActionButton>
                         {deployment.upload_status === "UPLOADED" ? (
                           <small className="missionUploadVerified">
                             verified · host {String(deployment.upload_details.host ?? "—")} ·

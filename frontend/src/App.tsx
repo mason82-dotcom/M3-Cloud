@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchSystemHealth, fetchVehicles } from "./api";
 import { FlightHistoryView } from "./FlightHistory";
@@ -8,6 +8,7 @@ import { MediaView } from "./MediaView";
 import { MissionsView } from "./MissionsView";
 import { ProcessingView } from "./ProcessingView";
 import { ProjectsView } from "./ProjectsView";
+import { ActionButton, InlineNotice, LoadingBlock } from "./ui";
 import type {
   ComponentHealth,
   LiveEvent,
@@ -27,17 +28,37 @@ type ViewName =
   | "processing"
   | "system";
 
-const NAV: Array<[ViewName, string, string]> = [
-  ["operations", "Operations", "Fleet, RTK und Missionen im Überblick"],
-  ["projects", "Projects", "Projects und Surveys mit Flight-, Media- und Processing-Lineage."],
-  ["fleet", "Fleet", "Aircraft, Payloads, RTK und Verbindungsstatus."],
-  ["missions", "Missions", "Waylines, Missionsplanung, Preflight und Ausführungsstatus."],
-  ["live", "Live", "Aircraft, RTK, Controller, Gimbal und Payload in Echtzeit"],
-  ["flights", "Flights", "Historische Flüge, PostGIS-Tracks und Flugstatistiken."],
-  ["media", "Media", "Fotos, Videos, Thermal- und Multispektraldaten."],
-  ["processing", "Processing", "Photogrammetrie, Thermogram und weitere Processing-Pipelines."],
-  ["system", "System", "EMQX, PostgreSQL, MinIO, Backend und Integrationen."],
+const NAV: Array<[ViewName, string, string, string]> = [
+  ["operations", "Operations", "Fleet, RTK und Missionen im Überblick", "OPS"],
+  ["projects", "Projects", "Projects und Surveys mit Flight-, Media- und Processing-Lineage.", "PRJ"],
+  ["fleet", "Fleet", "Aircraft, Payloads, RTK und Verbindungsstatus.", "FLT"],
+  ["missions", "Missions", "Waylines, Missionsplanung, Preflight und Ausführungsstatus.", "MIS"],
+  ["live", "Live", "Aircraft, RTK, Controller, Gimbal und Payload in Echtzeit", "LIV"],
+  ["flights", "Flights", "Historische Flüge, PostGIS-Tracks und Flugstatistiken.", "LOG"],
+  ["media", "Media", "Fotos, Videos, Thermal- und Multispektraldaten.", "MED"],
+  ["processing", "Processing", "Photogrammetrie, Thermogram und weitere Processing-Pipelines.", "JOB"],
+  ["system", "System", "EMQX, PostgreSQL, MinIO, Backend und Integrationen.", "SYS"],
 ];
+
+const VIEW_NAMES = new Set<ViewName>(NAV.map(([name]) => name));
+
+function viewFromLocation(): ViewName {
+  const candidate = window.location.hash.replace(/^#\/?/, "").split(/[?&]/, 1)[0] as ViewName;
+  return VIEW_NAMES.has(candidate) ? candidate : "operations";
+}
+
+function viewHref(name: ViewName): string {
+  return `#/${name}`;
+}
+
+function refreshStamp(value: Date | null): string {
+  if (!value) return "Noch nicht aktualisiert";
+  return new Intl.DateTimeFormat("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(value);
+}
 
 function mergeObjects(
   base: Record<string, unknown> | null | undefined,
@@ -163,6 +184,61 @@ function HealthValue({
   );
 }
 
+function FleetList({
+  vehicles,
+  selectedVehicle,
+  onSelect,
+  loading = false,
+}: {
+  vehicles: Vehicle[];
+  selectedVehicle: Vehicle | null;
+  onSelect: (sn: string) => void;
+  loading?: boolean;
+}) {
+  if (loading && vehicles.length === 0) {
+    return <LoadingBlock compact label="Fleet wird geladen" />;
+  }
+
+  if (vehicles.length === 0) {
+    return (
+      <div className="empty">
+        Noch keine Aircraft-Telemetrie. Verbindung und DJI/Lyrebird-Datenpfad prüfen.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {vehicles.map((vehicle) => {
+        const telemetry = vehicle.telemetry;
+        const positioning = positionStatus(vehicle);
+        return (
+          <button
+            className={vehicle.sn === selectedVehicle?.sn ? "fleetItem selected" : "fleetItem"}
+            key={vehicle.sn}
+            onClick={() => onSelect(vehicle.sn)}
+            type="button"
+            aria-pressed={vehicle.sn === selectedVehicle?.sn}
+          >
+            <div className="row">
+              <div>
+                <strong>{vehicle.name}</strong>
+                <small>{vehicle.model} · {sourceLabel(vehicle)}</small>
+              </div>
+              <span className={`badge ${positioning.className}`}>{positioning.label}</span>
+            </div>
+            <div className="telemetry">
+              <span>Battery<b>{textValue(telemetry?.battery?.capacity_percent)}{telemetry?.battery?.capacity_percent != null ? "%" : ""}</b></span>
+              <span>Altitude<b>{numberValue(telemetry?.relative_altitude_m)}{telemetry?.relative_altitude_m != null ? " m" : ""}</b></span>
+              <span>Satellites<b>{textValue(telemetry?.aircraft_state?.positioning?.gps_satellites ?? telemetry?.gps_satellites)}</b></span>
+            </div>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
 function PayloadPanel({ vehicle }: { vehicle: Vehicle | null }) {
   if (!vehicle) {
     return (
@@ -225,6 +301,47 @@ function PayloadPanel({ vehicle }: { vehicle: Vehicle | null }) {
         </article>
       </div>
     </section>
+  );
+}
+
+function FleetOverview({
+  vehicles,
+  selectedVehicle,
+  onSelect,
+  loading,
+}: {
+  vehicles: Vehicle[];
+  selectedVehicle: Vehicle | null;
+  onSelect: (sn: string) => void;
+  loading: boolean;
+}) {
+  const positioning = selectedVehicle ? positionStatus(selectedVehicle) : null;
+  const telemetry = selectedVehicle?.telemetry;
+  return (
+    <div className="fleetOverview">
+      <section className="fleetPanel">
+        <div className="panelHead">
+          <div><h2>Fleet</h2><small>Aircraft auswählen</small></div>
+          <span>{vehicles.length} devices</span>
+        </div>
+        <div className="fleetList">
+          <FleetList
+            vehicles={vehicles}
+            selectedVehicle={selectedVehicle}
+            onSelect={onSelect}
+            loading={loading}
+          />
+        </div>
+      </section>
+      <div className="fleetOverviewDetail">
+        <div className="fleetOverviewFacts" aria-label="Ausgewähltes Aircraft">
+          <span>Status<b>{selectedVehicle?.online ? "ONLINE" : selectedVehicle ? "OFFLINE" : "—"}</b></span>
+          <span>Positioning<b>{positioning?.label ?? "—"}</b></span>
+          <span>Battery<b>{textValue(telemetry?.battery?.capacity_percent)}{telemetry?.battery?.capacity_percent != null ? "%" : ""}</b></span>
+        </div>
+        <PayloadPanel vehicle={selectedVehicle} />
+      </div>
+    </div>
   );
 }
 
@@ -375,30 +492,55 @@ function LiveView({ vehicle }: { vehicle: Vehicle | null }) {
 export default function App() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedSn, setSelectedSn] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<ViewName>("operations");
+  const [activeView, setActiveView] = useState<ViewName>(() => viewFromLocation());
   const [liveConnected, setLiveConnected] = useState(false);
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null);
+  const refreshInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
-    const [vehicleResult, healthResult] = await Promise.allSettled([
-      fetchVehicles(),
-      fetchSystemHealth(),
-    ]);
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    setRefreshing(true);
 
-    if (vehicleResult.status === "fulfilled") {
-      setVehicles(vehicleResult.value);
-      setSelectedSn((current) => current ?? vehicleResult.value[0]?.sn ?? null);
-      setLoadError(null);
-    } else {
-      setLoadError(
-        vehicleResult.reason instanceof Error
-          ? vehicleResult.reason.message
-          : String(vehicleResult.reason),
-      );
+    try {
+      const [vehicleResult, healthResult] = await Promise.allSettled([
+        fetchVehicles(),
+        fetchSystemHealth(),
+      ]);
+
+      if (vehicleResult.status === "fulfilled") {
+        setVehicles(vehicleResult.value);
+        setSelectedSn((current) =>
+          current && vehicleResult.value.some((vehicle) => vehicle.sn === current)
+            ? current
+            : vehicleResult.value[0]?.sn ?? null,
+        );
+        setLoadError(null);
+        setLastRefreshAt(new Date());
+      } else {
+        setLoadError(
+          "Fleetdaten konnten nicht aktualisiert werden. Vorhandene Daten bleiben sichtbar.",
+        );
+      }
+
+      if (healthResult.status === "fulfilled") {
+        setHealth(healthResult.value);
+        setHealthError(null);
+      } else {
+        setHealthError(
+          "Systemstatus konnte nicht aktualisiert werden. Bereits geladene Zustände bleiben sichtbar.",
+        );
+      }
+    } finally {
+      refreshInFlight.current = false;
+      setRefreshing(false);
+      setInitialLoading(false);
     }
-
-    if (healthResult.status === "fulfilled") setHealth(healthResult.value);
   }, []);
 
   useEffect(() => {
@@ -406,6 +548,12 @@ export default function App() {
     const timer = window.setInterval(() => void refresh(), 30_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    const onHashChange = () => setActiveView(viewFromLocation());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   const upsertVehicle = useCallback((incoming: Vehicle) => {
     setVehicles((current) => {
@@ -487,27 +635,54 @@ export default function App() {
 
   const onlineCount = vehicles.filter((vehicle) => vehicle.online).length;
   const rtkCount = vehicles.filter((vehicle) => positionStatus(vehicle).usable).length;
+  const platformCount = new Set(vehicles.map((vehicle) => vehicle.model).filter(Boolean)).size;
   const nav = NAV.find(([name]) => name === activeView) ?? NAV[0];
+  const selectedPositioning = selectedVehicle ? positionStatus(selectedVehicle) : null;
+  const positioningTone =
+    selectedPositioning?.className === "fix"
+      ? "good"
+      : selectedPositioning?.className === "float"
+        ? "info"
+        : selectedPositioning
+          ? "warn"
+          : "";
+
+  useEffect(() => {
+    document.title = `${nav[1]} — M3-Cloud`;
+  }, [nav]);
 
   return (
-    <div className="shell">
+    <>
+      <a
+        className="skipLink"
+        href="#main-content"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById("main-content")?.focus();
+        }}
+      >
+        Zum Inhalt springen
+      </a>
+      <div className="shell">
       <aside className="sidebar">
         <div className="brand">
           <span className="brandMark">M3</span>
           <div><strong>M3-Cloud</strong><small>Enterprise Operations</small></div>
         </div>
 
-        <nav>
-          {NAV.map(([name, title]) => (
-            <button
+        <nav aria-label="Hauptnavigation">
+          {NAV.map(([name, title, , code]) => (
+            <a
               className={activeView === name ? "navItem active" : "navItem"}
               data-view={name}
+              href={viewHref(name)}
               key={name}
+              aria-current={activeView === name ? "page" : undefined}
               onClick={() => setActiveView(name)}
-              type="button"
             >
-              {title}
-            </button>
+              <span className="navCode" aria-hidden="true">{code}</span>
+              <span className="navLabel">{title}</span>
+            </a>
           ))}
         </nav>
 
@@ -517,29 +692,86 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="main">
+      <main className="main" id="main-content" tabIndex={-1}>
         <header className="topbar">
-          <div><h1>{nav[1]}</h1><p>{nav[2]}</p></div>
+          <div className="topbarTitle">
+            <span className="topbarEyebrow">M3-CLOUD / {nav[3]}</span>
+            <h1>{nav[1]}</h1>
+            <p>{nav[2]}</p>
+          </div>
           <div className="topActions">
-            <span className={liveConnected ? "status good" : "status warn"}>
-              {liveConnected ? "Backend live" : "Backend wartet"}
-            </span>
-            <button onClick={() => void refresh()} type="button">Aktualisieren</button>
+            <ActionButton busy={refreshing} onClick={() => void refresh()} type="button">
+              Aktualisieren
+            </ActionButton>
           </div>
         </header>
+
+        <dl className="opsContextStrip" aria-label="Aktueller Betriebskontext">
+          <div className="opsContextItem">
+            <dt>Live-Verbindung</dt>
+            <dd>
+              <span className={liveConnected ? "contextStatus good" : "contextStatus warn"}>
+                {liveConnected ? "Verbunden" : "Getrennt / wartet"}
+              </span>
+            </dd>
+          </div>
+          <div className="opsContextItem">
+            <dt>Aircraft</dt>
+            <dd>{selectedVehicle ? `${selectedVehicle.name} · ${selectedVehicle.model}` : "Kein Aircraft ausgewählt"}</dd>
+          </div>
+          <div className="opsContextItem">
+            <dt>Positioning</dt>
+            <dd>
+              <span className={`contextStatus ${positioningTone}`}>
+                {selectedPositioning?.label ?? "UNKNOWN"}
+              </span>
+            </dd>
+          </div>
+          <div className="opsContextItem">
+            <dt>Datenstand</dt>
+            <dd className="contextFreshness">
+              <span className={loadError || healthError ? "contextStatus bad" : "contextStatus"}>
+                {loadError || healthError ? "Teilweise veraltet" : refreshStamp(lastRefreshAt)}
+              </span>
+              {loadError || healthError ? (
+                <ActionButton
+                  className="contextRetry"
+                  onClick={() => void refresh()}
+                  type="button"
+                  emphasis="ghost"
+                >
+                  Erneut
+                </ActionButton>
+              ) : null}
+            </dd>
+          </div>
+        </dl>
 
         {activeView === "operations" ? (
           <section className="view active">
             <div className="metrics summaryMetrics">
               <article><span>Aircraft</span><strong>{vehicles.length}</strong><small>{vehicles.length ? "telemetry active" : "keine Telemetrie"}</small></article>
               <article><span>Online</span><strong>{onlineCount}</strong><small>Cloud + Lyrebird</small></article>
-              <article><span>RTK FIX</span><strong>{rtkCount}</strong><small>MSDK/MAVLink bestätigt</small></article>
-              <article><span>Active missions</span><strong>0</strong><small>Wayline / external</small></article>
+              <article><span>RTK usable</span><strong>{rtkCount}</strong><small>FIXED/FLOAT healthy</small></article>
+              <article><span>Platforms</span><strong>{platformCount}</strong><small>erkannte Aircraft-Modelle</small></article>
             </div>
 
             <div className="workspace">
               <section className="mapCard">
-                {loadError ? <div className="error-banner">{loadError}</div> : null}
+                {loadError ? (
+                  <InlineNotice
+                    className="mapNotice"
+                    tone="error"
+                    title="Fleetdaten sind möglicherweise veraltet"
+                    action={
+                      <ActionButton onClick={() => void refresh()} type="button">
+                        Erneut versuchen
+                      </ActionButton>
+                    }
+                  >
+                    Die letzte Aktualisierung ist fehlgeschlagen. Bereits geladene Daten bleiben sichtbar.
+                  </InlineNotice>
+                ) : null}
                 <MapView
                   devices={vehicles}
                   telemetry={telemetryBySn}
@@ -549,37 +781,16 @@ export default function App() {
 
               <aside className="fleetPanel">
                 <div className="panelHead">
-                  <div><h2>Fleet</h2><small>M3E · M3T · M3M</small></div>
+                  <div><h2>Fleet</h2><small>M3E · M3T · M3M · M4T</small></div>
                   <span>{vehicles.length} devices</span>
                 </div>
                 <div className="fleetList">
-                  {vehicles.length === 0 ? (
-                    <div className="empty">Noch keine Aircraft-Telemetrie vom Backend.</div>
-                  ) : vehicles.map((vehicle) => {
-                    const telemetry = vehicle.telemetry;
-                    const positioning = positionStatus(vehicle);
-                    return (
-                      <button
-                        className={vehicle.sn === selectedVehicle?.sn ? "fleetItem selected" : "fleetItem"}
-                        key={vehicle.sn}
-                        onClick={() => setSelectedSn(vehicle.sn)}
-                        type="button"
-                      >
-                        <div className="row">
-                          <div>
-                            <strong>{vehicle.name}</strong>
-                            <small>{vehicle.model} · {sourceLabel(vehicle)}</small>
-                          </div>
-                          <span className={`badge ${positioning.className}`}>{positioning.label}</span>
-                        </div>
-                        <div className="telemetry">
-                          <span>Battery<b>{textValue(telemetry?.battery?.capacity_percent)}{telemetry?.battery?.capacity_percent != null ? "%" : ""}</b></span>
-                          <span>Altitude<b>{numberValue(telemetry?.relative_altitude_m)}{telemetry?.relative_altitude_m != null ? " m" : ""}</b></span>
-                          <span>Satellites<b>{textValue(telemetry?.aircraft_state?.positioning?.gps_satellites ?? telemetry?.gps_satellites)}</b></span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                  <FleetList
+                    vehicles={vehicles}
+                    selectedVehicle={selectedVehicle}
+                    onSelect={setSelectedSn}
+                    loading={initialLoading}
+                  />
                 </div>
               </aside>
             </div>
@@ -607,6 +818,17 @@ export default function App() {
         {activeView === "projects" ? (
           <section className="view active">
             <ProjectsView />
+          </section>
+        ) : null}
+
+        {activeView === "fleet" ? (
+          <section className="view active">
+            <FleetOverview
+              vehicles={vehicles}
+              selectedVehicle={selectedVehicle}
+              onSelect={setSelectedSn}
+              loading={initialLoading}
+            />
           </section>
         ) : null}
 
@@ -642,18 +864,36 @@ export default function App() {
 
         {activeView === "system" ? (
           <section className="view active">
-            <div className="systemGrid">
-              {Object.entries(health?.components ?? {}).map(([name, value]) => (
-                <section className="panel systemCard" key={name}>
-                  <div className="panelHead"><div><h2>{name}</h2><small>runtime component</small></div></div>
-                  <pre>{JSON.stringify(value, null, 2)}</pre>
-                </section>
-              ))}
-            </div>
+            {healthError ? (
+              <InlineNotice
+                className="systemNotice"
+                tone="error"
+                title="Systemstatus konnte nicht aktualisiert werden"
+                action={
+                  <ActionButton onClick={() => void refresh()} type="button">
+                    Erneut versuchen
+                  </ActionButton>
+                }
+              >
+                Bereits geladene Zustände bleiben sichtbar; es werden keine unbekannten Komponenten als online dargestellt.
+              </InlineNotice>
+            ) : null}
+            {initialLoading && !health ? (
+              <LoadingBlock label="Systemstatus wird geladen" />
+            ) : (
+              <div className="systemGrid">
+                {Object.entries(health?.components ?? {}).map(([name, value]) => (
+                  <section className="panel systemCard" key={name}>
+                    <div className="panelHead"><div><h2>{name}</h2><small>runtime component</small></div></div>
+                    <pre>{JSON.stringify(value, null, 2)}</pre>
+                  </section>
+                ))}
+              </div>
+            )}
           </section>
         ) : null}
 
-        {!["operations", "projects", "missions", "live", "flights", "media", "processing", "system"].includes(activeView) ? (
+        {!["operations", "projects", "fleet", "missions", "live", "flights", "media", "processing", "system"].includes(activeView) ? (
           <section className="view active">
             <div className="placeholder">
               <h2>{nav[1]}</h2>
@@ -662,6 +902,7 @@ export default function App() {
           </section>
         ) : null}
       </main>
-    </div>
+      </div>
+    </>
   );
 }
