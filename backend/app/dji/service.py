@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from redis.asyncio import Redis
 
 from app.config import settings
+from app.dji.cloud_control import DJICloudControl
 from app.dji.devices import DJIDeviceService
 from app.dji.drc import DJIDRCStateStore
 from app.dji.events import DJIEventDispatcher, DJIEventStateStore
@@ -36,6 +37,7 @@ class DJIService:
     gateways: DJIGatewayService
     payloads: DJIPayloadControl
     drc_state: DJIDRCStateStore
+    cloud_control: DJICloudControl
 
     @classmethod
     def create(
@@ -69,6 +71,7 @@ class DJIService:
         payloads = DJIPayloadControl(services)
         devices = DJIDeviceService(registry, telemetry, properties)
         gateways = DJIGatewayService(registry, telemetry)
+        cloud_control = DJICloudControl(services, gateways, settings)
         router = DJIMessageRouter(
             registry,
             transport,
@@ -77,6 +80,7 @@ class DJIService:
             events=events,
             requests=requests,
             drc_state=drc_state,
+            cloud_control=cloud_control,
         )
 
         return cls(

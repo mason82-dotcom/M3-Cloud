@@ -20,3 +20,5 @@ def test_dji_service_create_wires_primary_domains() -> None:
     assert service.gateways.registry is service.registry
     assert service.gateways.telemetry is service.telemetry
     assert service.payloads.services is service.services
+    assert service.cloud_control.services is service.services
+    assert service.cloud_control.gateways is service.gateways

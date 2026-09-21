@@ -74,6 +74,46 @@ class Settings(BaseSettings):
         validation_alias="M3CLOUD_DJI_STATE_CACHE_TTL_SECONDS",
     )
 
+    # DJI Pilot 2 DRC relay settings. The address must be reachable from the
+    # RC Pro Enterprise and intentionally has no Docker-internal default.
+    dji_drc_broker_address: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_DRC_BROKER_ADDRESS",
+    )
+    dji_drc_client_id_prefix: str = Field(
+        default="m3cloud-drc-",
+        validation_alias="M3CLOUD_DJI_DRC_CLIENT_ID_PREFIX",
+    )
+    dji_drc_username: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_DRC_USERNAME",
+    )
+    dji_drc_password: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_DRC_PASSWORD",
+    )
+    dji_drc_enable_tls: bool = Field(
+        default=False,
+        validation_alias="M3CLOUD_DJI_DRC_ENABLE_TLS",
+    )
+    dji_drc_credential_ttl_seconds: int = Field(
+        default=3600,
+        ge=1,
+        validation_alias="M3CLOUD_DJI_DRC_CREDENTIAL_TTL_SECONDS",
+    )
+    dji_drc_osd_frequency_hz: int = Field(
+        default=10,
+        ge=1,
+        le=30,
+        validation_alias="M3CLOUD_DJI_DRC_OSD_FREQUENCY_HZ",
+    )
+    dji_drc_hsi_frequency_hz: int = Field(
+        default=1,
+        ge=1,
+        le=30,
+        validation_alias="M3CLOUD_DJI_DRC_HSI_FREQUENCY_HZ",
+    )
+
     # DJI Pilot 2 H5 / JSBridge bootstrap. These URLs must be reachable from
     # the RC Pro Enterprise; Docker-internal hostnames such as "emqx" are not.
     dji_pilot_app_id: str = Field(

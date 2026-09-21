@@ -6,6 +6,12 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.dji.cloud_control import (
+    DJICloudControlConfigError,
+    DJICloudControlGatewayOffline,
+    DJICloudControlNotAuthorized,
+)
+from app.dji.gateway import DJIGatewayNotFound, DJIUnsupportedGateway
 from app.dji.liveview import DJILiveView
 from app.dji.pilot import build_pilot_bootstrap
 from app.dji.services import DJIServiceResultError
@@ -66,6 +72,26 @@ async def _gateway_state(request: Request, gateway_sn: str) -> dict[str, Any]:
 
 
 def _translate_command_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, DJIGatewayNotFound):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+    if isinstance(exc, (DJIUnsupportedGateway, DJICloudControlGatewayOffline)):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+    if isinstance(exc, DJICloudControlNotAuthorized):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+    if isinstance(exc, DJICloudControlConfigError):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        )
     if isinstance(exc, DJITransactionTimeout):
         return HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
@@ -160,5 +186,44 @@ async def set_live_lens(
             video_id=body.video_id,
             video_type=body.video_type,
         )
+    except Exception as exc:
+        raise _translate_command_error(exc) from exc
+
+
+
+@router.post("/gateways/{gateway_sn}/cloud-control/authorize")
+async def authorize_cloud_control(
+    gateway_sn: str,
+    body: CloudControlAuthorizationBody,
+    request: Request,
+) -> dict[str, object]:
+    try:
+        return await _dji(request).cloud_control.request_authorization(
+            gateway_sn,
+            user_id=body.user_id,
+            user_callsign=body.user_callsign,
+        )
+    except Exception as exc:
+        raise _translate_command_error(exc) from exc
+
+
+@router.post("/gateways/{gateway_sn}/cloud-control/release")
+async def release_cloud_control(
+    gateway_sn: str,
+    request: Request,
+) -> dict[str, object]:
+    try:
+        return await _dji(request).cloud_control.release(gateway_sn)
+    except Exception as exc:
+        raise _translate_command_error(exc) from exc
+
+
+@router.post("/gateways/{gateway_sn}/drc/enter")
+async def enter_drc_mode(
+    gateway_sn: str,
+    request: Request,
+) -> dict[str, object]:
+    try:
+        return await _dji(request).cloud_control.enter_drc(gateway_sn)
     except Exception as exc:
         raise _translate_command_error(exc) from exc
