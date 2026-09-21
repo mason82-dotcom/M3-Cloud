@@ -183,6 +183,33 @@ jobs:
             lyrebird/LyrebirdApp/lyrebird-app/build/reports/
 
 
+  dji-reference-scripts:
+    name: DJI reference installer syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Validate Bash installer syntax
+        run: bash -n scripts/install-dji-cloud-api-reference.sh
+
+      - name: Validate PowerShell installer syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "scripts/install-dji-cloud-api-reference.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+
   backend-core:
     name: M3-Cloud backend core
     runs-on: ubuntu-latest
