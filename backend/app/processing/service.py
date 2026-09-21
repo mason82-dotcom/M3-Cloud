@@ -282,7 +282,12 @@ def thermal_result_manifest_details(
     manifest_common: dict[str, object] = {
         "thermal_contract": "M3T_THERMAL_RESULTS_V1",
     }
-    for key in ("input_fingerprint", "source_handoff_schema", "processing_options"):
+    for key in (
+        "input_fingerprint",
+        "source_handoff_schema",
+        "processing_options",
+        "decoder_provenance",
+    ):
         value = manifest.get(key)
         if value is not None:
             manifest_common[key] = value

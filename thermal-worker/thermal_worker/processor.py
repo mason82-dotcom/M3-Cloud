@@ -361,6 +361,17 @@ def _registration_audit(
     }
 
 
+def _decoder_provenance(decoded: DecodeResult) -> dict[str, Any]:
+    return {
+        "decoder": "DJI_DIRP",
+        "sdk_label": decoded.sdk_label,
+        "sdk_library_name": decoded.sdk_library_name,
+        "sdk_library_sha256": decoded.sdk_library_sha256,
+        "measurement_abi": decoded.measurement_abi,
+        "api_version": decoded.api_version,
+    }
+
+
 def _capture_output_name(index: int, capture_group: str) -> str:
     base = PurePosixPath(capture_group).name or f"capture-{index:05d}"
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", base).strip("._") or "capture"
@@ -822,6 +833,7 @@ def process_handoff(
         capture_point_features: list[dict[str, Any]] = []
         capture_summaries: list[dict[str, Any]] = []
         registration_audits: list[dict[str, Any]] = []
+        decoder_provenance: dict[str, Any] | None = None
         for index, group in enumerate(groups, start=1):
             if not isinstance(group, dict):
                 raise TypeError("Invalid capture group entry")
@@ -853,6 +865,13 @@ def process_handoff(
                 thermal_path,
                 overrides=measurement_overrides,
             )
+            current_decoder_provenance = _decoder_provenance(decoded)
+            if decoder_provenance is None:
+                decoder_provenance = current_decoder_provenance
+            elif current_decoder_provenance != decoder_provenance:
+                raise ValueError(
+                    "DJI DIRP decoder provenance changed within one thermal job"
+                )
             temperature = np.asarray(decoded.temperature_c, dtype=np.float32)
             if temperature.shape != (decoded.height, decoded.width):
                 raise ValueError(
@@ -1146,6 +1165,7 @@ def process_handoff(
                     "workflow": "THERMOGRAM",
                     "platform": "M3T",
                     "job_id": handoff.get("job_id"),
+                    "decoder_provenance": decoder_provenance,
                     "aggregate": aggregate_summary,
                     "captures": capture_summaries,
                     "note": (
@@ -1237,6 +1257,7 @@ def process_handoff(
             "source_handoff_schema": schema_version,
             "input_fingerprint": input_fingerprint,
             "processing_options": processing_options,
+            "decoder_provenance": decoder_provenance,
             "capture_group_count": len(results),
             "georeferenced_capture_count": len(capture_point_features),
             "capture_points_geojson": "capture-points.geojson",

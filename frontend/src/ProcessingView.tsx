@@ -104,13 +104,45 @@ function thermalRegistrationParts(
   return parts;
 }
 
-function withThermalRegistration(
+function thermalDecoderProvenanceParts(
+  details: Record<string, unknown>,
+): string[] {
+  const provenance =
+    details.decoder_provenance && typeof details.decoder_provenance === "object"
+      ? details.decoder_provenance as Record<string, unknown>
+      : null;
+  const libraryName =
+    provenance && typeof provenance.sdk_library_name === "string"
+      ? provenance.sdk_library_name
+      : typeof details.sdk_library_name === "string"
+        ? details.sdk_library_name
+        : null;
+  const librarySha256 =
+    provenance && typeof provenance.sdk_library_sha256 === "string"
+      ? provenance.sdk_library_sha256
+      : typeof details.sdk_library_sha256 === "string"
+        ? details.sdk_library_sha256
+        : null;
+  if (!libraryName && !librarySha256) return [];
+
+  const parts = ["DIRP"];
+  if (libraryName) parts.push(libraryName);
+  if (librarySha256) {
+    parts.push(`sha256 ${librarySha256.slice(0, 12)}`);
+  }
+  return [parts.join(" ")];
+}
+
+function withThermalContext(
   base: string,
   details: Record<string, unknown>,
 ): string {
-  const registration = thermalRegistrationParts(details);
-  return registration.length > 0
-    ? [base, ...registration].join(" · ")
+  const extras = [
+    ...thermalRegistrationParts(details),
+    ...thermalDecoderProvenanceParts(details),
+  ];
+  return extras.length > 0
+    ? [base, ...extras].join(" · ")
     : base;
 }
 
@@ -126,14 +158,14 @@ function thermalResultSummary(result: ProcessingResult): string | null {
   const min = stats && typeof stats.min_c === "number" ? stats.min_c : null;
   const max = stats && typeof stats.max_c === "number" ? stats.max_c : null;
   if (kind === "TEMPERATURE_RASTER" && min !== null && max !== null) {
-    return withThermalRegistration(
+    return withThermalContext(
       `Temperature raster · ${min.toFixed(1)}–${max.toFixed(1)} °C`,
       details,
     );
   }
   if (kind === "THERMAL_PREVIEW") return "Thermal preview";
   if (kind === "THERMAL_METADATA") {
-    return withThermalRegistration("Thermal metadata", details);
+    return withThermalContext("Thermal metadata", details);
   }
   if (kind === "HOTSPOT_MASK") return "Hotspot candidate mask";
   if (kind === "THERMAL_CAPTURE_POINTS") {
@@ -154,7 +186,7 @@ function thermalResultSummary(result: ProcessingResult): string | null {
       hotspots && typeof hotspots.component_count === "number"
         ? hotspots.component_count
         : null;
-    return withThermalRegistration(
+    return withThermalContext(
       count === null
         ? "Hotspot candidate analysis"
         : `Hotspot candidates · ${count}`,
@@ -195,6 +227,7 @@ function thermalResultSummary(result: ProcessingResult): string | null {
     if (gpsEvidence !== null && captures !== null) {
       parts.push(`GPS evidence ${gpsEvidence}/${captures}`);
     }
+    parts.push(...thermalDecoderProvenanceParts(details));
     return parts.join(" · ");
   }
   if (kind === "THERMAL_SUMMARY") {
@@ -234,6 +267,7 @@ function thermalResultSummary(result: ProcessingResult): string | null {
     } else if (registrationStatus) {
       parts.push(`WIDE↔THERMAL ${registrationStatus}`);
     }
+    parts.push(...thermalDecoderProvenanceParts(details));
     return parts.join(" · ");
   }
   if (kind === "THERMAL_SUMMARY_CSV") return "Thermal summary CSV";
