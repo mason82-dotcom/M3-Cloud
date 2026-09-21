@@ -4,6 +4,7 @@ import ctypes
 import logging
 import os
 import platform
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -164,12 +165,13 @@ class DjiThermalSdk:
         self.release_dir = self._resolve_release_dir(self.sdk_dir)
         self.sdk_label = sdk_label or os.environ.get("DJI_TSDK_VERSION") or self.sdk_dir.name
         self._measurement_abi = self._detect_measurement_abi()
+        self._api_version_abi = self._detect_api_version_abi()
         self._dll_directory_handle = None
         self._helper_libraries: list[ctypes.CDLL] = []
         self._library = self._load_library()
         self._bind()
 
-    def _detect_measurement_abi(self) -> str:
+    def _header_sources(self) -> list[str]:
         candidates: list[Path] = []
         search_roots = [self.sdk_dir, *list(self.sdk_dir.parents)[:4]]
         for root in search_roots:
@@ -182,15 +184,42 @@ class DjiThermalSdk:
         if self.sdk_dir.is_dir():
             candidates.extend(self.sdk_dir.glob("**/dirp_api.h"))
 
+        sources: list[str] = []
         seen: set[Path] = set()
         for header in candidates:
-            if header in seen or not header.is_file():
-                continue
-            seen.add(header)
             try:
-                source = header.read_text(encoding="utf-8", errors="ignore")
+                resolved = header.resolve()
+            except OSError:
+                resolved = header
+            if resolved in seen or not header.is_file():
+                continue
+            seen.add(resolved)
+            try:
+                sources.append(header.read_text(encoding="utf-8", errors="ignore"))
             except OSError:
                 continue
+        return sources
+
+    def _detect_api_version_abi(self) -> str:
+        handle_signature = re.compile(
+            r"dirp_get_api_version\s*\(\s*DIRP_HANDLE\s+\w+\s*,\s*"
+            r"dirp_api_version_t\s*\*\s*\w+\s*\)",
+            re.MULTILINE,
+        )
+        global_signature = re.compile(
+            r"dirp_get_api_version\s*\(\s*"
+            r"dirp_api_version_t\s*\*\s*\w+\s*\)",
+            re.MULTILINE,
+        )
+        for source in self._header_sources():
+            if handle_signature.search(source):
+                return "HANDLE_V2"
+            if global_signature.search(source):
+                return "GLOBAL_V1"
+        return "UNKNOWN"
+
+    def _detect_measurement_abi(self) -> str:
+        for source in self._header_sources():
             return (
                 "AMBIENT_V2"
                 if "ambient_temp" in source
@@ -286,10 +315,29 @@ class DjiThermalSdk:
         self._destroy.argtypes = [ctypes.c_void_p]
         self._destroy.restype = ctypes.c_int32
 
-        self._get_api_version = self._library.dirp_get_api_version
-        # dirp_get_api_version is a global API query and does not take a DIRP handle.
-        self._get_api_version.argtypes = [ctypes.POINTER(_DirpApiVersion)]
-        self._get_api_version.restype = ctypes.c_int32
+        self._get_api_version = getattr(
+            self._library,
+            "dirp_get_api_version",
+            None,
+        )
+        if self._get_api_version is not None:
+            if self._api_version_abi == "HANDLE_V2":
+                self._get_api_version.argtypes = [
+                    ctypes.c_void_p,
+                    ctypes.POINTER(_DirpApiVersion),
+                ]
+                self._get_api_version.restype = ctypes.c_int32
+            elif self._api_version_abi == "GLOBAL_V1":
+                self._get_api_version.argtypes = [
+                    ctypes.POINTER(_DirpApiVersion),
+                ]
+                self._get_api_version.restype = ctypes.c_int32
+            else:
+                logger.warning(
+                    "Skipping dirp_get_api_version because dirp_api.h did not "
+                    "confirm whether this SDK uses the global or handle ABI"
+                )
+                self._get_api_version = None
 
         self._get_version = self._library.dirp_get_rjpeg_version
         self._get_version.argtypes = [
@@ -352,7 +400,7 @@ class DjiThermalSdk:
         verbose = getattr(self._library, "dirp_set_verbose_level", None)
         if verbose is not None:
             verbose.argtypes = [ctypes.c_int]
-            verbose.restype = ctypes.c_int32
+            verbose.restype = None
             verbose(0)
 
     @staticmethod
@@ -485,11 +533,25 @@ class DjiThermalSdk:
             self._check("dirp_create_from_rjpeg", int(code))
             created = True
 
-            api_version = _DirpApiVersion()
-            self._check(
-                "dirp_get_api_version",
-                int(self._get_api_version(ctypes.byref(api_version))),
-            )
+            api_version: _DirpApiVersion | None = None
+            if self._get_api_version is not None:
+                api_version = _DirpApiVersion()
+                if self._api_version_abi == "HANDLE_V2":
+                    api_code = int(
+                        self._get_api_version(
+                            handle,
+                            ctypes.byref(api_version),
+                        )
+                    )
+                elif self._api_version_abi == "GLOBAL_V1":
+                    api_code = int(
+                        self._get_api_version(ctypes.byref(api_version))
+                    )
+                else:
+                    raise RuntimeError(
+                        "dirp_get_api_version was bound without a confirmed ABI"
+                    )
+                self._check("dirp_get_api_version", api_code)
 
             version = _DirpRjpegVersion()
             self._check(
@@ -610,12 +672,20 @@ class DjiThermalSdk:
                 temperature_c=temperature,
                 width=width,
                 height=height,
-                api_version={
-                    "api": int(api_version.api),
-                    "magic": bytes(api_version.magic)
-                    .split(b"\x00", 1)[0]
-                    .decode("ascii", errors="replace"),
-                },
+                api_version=(
+                    {
+                        "api": int(api_version.api),
+                        "magic": bytes(api_version.magic)
+                        .split(b"\x00", 1)[0]
+                        .decode("ascii", errors="replace"),
+                    }
+                    if api_version is not None
+                    else {
+                        "api": 0,
+                        "magic": "UNKNOWN",
+                        "query_status": "SKIPPED_UNCONFIRMED_ABI",
+                    }
+                ),
                 rjpeg_version={
                     "rjpeg": int(version.rjpeg),
                     "header": int(version.header),
