@@ -127,6 +127,36 @@ class MissionDeployment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class DjiWaylineFile(Base):
+    __tablename__ = "dji_wayline_files"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "object_key",
+            name="uq_dji_wayline_workspace_object",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    object_key: Mapped[str] = mapped_column(String(1024))
+    bucket: Mapped[str] = mapped_column(String(128))
+    drone_model_key: Mapped[str] = mapped_column(String(64), index=True)
+    payload_model_keys: Mapped[list[str]] = mapped_column(JSON, default=list)
+    template_types: Mapped[list[int]] = mapped_column(JSON, default=list)
+    favorited: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    source: Mapped[str] = mapped_column(String(32), default="DJI_PILOT2")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Flight(Base):
     __tablename__ = "flights"
 
