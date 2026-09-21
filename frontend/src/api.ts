@@ -202,6 +202,7 @@ export async function previewMissionGrid(input: {
   speed_mps: number;
   gimbal_pitch_deg?: number;
   overshoot_m?: number | null;
+  finish_action?: "RTH" | "LAND" | "NONE";
 }): Promise<MissionGridPreview> {
   const response = await fetch("/api/v1/missions/planner/grid-preview", {
     method: "POST",
