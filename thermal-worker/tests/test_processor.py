@@ -182,6 +182,17 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert feature["properties"]["pixel_georeferenced"] is False
     assert feature["properties"]["max_c"] == 42.5
     assert feature["properties"]["hotspot_component_count"] == 0
+
+    summary_json = json.loads(
+        (output / manifest["summary_json"]).read_text(encoding="utf-8")
+    )
+    assert summary_json["aggregate"]["capture_count"] == 1
+    assert summary_json["aggregate"]["georeferenced_capture_count"] == 1
+    assert summary_json["aggregate"]["max_c"] == 42.5
+    assert summary_json["aggregate"]["hotspot_component_count"] == 0
+    summary_csv = (output / manifest["summary_csv"]).read_text(encoding="utf-8")
+    assert "capture_group,capture_time_utc,latitude,longitude" in summary_csv
+    assert "M3T/site/nested/DJI_0001" in summary_csv
     assert len(manifest["input_fingerprint"]) == 64
 
     retry_decoder = FakeDecoder()
