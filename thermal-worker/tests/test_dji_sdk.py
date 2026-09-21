@@ -251,3 +251,30 @@ def test_decode_skips_api_version_query_when_abi_is_unknown():
     }
     assert destroyed == [0x1234]
 
+def test_decode_calls_legacy_global_api_version_without_handle():
+    import ctypes
+
+    import thermal_worker.dji_sdk as dji
+
+    sdk, destroyed = _fake_sdk()
+    sdk._api_version_abi = "GLOBAL_V1"
+    calls = []
+
+    def get_api_version(version_ptr):
+        calls.append("global")
+        version = ctypes.cast(
+            version_ptr,
+            ctypes.POINTER(dji._DirpApiVersion),
+        ).contents
+        version.api = 4
+        version.magic = b"DIRP"
+        return 0
+
+    sdk._get_api_version = get_api_version
+
+    result = sdk.decode_bytes(b"fake-rjpeg")
+
+    assert calls == ["global"]
+    assert result.api_version == {"api": 4, "magic": "DIRP"}
+    assert destroyed == [0x1234]
+
