@@ -15,12 +15,14 @@ interface DjiBridge {
   platformGetAircraftSN(): string;
   apiSetToken(token: string): BridgeValue;
   thingGetConnectState(): boolean;
+  wsGetConnectState(): boolean;
 }
 
 declare global {
   interface Window {
     djiBridge?: DjiBridge;
     m3CloudThingConnectCallback?: (value: unknown) => void;
+    m3CloudWsConnectCallback?: (value: unknown) => void;
     m3CloudLiveStatusCallback?: (value: unknown) => void;
   }
 }
@@ -48,6 +50,10 @@ interface Bootstrap {
     host: string;
     username: string;
     password: string;
+  };
+  ws: {
+    host: string;
+    token: string;
   };
   liveshare: {
     video_publish_type: string;
@@ -106,6 +112,14 @@ async function waitForThing(bridge: DjiBridge): Promise<void> {
   throw new Error("DJI Pilot 2 MQTT connection did not become ready");
 }
 
+async function waitForWs(bridge: DjiBridge): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (bridge.wsGetConnectState()) return;
+    await sleep(500);
+  }
+  throw new Error("DJI Pilot 2 WebSocket connection did not become ready");
+}
+
 export function PilotBootstrap() {
   const [status, setStatus] = useState("Loading M3-Cloud configuration…");
   const [detail, setDetail] = useState("");
@@ -162,6 +176,9 @@ export function PilotBootstrap() {
       window.m3CloudThingConnectCallback = (value: unknown) => {
         if (!cancelled) setDetail(`MQTT: ${String(value)}`);
       };
+      window.m3CloudWsConnectCallback = (value: unknown) => {
+        if (!cancelled) setDetail(`WebSocket: ${String(value)}`);
+      };
       window.m3CloudLiveStatusCallback = (value: unknown) => {
         if (!cancelled) setDetail(`Live: ${String(value)}`);
       };
@@ -191,6 +208,26 @@ export function PilotBootstrap() {
         ),
       );
 
+      if (config.components.ws) {
+        setStatus("Connecting DJI Pilot 2 WebSocket…");
+        loadComponent(bridge, "ws", {
+          host: config.ws.host,
+          token: config.ws.token,
+          connectCallback: "m3CloudWsConnectCallback",
+        });
+        await waitForWs(bridge);
+      }
+
+      if (config.components.tsa) {
+        setStatus("Loading DJI situation awareness…");
+        loadComponent(bridge, "tsa", {});
+      }
+
+      if (config.components.mission) {
+        setStatus("Loading DJI mission library…");
+        loadComponent(bridge, "mission", {});
+      }
+
       if (config.components.liveshare) {
         loadComponent(bridge, "liveshare", {
           videoPublishType: config.liveshare.video_publish_type,
@@ -217,6 +254,7 @@ export function PilotBootstrap() {
     return () => {
       cancelled = true;
       delete window.m3CloudThingConnectCallback;
+      delete window.m3CloudWsConnectCallback;
       delete window.m3CloudLiveStatusCallback;
     };
   }, []);
