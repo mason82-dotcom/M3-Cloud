@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Required (on top of ACCESS_FINE_LOCATION) to read the connected Wi-Fi SSID when
          targeting API 33+; without it WifiInfo/NetworkCapabilities.transportInfo redact the SSID
          even with location permission granted. Not neverForLocation since we do use the SSID as
