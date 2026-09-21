@@ -172,7 +172,7 @@ def test_m3m_dronedb_becomes_ready_with_two_complete_groups() -> None:
         )
 
     dataset = build_media_datasets(items)[0]
-    multi = workflow(dataset, "MULTISPECTRAL")
+    multi = workflow(dataset, "DRONEDB")
 
     assert multi["ready"] is True
     assert multi["complete_groups"] == 2
