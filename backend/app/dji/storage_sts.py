@@ -57,7 +57,35 @@ def presign_pilot_object(
     object_key: str,
     expires_in: int = 900,
 ) -> str:
-    client = create_pilot_storage_client(settings)
+    endpoint = settings.dji_pilot_storage_endpoint.strip()
+    if not endpoint.startswith(("http://", "https://")):
+        raise DJIPilotStorageError("DJI Pilot external storage endpoint is not configured")
+
+    access_key = (
+        settings.dji_pilot_storage_access_key.strip()
+        or settings.s3_access_key.strip()
+    )
+    secret_key = (
+        settings.dji_pilot_storage_secret_key.strip()
+        or settings.s3_secret_key.strip()
+    )
+    if not access_key or not secret_key:
+        raise DJIPilotStorageError("DJI Pilot storage signing credentials are missing")
+
+    region = settings.dji_pilot_storage_region.strip() or "us-east-1"
+    # Presigning does not contact the endpoint. Use the RC-reachable hostname in
+    # the canonical request so the signature remains valid when Pilot 2 follows it.
+    client = boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name=region,
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+        ),
+    )
     return str(
         client.generate_presigned_url(
             "get_object",
