@@ -44,6 +44,10 @@ const PLANNER_AREA_FILL = "mission-planner-area-fill";
 const PLANNER_AREA_LINE = "mission-planner-area-line";
 const PLANNER_POINT_SOURCE = "mission-planner-points";
 const PLANNER_POINT_LAYER = "mission-planner-points-layer";
+const PLANNER_REFERENCE_SOURCE = "mission-planner-reference";
+const PLANNER_REFERENCE_LAYER = "mission-planner-reference-layer";
+const PLANNER_TRANSIT_SOURCE = "mission-planner-transit";
+const PLANNER_TRANSIT_LAYER = "mission-planner-transit-layer";
 
 const PRIMARY_STYLE =
   import.meta.env.VITE_MAP_STYLE_URL ??
@@ -152,6 +156,57 @@ function plannerPointData(
   };
 }
 
+function plannerReferenceData(
+  reference: MissionPlannerPoint | null,
+): FeatureCollection<Point> {
+  return {
+    type: "FeatureCollection",
+    features: reference
+      ? [{
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [reference.longitude_deg, reference.latitude_deg],
+          },
+          properties: {},
+        }]
+      : [],
+  };
+}
+
+function plannerTransitData(
+  items: MissionPlanItem[],
+  reference: MissionPlannerPoint | null,
+  returnToReference: boolean,
+): FeatureCollection<LineString> {
+  if (!reference) return { type: "FeatureCollection", features: [] };
+  const waypoints = items
+    .filter((item) => item.command === 16)
+    .map((item) => [item.longitude_deg, item.latitude_deg]);
+
+  if (waypoints.length === 0) {
+    return { type: "FeatureCollection", features: [] };
+  }
+
+  const origin = [reference.longitude_deg, reference.latitude_deg];
+  const features: FeatureCollection<LineString>["features"] = [{
+    type: "Feature",
+    geometry: { type: "LineString", coordinates: [origin, waypoints[0]] },
+    properties: { leg: "ingress" },
+  }];
+  if (returnToReference) {
+    features.push({
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: [waypoints[waypoints.length - 1], origin],
+      },
+      properties: { leg: "return" },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
 function vehiclePlatform(vehicle: Vehicle | undefined): "M3E" | "M3T" | "M3M" | null {
   const payload = vehicle?.telemetry?.payload?.platform?.toUpperCase();
   if (payload === "M3E" || payload === "M3T" || payload === "M3M") return payload;
@@ -202,11 +257,15 @@ function MissionMap({
   items,
   plannerPolygon,
   plannerDrawing,
+  plannerReference,
+  plannerReturnToReference,
   onPlannerClick,
 }: {
   items: MissionPlanItem[];
   plannerPolygon: MissionPlannerPoint[];
   plannerDrawing: boolean;
+  plannerReference: MissionPlannerPoint | null;
+  plannerReturnToReference: boolean;
   onPlannerClick?: (point: MissionPlannerPoint) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -221,16 +280,34 @@ function MissionMap({
   const points = useMemo(() => waypointData(items), [items]);
   const plannerArea = useMemo(() => plannerAreaData(plannerPolygon), [plannerPolygon]);
   const plannerPoints = useMemo(() => plannerPointData(plannerPolygon), [plannerPolygon]);
+  const plannerReferencePoint = useMemo(
+    () => plannerReferenceData(plannerReference),
+    [plannerReference],
+  );
+  const plannerTransit = useMemo(
+    () => plannerTransitData(items, plannerReference, plannerReturnToReference),
+    [items, plannerReference, plannerReturnToReference],
+  );
   const routeRef = useRef(route);
   const pointsRef = useRef(points);
   const plannerAreaRef = useRef(plannerArea);
   const plannerPointsRef = useRef(plannerPoints);
+  const plannerReferenceRef = useRef(plannerReferencePoint);
+  const plannerTransitRef = useRef(plannerTransit);
+  const plannerReferenceValueRef = useRef(plannerReference);
   routeRef.current = route;
   pointsRef.current = points;
   plannerAreaRef.current = plannerArea;
   plannerPointsRef.current = plannerPoints;
+  plannerReferenceRef.current = plannerReferencePoint;
+  plannerTransitRef.current = plannerTransit;
+  plannerReferenceValueRef.current = plannerReference;
 
-  const fit = useCallback((map: Map, current: MissionPlanItem[]) => {
+  const fit = useCallback((
+    map: Map,
+    current: MissionPlanItem[],
+    reference: MissionPlannerPoint | null,
+  ) => {
     const coordinates = current
       .filter((item) => item.command === 16)
       .map((item) => [item.longitude_deg, item.latitude_deg] as [number, number])
@@ -243,6 +320,9 @@ function MissionMap({
         lat <= 90 &&
         !(lon === 0 && lat === 0),
       );
+    if (reference) {
+      coordinates.push([reference.longitude_deg, reference.latitude_deg]);
+    }
 
     if (coordinates.length === 0) return;
     if (coordinates.length === 1) {
@@ -324,6 +404,36 @@ function MissionMap({
           "line-dasharray": [2, 1.5],
         },
       });
+      map.addSource(PLANNER_TRANSIT_SOURCE, {
+        type: "geojson",
+        data: plannerTransitRef.current,
+      });
+      map.addLayer({
+        id: PLANNER_TRANSIT_LAYER,
+        type: "line",
+        source: PLANNER_TRANSIT_SOURCE,
+        paint: {
+          "line-width": 2,
+          "line-opacity": 0.75,
+          "line-color": "#b7c4d4",
+          "line-dasharray": [2, 2],
+        },
+      });
+      map.addSource(PLANNER_REFERENCE_SOURCE, {
+        type: "geojson",
+        data: plannerReferenceRef.current,
+      });
+      map.addLayer({
+        id: PLANNER_REFERENCE_LAYER,
+        type: "circle",
+        source: PLANNER_REFERENCE_SOURCE,
+        paint: {
+          "circle-radius": 8,
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff",
+          "circle-color": "#ffb74d",
+        },
+      });
       map.addSource(PLANNER_POINT_SOURCE, {
         type: "geojson",
         data: plannerPointsRef.current,
@@ -339,7 +449,7 @@ function MissionMap({
           "circle-color": "#e8a93b",
         },
       });
-      fit(map, itemsRef.current);
+      fit(map, itemsRef.current, plannerReferenceValueRef.current);
     });
 
     map.on("click", (event) => {
@@ -370,8 +480,20 @@ function MissionMap({
     (map.getSource(POINT_SOURCE) as GeoJSONSource | undefined)?.setData(points);
     (map.getSource(PLANNER_AREA_SOURCE) as GeoJSONSource | undefined)?.setData(plannerArea);
     (map.getSource(PLANNER_POINT_SOURCE) as GeoJSONSource | undefined)?.setData(plannerPoints);
-    fit(map, items);
-  }, [fit, items, plannerArea, plannerPoints, points, route]);
+    (map.getSource(PLANNER_REFERENCE_SOURCE) as GeoJSONSource | undefined)?.setData(plannerReferencePoint);
+    (map.getSource(PLANNER_TRANSIT_SOURCE) as GeoJSONSource | undefined)?.setData(plannerTransit);
+    fit(map, items, plannerReference);
+  }, [
+    fit,
+    items,
+    plannerArea,
+    plannerPoints,
+    plannerReference,
+    plannerReferencePoint,
+    plannerTransit,
+    points,
+    route,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
