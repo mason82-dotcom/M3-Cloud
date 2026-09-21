@@ -109,7 +109,7 @@ def _preview(temperature: np.ndarray, statistics: Mapping[str, float | int]) -> 
 def _capture_output_name(index: int, capture_group: str) -> str:
     base = PurePosixPath(capture_group).name or f"capture-{index:05d}"
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", base).strip("._") or "capture"
-    short_hash = hashlib.sha1(capture_group.encode("utf-8")).hexdigest()[:10]
+    short_hash = hashlib.sha256(capture_group.encode("utf-8")).hexdigest()[:10]
     return f"{index:05d}_{safe}_{short_hash}"
 
 
