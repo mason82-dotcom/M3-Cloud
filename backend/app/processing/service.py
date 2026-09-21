@@ -360,6 +360,7 @@ def thermal_result_manifest_details(
             "measurement_mode",
             "measurement_abi",
             "measurement_ranges",
+            "radiometry_integrity",
             "statistics",
             "hotspots",
         ):
