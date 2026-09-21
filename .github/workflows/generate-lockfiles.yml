@@ -1,0 +1,48 @@
+name: Generate lockfiles
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lockfiles:
+    name: Generate reproducible dependency locks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Generate Python lockfiles
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pip-tools==7.5.1"
+          python -m piptools compile             --generate-hashes             --resolver=backtracking             --output-file=backend/requirements.lock             backend/requirements.in
+          python -m piptools compile             --generate-hashes             --resolver=backtracking             --output-file=backend/requirements-dev.lock             backend/requirements-dev.in
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Generate frontend package lock
+        working-directory: frontend
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Upload generated lockfiles
+        uses: actions/upload-artifact@v6
+        with:
+          name: generated-lockfiles
+          if-no-files-found: error
+          path: |
+            backend/requirements.lock
+            backend/requirements-dev.lock
+            frontend/package-lock.json
