@@ -86,10 +86,14 @@ jobs:
         run: |
           ./gradlew --no-daemon --write-locks \
             :app:spotlessKotlinCheck \
-            :app:compileCurrentDebugKotlin \
             :app:testCurrentDebugUnitTest \
             :app:assembleCurrentDebug \
+            :app:assembleCurrentRelease \
+            :app:assembleDemoBiomassDebug \
+            :app:assembleDemoBiomassRelease \
             :app:lintCurrentDebug \
+            :uxsdk:assembleDebug \
+            :uxsdk:assembleRelease \
             :uxsdk:lintDebug
 
       - name: Upload Gradle dependency lockfiles
