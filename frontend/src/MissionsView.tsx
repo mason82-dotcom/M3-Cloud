@@ -1472,9 +1472,28 @@ export function MissionsView() {
                     Saving is allowed for revision/audit, but preflight will block handoff.
                   </div>
                 ) : null}
+                {plannerPreview && typeof plannerMaxFlightHeight === "number" &&
+                plannerPreview.geometry.altitude_m <= plannerMaxFlightHeight &&
+                plannerMaxFlightHeight - plannerPreview.geometry.altitude_m < 5 ? (
+                  <div className="missionPlannerWarning">
+                    Planned altitude {plannerPreview.geometry.altitude_m.toFixed(1)} m is within
+                    5 m of the aircraft max-flight-height setting of
+                    {" "}{plannerMaxFlightHeight.toFixed(0)} m.
+                  </div>
+                ) : null}
+                {plannerPreview &&
+                plannerDistanceLimitEnabled &&
+                (typeof plannerMaxFlightDistance !== "number" ||
+                  plannerMaxFlightDistance <= 0) ? (
+                  <div className="missionPlannerWarning">
+                    Aircraft reports an active flight-radius limit, but no usable maximum distance
+                    is available. Preflight will block handoff.
+                  </div>
+                ) : null}
                 {plannerPreview &&
                 plannerDistanceLimitEnabled &&
                 typeof plannerMaxFlightDistance === "number" &&
+                plannerMaxFlightDistance > 0 &&
                 plannerPreview.geometry.max_home_distance_m === null ? (
                   <div className="missionPlannerWarning">
                     Active flight-radius limit cannot be validated because no confirmed DJI home
@@ -1485,6 +1504,7 @@ export function MissionsView() {
                 {plannerPreview &&
                 plannerDistanceLimitEnabled &&
                 typeof plannerMaxFlightDistance === "number" &&
+                plannerMaxFlightDistance > 0 &&
                 plannerPreview.geometry.max_home_distance_m !== null &&
                 plannerPreview.geometry.max_home_distance_m > plannerMaxFlightDistance ? (
                   <div className="missionPlannerWarning">
