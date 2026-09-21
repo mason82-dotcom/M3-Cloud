@@ -286,13 +286,12 @@ def evaluate_preflight(
         )
         nominal_route_time_s = derived.get("nominal_route_time_s")
         nominal_total_time_s = derived.get("nominal_total_time_s")
-        required_time_s = (
-            nominal_total_time_s
-            if isinstance(nominal_total_time_s, (int, float))
+        use_total_time = (
+            isinstance(nominal_total_time_s, (int, float))
             and not isinstance(nominal_total_time_s, bool)
             and nominal_total_time_s > 0
-            else nominal_route_time_s
         )
+        required_time_s = nominal_total_time_s if use_total_time else nominal_route_time_s
         if (
             isinstance(required_time_s, (int, float))
             and not isinstance(required_time_s, bool)
@@ -322,13 +321,22 @@ def evaluate_preflight(
                     "remain_flight_time_s": float(remain_flight_time_s),
                     "margin_s": margin_s,
                     "recommended_reserve_s": recommended_reserve_s,
-                    "scope": "GRID_ROUTE_ONLY",
+                    "scope": (
+                        "GRID_PLUS_REFERENCE_TRANSIT"
+                        if use_total_time
+                        else "GRID_ROUTE_ONLY"
+                    ),
                 }
                 if margin_s < 0:
                     add(
                         "planner_flight_time",
                         "BLOCK",
-                        "DJI remaining-flight-time estimate is shorter than the nominal grid route.",
+                        (
+                            "DJI remaining-flight-time estimate is shorter than the planned grid "
+                            "plus reference transit."
+                            if use_total_time
+                            else "DJI remaining-flight-time estimate is shorter than the nominal grid route."
+                        ),
                         details,
                     )
                 elif margin_s < recommended_reserve_s:
@@ -369,7 +377,7 @@ def evaluate_preflight(
                         "required_time_s": float(required_time_s),
                         "scope": (
                             "GRID_PLUS_REFERENCE_TRANSIT"
-                            if required_time_s is nominal_total_time_s
+                            if use_total_time
                             else "GRID_ROUTE_ONLY"
                         ),
                     },
