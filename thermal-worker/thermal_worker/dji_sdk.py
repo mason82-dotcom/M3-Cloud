@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import logging
 import os
 import platform
@@ -81,6 +82,8 @@ class DecodeResult:
     measurement_error_code: int | None
     sdk_label: str
     measurement_abi: str
+    sdk_library_name: str | None = None
+    sdk_library_sha256: str | None = None
 
 
 class _DirpApiVersion(ctypes.Structure):
@@ -168,6 +171,8 @@ class DjiThermalSdk:
         self._api_version_abi = self._detect_api_version_abi()
         self._dll_directory_handle = None
         self._helper_libraries: list[ctypes.CDLL] = []
+        self._library_path = self._dirp_library_path()
+        self._library_sha256 = self._sha256_path(self._library_path)
         self._library = self._load_library()
         self._bind()
 
@@ -334,23 +339,37 @@ class DjiThermalSdk:
             )
         return candidates[0]
 
+    def _dirp_library_path(self) -> Path:
+        system = platform.system()
+        if system == "Windows":
+            return self.release_dir / "libdirp.dll"
+        if system == "Linux":
+            return self.release_dir / "libdirp.so"
+        raise NotImplementedError(
+            f"DJI Thermal SDK worker does not support {system}"
+        )
+
+    @staticmethod
+    def _sha256_path(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
     def _load_library(self) -> ctypes.CDLL:
         system = platform.system()
-        if system not in {"Linux", "Windows"}:
-            raise NotImplementedError(f"DJI Thermal SDK worker does not support {system}")
+        library_path = self._library_path
 
         if system == "Windows":
             if hasattr(os, "add_dll_directory"):
                 self._dll_directory_handle = os.add_dll_directory(str(self.release_dir))
-            library_path = self.release_dir / "libdirp.dll"
             try:
                 return ctypes.CDLL(str(library_path))
             except OSError as exc:
                 raise OSError(
                     f"Unable to load DJI Thermal SDK from {library_path}: {exc}"
                 ) from exc
-
-        library_path = self.release_dir / "libdirp.so"
         # DJI packages helper libraries beside libdirp. Preload what can be loaded
         # globally so libdirp can resolve optional codec/IR processing symbols.
         mode = getattr(ctypes, "RTLD_GLOBAL", 0)
@@ -781,6 +800,8 @@ class DjiThermalSdk:
                 measurement_error_code=measurement_error_code,
                 sdk_label=self.sdk_label,
                 measurement_abi=self._measurement_abi,
+                sdk_library_name=self._library_path.name,
+                sdk_library_sha256=self._library_sha256,
             )
         finally:
             if created and handle.value:
