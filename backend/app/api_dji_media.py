@@ -20,6 +20,7 @@ from app.dji.media import (
 from app.dji.storage_sts import (
     DJIPilotStorageError,
     issue_pilot_sts_credentials,
+    pilot_object_key_allowed,
     pilot_storage_ready,
 )
 from app.models import MediaAsset
@@ -96,14 +97,6 @@ def _success(data=None) -> dict[str, object]:
 
 def _failure(message: str) -> dict[str, object]:
     return {"code": -1, "message": message, "data": {}}
-
-
-def _object_key_allowed(workspace_id: str, object_key: str) -> bool:
-    path = PurePosixPath(object_key)
-    if ".." in path.parts:
-        return False
-    expected = PurePosixPath("pilot2", workspace_id)
-    return path.parts[: len(expected.parts)] == expected.parts
 
 
 @router.post("/storage/api/v1/workspaces/{workspace_id}/sts")
@@ -190,7 +183,7 @@ async def upload_callback(
 
     if body.result != 0:
         return _failure(f"Pilot 2 reported upload failure: {body.result}")
-    if not _object_key_allowed(workspace_id, body.object_key):
+    if not pilot_object_key_allowed(workspace_id, body.object_key):
         return _failure("object_key is outside the DJI Pilot workspace prefix")
 
     bucket = settings.dji_pilot_storage_bucket.strip() or "m3-media"
