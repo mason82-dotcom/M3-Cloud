@@ -53,7 +53,14 @@ def registerLockStateResolver = { Project target, List<String> configurationName
                 if (!configuration.canBeResolved) {
                     throw new GradleException("${target.path}:${name} is not resolvable")
                 }
-                configuration.resolve()
+                // Dependency locking needs the resolved component graph, not the
+                // configuration's files. Resolving files forces AGP 9.3 to choose
+                // between the many artifact variants exposed by Android library
+                // projects (classes jar, lint model, manifest, R class, ...), which
+                // is ambiguous for :uxsdk. The resolution result records the same
+                // external dependency graph for lock state without selecting an
+                // artifact type.
+                configuration.incoming.resolutionResult.allComponents.size()
             }
         }
     }
