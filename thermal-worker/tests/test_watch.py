@@ -179,11 +179,21 @@ def test_process_claimed_job_completes_and_imports(tmp_path, monkeypatch):
     }
     called = {}
 
-    def fake_process(handoff_path, output_root, decoder, *, measurement_overrides=None):
+    def fake_process(
+        handoff_path,
+        output_root,
+        decoder,
+        *,
+        measurement_overrides=None,
+        hotspot_delta_c=10.0,
+        hotspot_min_pixels=4,
+    ):
         called["handoff_path"] = Path(handoff_path)
         called["output_root"] = output_root
         called["decoder"] = decoder
         called["measurement_overrides"] = measurement_overrides
+        called["hotspot_delta_c"] = hotspot_delta_c
+        called["hotspot_min_pixels"] = hotspot_min_pixels
         assert called["handoff_path"].is_file()
         return {"contract": "M3T_THERMAL_RESULTS_V1"}
 
@@ -200,6 +210,8 @@ def test_process_claimed_job_completes_and_imports(tmp_path, monkeypatch):
     assert called["output_root"] == str(result_path)
     assert called["decoder"] is decoder
     assert called["measurement_overrides"] == {"emissivity": 0.95}
+    assert called["hotspot_delta_c"] == 10.0
+    assert called["hotspot_min_pixels"] == 4
     assert api.transitions == [("job-1", "COMPLETED_EXTERNAL", None)]
     assert api.imported == ["job-1"]
     assert result["imported_result_count"] == 1
