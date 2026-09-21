@@ -309,6 +309,28 @@ def thermal_result_manifest_details(
                 "feature_count": manifest.get("georeferenced_capture_count"),
             }
 
+    aggregate_summary = manifest.get("summary")
+    for field, result_kind in (
+        ("summary_json", "THERMAL_SUMMARY"),
+        ("summary_csv", "THERMAL_SUMMARY_CSV"),
+    ):
+        value = manifest.get(field)
+        if not isinstance(value, str) or not value:
+            continue
+        try:
+            relative = _external_relative_path(value)
+        except ValueError:
+            continue
+        details[relative] = {
+            **manifest_common,
+            "result_kind": result_kind,
+            "thermal_summary": (
+                aggregate_summary
+                if isinstance(aggregate_summary, dict)
+                else None
+            ),
+        }
+
     groups = manifest.get("capture_groups")
     if not isinstance(groups, list):
         return details
