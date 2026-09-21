@@ -80,7 +80,7 @@ services:
       retries: 30
 
   dronedb:
-    image: ${DRONEDB_IMAGE:-dronedb/registry:v2.6.6}
+    image: ${DRONEDB_IMAGE:-dronedb/registry:latest}
     restart: unless-stopped
     depends_on:
       dronedb-db:
@@ -116,7 +116,7 @@ services:
       start_period: 30s
 
   dronedb-node:
-    image: ${DRONEDB_IMAGE:-dronedb/registry:v2.6.6}
+    image: ${DRONEDB_IMAGE:-dronedb/registry:latest}
     restart: unless-stopped
     depends_on:
       dronedb:
