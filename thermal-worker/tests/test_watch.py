@@ -16,11 +16,21 @@ class FakeApi:
     def __init__(self, jobs):
         self.jobs = jobs
         self.transitions = []
+        self.claims = []
         self.imported = []
         self.handoffs = {}
 
     def list_jobs(self):
         return list(self.jobs)
+
+    def claim(self, job_id, *, retry_failed=False):
+        self.claims.append((job_id, retry_failed))
+        return {
+            "id": job_id,
+            "kind": "THERMOGRAM",
+            "platform": "M3T",
+            "status": "RUNNING_EXTERNAL",
+        }
 
     def transition(self, job_id, status, *, error=None):
         self.transitions.append((job_id, status, error))
@@ -66,15 +76,16 @@ def test_claim_next_thermogram_uses_fifo_and_ignores_other_jobs():
     claimed = claim_next_thermogram(api)
 
     assert claimed["id"] == "old"
-    assert api.transitions == [("old", "RUNNING_EXTERNAL", None)]
+    assert api.claims == [("old", False)]
+    assert api.transitions == []
 
 
 def test_claim_skips_job_lost_to_another_worker():
     class RacingApi(FakeApi):
-        def transition(self, job_id, status, *, error=None):
+        def claim(self, job_id, *, retry_failed=False):
             if job_id == "old":
-                raise M3CloudApiError("POST", "http://m3/jobs/old", 422, "already claimed")
-            return super().transition(job_id, status, error=error)
+                raise M3CloudApiError("POST", "http://m3/jobs/old", 409, "already claimed")
+            return super().claim(job_id, retry_failed=retry_failed)
 
     api = RacingApi(
         [
@@ -96,7 +107,8 @@ def test_claim_skips_job_lost_to_another_worker():
     claimed = claim_next_thermogram(api)
 
     assert claimed["id"] == "new"
-    assert api.transitions == [("new", "RUNNING_EXTERNAL", None)]
+    assert api.claims == [("new", False)]
+    assert api.transitions == []
 
 
 def test_failed_job_requires_explicit_retry_flag():
@@ -114,6 +126,7 @@ def test_failed_job_requires_explicit_retry_flag():
     claimed = claim_next_thermogram(api, retry_failed=True)
 
     assert claimed["id"] == "failed"
+    assert api.claims == [("failed", True)]
 
 
 
