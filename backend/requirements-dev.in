@@ -1,0 +1,5 @@
+-r requirements.in
+
+# Test-only dependencies.
+pytest>=8,<10
+pytest-asyncio>=1.4,<2
