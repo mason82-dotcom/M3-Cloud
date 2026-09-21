@@ -80,13 +80,19 @@ m3-thermal-worker m3t-thermogram-handoff.json \
   --emissivity 0.95 \
   --distance-m 10 \
   --humidity-pct 65 \
-  --reflection-c 20
+  --reflection-c 20 \
+  --ambient-temp-c 20
 ```
 
 Some DJI radiometric products expose their measurement parameters as
-non-editable through DIRP. In that case the worker records
-`measurement_mode=sdk_native_locked` and does not pretend the requested
+non-editable through DIRP. With no overrides, the worker records
+`measurement_mode=sdk_native_locked` and uses the SDK-native radiometry.
+If an override is explicitly requested but DIRP cannot read/set the
+measurement parameters, the job fails closed rather than claiming that the
 override was applied.
+
+The adapter targets the modern DIRP measurement ABI used by current TSDK,
+including the `ambient_temp` field present in the current header layout.
 
 For automatic job-state callbacks and result import:
 
