@@ -256,7 +256,11 @@ def external_result_object_key(job_id: uuid.UUID, relative_path: str) -> str:
     return f"external/{job_id}/{_external_relative_path(relative_path)}"
 
 
-def thermal_result_manifest_details(root: Path) -> dict[str, dict[str, object]]:
+def thermal_result_manifest_details(
+    root: Path,
+    *,
+    expected_job_id: uuid.UUID | str | None = None,
+) -> dict[str, dict[str, object]]:
     manifest_path = root / "result-manifest.json"
     if not manifest_path.is_file():
         return {}
@@ -272,11 +276,21 @@ def thermal_result_manifest_details(root: Path) -> dict[str, dict[str, object]]:
         or manifest.get("platform") != "M3T"
     ):
         return {}
+    if expected_job_id is not None and manifest.get("job_id") != str(expected_job_id):
+        return {}
+
+    manifest_common: dict[str, object] = {
+        "thermal_contract": "M3T_THERMAL_RESULTS_V1",
+    }
+    for key in ("input_fingerprint", "source_handoff_schema"):
+        value = manifest.get(key)
+        if value is not None:
+            manifest_common[key] = value
 
     details: dict[str, dict[str, object]] = {
         "result-manifest.json": {
+            **manifest_common,
             "result_kind": "THERMAL_MANIFEST",
-            "thermal_contract": "M3T_THERMAL_RESULTS_V1",
         }
     }
     groups = manifest.get("capture_groups")
@@ -293,7 +307,7 @@ def thermal_result_manifest_details(root: Path) -> dict[str, dict[str, object]]:
             continue
         capture_group = group.get("capture_group")
         common: dict[str, object] = {
-            "thermal_contract": "M3T_THERMAL_RESULTS_V1",
+            **manifest_common,
             "georeferenced": False,
         }
         if isinstance(capture_group, str):
@@ -305,6 +319,7 @@ def thermal_result_manifest_details(root: Path) -> dict[str, dict[str, object]]:
             "api_version",
             "measurement_mode",
             "measurement_abi",
+            "measurement_ranges",
             "statistics",
         ):
             value = group.get(key)
@@ -762,6 +777,7 @@ class ProcessingManager:
         thermal_details = await asyncio.to_thread(
             thermal_result_manifest_details,
             root,
+            expected_job_id=job_id,
         )
         if not files:
             raise ValueError(
