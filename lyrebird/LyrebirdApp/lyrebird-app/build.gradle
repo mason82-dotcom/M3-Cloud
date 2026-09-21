@@ -226,6 +226,10 @@ dependencies {
     implementation rootProject.deps.dynamicanimation
     implementation rootProject.deps.expandedit
     implementation rootProject.deps.rx3Kt
+    // App sources directly import these APIs; do not rely on hidden/transitive UXSDK or DJI versions.
+    implementation rootProject.deps.rx3Android
+    implementation rootProject.deps.material
+    implementation rootProject.deps.wpmzSdk
     implementation rootProject.deps.dom
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
     implementation rootProject.deps.lynx
