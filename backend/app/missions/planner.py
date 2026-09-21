@@ -531,6 +531,10 @@ def build_grid_preview(
         "capture_profile": profile.capture_profile,
         "planning_sensor": profile.planning_sensor,
         "geometry_source": profile.geometry_source,
+        "polygon": [
+            {"latitude_deg": lat, "longitude_deg": lon}
+            for lat, lon in vertices
+        ],
         "parameters": {
             "gsd_cm": gsd_cm,
             "forward_overlap_pct": forward_overlap_pct,
