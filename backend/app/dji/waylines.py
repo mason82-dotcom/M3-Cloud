@@ -114,6 +114,7 @@ def wayline_list_item(
     name: str,
     plan: dict[str, object],
     updated_at_ms: int,
+    favorited: bool = False,
 ) -> dict[str, Any]:
     platform = mission_platform(plan)
     # Validate that the mission is actually exportable before advertising it to Pilot 2.
@@ -122,7 +123,7 @@ def wayline_list_item(
     return {
         "id": mission_id,
         "drone_model_key": drone_key,
-        "favorited": False,
+        "favorited": favorited,
         "name": name,
         "payload_model_keys": payload_keys,
         "template_types": [0],
