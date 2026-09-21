@@ -132,7 +132,9 @@ internal object CameraLiveSourceController {
         sourceKey.listen(this) { source ->
             updateCachedSource(source, event = "listener", reason = "msdk-key-change")
         }
-        CameraKey.KeyCameraMode.create(ComponentIndexType.LEFT_OR_MAIN).listen(this) { mode ->
+        val modeKey: DJIKey<CameraMode> =
+            KeyTools.createKey(CameraKey.KeyCameraMode, ComponentIndexType.LEFT_OR_MAIN)
+        modeKey.listen(this) { mode ->
             recordEvent("camera-mode", mode?.name, "msdk-key-change")
         }
         trackingStarted = true
