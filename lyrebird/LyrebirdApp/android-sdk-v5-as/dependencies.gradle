@@ -77,7 +77,7 @@ ext {
     // wpmz mission file parsing
     // For local dependency testing: copy this aar to the main project's sdklib directory
     // and add as a local dependency in the aircraft module's gradle: api(name:"djisdkwpmz", ext:'aar')
-    deps.wpmzSdk = 'com.dji:wpmzsdk:1.0.4.0'
+    deps.wpmzSdk = 'com.dji:wpmzsdk:1.0.5.1'
     // Extended EditText for sample
     deps.expandedit = "com.github.thomhurst:ExpandableHintText:1.0.7"
 

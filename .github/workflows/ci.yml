@@ -85,6 +85,68 @@ jobs:
       - name: Spotless, compile, and unit tests
         run: ./gradlew --no-daemon :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
 
+      - name: Assemble and inventory Android APK
+        run: |
+          REPORT_DIR="build/reports/binary"
+          EXTRACT_DIR="$RUNNER_TEMP/lyrebird-apk"
+          mkdir -p "$REPORT_DIR"
+          
+          ./gradlew --no-daemon :app:dependencies --configuration currentDebugRuntimeClasspath \
+            > "$REPORT_DIR/runtime-classpath.txt"
+          grep -q 'com.dji:dji-sdk-v5-aircraft:5.18.0' "$REPORT_DIR/runtime-classpath.txt"
+          grep -q 'com.dji:dji-sdk-v5-networkImp:5.18.0' "$REPORT_DIR/runtime-classpath.txt"
+          grep -q 'com.dji:wpmzsdk:1.0.5.1' "$REPORT_DIR/runtime-classpath.txt"
+
+          ./gradlew --no-daemon :app:assembleCurrentDebug
+          APK="../lyrebird-app/build/outputs/apk/current/debug/Lyrebird-debug.apk"
+          test -f "$APK"
+
+          rm -rf "$EXTRACT_DIR"
+          mkdir -p "$EXTRACT_DIR"
+
+          unzip -Z1 "$APK" | sort > "$REPORT_DIR/apk-contents.txt"
+          unzip -q "$APK" 'lib/*' -d "$EXTRACT_DIR"
+
+          ZIPALIGN="$(find "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools" -type f -name zipalign | sort -V | tail -1)"
+          if [ -n "$ZIPALIGN" ]; then
+            "$ZIPALIGN" -c -P 16 -v 4 "$APK" > "$REPORT_DIR/zipalign-16k.txt" 2>&1 || true
+          else
+            echo "zipalign not found" > "$REPORT_DIR/zipalign-16k.txt"
+          fi
+
+          ABIS="$(find "$EXTRACT_DIR/lib" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -u)"
+          test "$ABIS" = "arm64-v8a"
+
+          for REQUIRED_LIB in \
+            libDJICSDKCommon.so \
+            libDJIRegister.so \
+            libDJIWaypointV2Core-CSDK.so \
+            libFlightRecordEngine.so \
+            libdjisdk_jni.so \
+            libdjiwpv2-CSDK.so; do
+            test -f "$EXTRACT_DIR/lib/arm64-v8a/$REQUIRED_LIB"
+          done
+
+          {
+            echo "APK: $APK"
+            sha256sum "$APK"
+            echo
+            find "$EXTRACT_DIR/lib" -type f -name '*.so' -print0 \
+              | sort -z \
+              | while IFS= read -r -d '' LIB; do
+                  REL="${LIB#$EXTRACT_DIR/}"
+                  echo "=== $REL ==="
+                  sha256sum "$LIB"
+                  file "$LIB"
+                  readelf -h "$LIB" | grep -E 'Class:|Data:|Machine:'
+                  readelf -lW "$LIB" | grep -E ' LOAD |GNU_RELRO|GNU_STACK' || true
+                  readelf -d "$LIB" | grep -E '\(SONAME\)|\(NEEDED\)' || true
+                  echo
+                done
+          } > "$REPORT_DIR/native-libs.txt"
+
+          test -s "$REPORT_DIR/native-libs.txt"
+
       - name: Lyrebird Detekt and Lint reports
         run: ./gradlew --no-daemon qualityLyrebird
 
@@ -96,6 +158,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             lyrebird/LyrebirdApp/android-sdk-v5-as/build/reports/detekt/
+            lyrebird/LyrebirdApp/android-sdk-v5-as/build/reports/binary/
             lyrebird/LyrebirdApp/lyrebird-app/build/reports/
 
 
