@@ -34,6 +34,16 @@ class CameraPlatformCapabilitiesTest {
     }
 
     @Test
+    fun legacyHybridPayloadsRetainThermalCapability() {
+        listOf("ZENMUSE_H20T", "ZENMUSE_H20N", "ZENMUSE_H30T").forEach { name ->
+            val caps = CameraPlatformCapabilities.fromCameraTypeName(name)
+            assertEquals(CameraPlatform.LEGACY_HYBRID, caps.platform)
+            assertTrue(caps.supportsThermalCapture)
+            assertFalse(caps.supportsMultispectralCapture)
+        }
+    }
+
+    @Test
     fun unknownCameraFailsClosed() {
         val caps = CameraPlatformCapabilities.fromCameraTypeName("FUTURE_CAMERA")
         assertEquals(CameraPlatform.OTHER, caps.platform)
