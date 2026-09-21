@@ -281,6 +281,29 @@ def _handoff_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _existing_result_artifact(
+    destination: Path,
+    resolved_destination: Path,
+    relative: str,
+) -> Path:
+    safe = _safe_relative_path(relative)
+    artifact = destination.joinpath(*safe.parts)
+    if artifact.is_symlink():
+        raise FileExistsError(
+            f"Existing thermal result artifact must not be a symlink: {artifact}"
+        )
+    resolved_artifact = artifact.resolve()
+    if not resolved_artifact.is_relative_to(resolved_destination):
+        raise FileExistsError(
+            f"Existing thermal result artifact escapes result folder: {artifact}"
+        )
+    if not resolved_artifact.is_file():
+        raise FileExistsError(
+            f"Existing thermal result artifact is missing: {artifact}"
+        )
+    return resolved_artifact
+
+
 def _existing_manifest(
     destination: Path,
     *,
@@ -329,12 +352,11 @@ def _existing_manifest(
             raise FileExistsError(
                 f"Existing thermal result manifest is missing {manifest_field}"
             )
-        safe = _safe_relative_path(relative)
-        artifact = destination.joinpath(*safe.parts)
-        if artifact.is_symlink() or not artifact.is_file():
-            raise FileExistsError(
-                f"Existing thermal result artifact is missing: {artifact}"
-            )
+        _existing_result_artifact(
+            destination,
+            resolved_destination,
+            relative,
+        )
 
     groups = manifest.get("capture_groups")
     if not isinstance(groups, list) or not groups:
@@ -352,21 +374,11 @@ def _existing_manifest(
             relative = group.get(key)
             if not isinstance(relative, str):
                 raise FileExistsError(f"Existing thermal result manifest is missing {key}")
-            safe = _safe_relative_path(relative)
-            artifact = resolved_destination.joinpath(*safe.parts)
-            if artifact.is_symlink():
-                raise FileExistsError(
-                    f"Existing thermal result artifact must not be a symlink: {artifact}"
-                )
-            resolved_artifact = artifact.resolve()
-            if not resolved_artifact.is_relative_to(resolved_destination):
-                raise FileExistsError(
-                    f"Existing thermal result artifact escapes result folder: {artifact}"
-                )
-            if not resolved_artifact.is_file():
-                raise FileExistsError(
-                    f"Existing thermal result artifact is missing: {artifact}"
-                )
+            _existing_result_artifact(
+                destination,
+                resolved_destination,
+                relative,
+            )
     return manifest
 
 
