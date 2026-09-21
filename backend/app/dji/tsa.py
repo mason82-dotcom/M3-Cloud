@@ -134,4 +134,18 @@ def live_event_to_pilot(event: Mapping[str, Any]) -> dict[str, Any] | None:
         return pilot_ws_message("device_offline")
     if event_type == "topology":
         return pilot_ws_message("device_update_topo")
+
+    map_codes = {
+        "dji_map_element_create": "map_element_create",
+        "dji_map_element_update": "map_element_update",
+        "dji_map_element_delete": "map_element_delete",
+        "dji_map_group_refresh": "map_group_refresh",
+    }
+    biz_code = map_codes.get(str(event_type))
+    if biz_code is not None:
+        data = event.get("data")
+        return pilot_ws_message(
+            biz_code,
+            data if isinstance(data, Mapping) else {},
+        )
     return None
