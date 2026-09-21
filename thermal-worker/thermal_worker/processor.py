@@ -4,7 +4,6 @@ import hashlib
 import json
 import math
 import re
-from dataclasses import asdict
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Protocol
 
