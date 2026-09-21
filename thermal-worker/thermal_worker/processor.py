@@ -116,6 +116,46 @@ def _preview(temperature: np.ndarray, statistics: Mapping[str, float | int]) -> 
     return Image.fromarray(normalized, mode="L")
 
 
+def _radiometry_integrity(
+    decoded: DecodeResult,
+    statistics: Mapping[str, float | int],
+) -> dict[str, Any]:
+    finite_pixels = int(statistics["finite_pixels"])
+    invalid_pixels = int(statistics["invalid_pixels"])
+    total_pixels = finite_pixels + invalid_pixels
+    flags: list[str] = []
+
+    if invalid_pixels > 0:
+        flags.append("INVALID_TEMPERATURE_PIXELS")
+    if decoded.measurement_mode == "sdk_native_unreadable":
+        flags.append("MEASUREMENT_PARAMS_UNREADABLE")
+    if decoded.measurement_abi == "UNKNOWN":
+        flags.append("MEASUREMENT_ABI_UNCONFIRMED")
+
+    return {
+        "status": "WARN" if flags else "PASS",
+        "flags": flags,
+        "finite_fraction": (
+            float(finite_pixels / total_pixels)
+            if total_pixels > 0
+            else 0.0
+        ),
+        "invalid_fraction": (
+            float(invalid_pixels / total_pixels)
+            if total_pixels > 0
+            else 1.0
+        ),
+        "measurement_mode": decoded.measurement_mode,
+        "measurement_params_available": decoded.measurement_params is not None,
+        "measurement_ranges_available": decoded.measurement_ranges is not None,
+        "measurement_abi": decoded.measurement_abi,
+        "note": (
+            "Integrity flags describe decoder/provenance completeness only; "
+            "they are not a thermographic defect assessment."
+        ),
+    }
+
+
 def _capture_output_name(index: int, capture_group: str) -> str:
     base = PurePosixPath(capture_group).name or f"capture-{index:05d}"
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", base).strip("._") or "capture"
@@ -599,6 +639,7 @@ def process_handoff(
                 )
     
             statistics = _stats(temperature)
+            radiometry_integrity = _radiometry_integrity(decoded, statistics)
             hotspot_analysis, hotspot_mask = _hotspot_analysis(
                 temperature,
                 delta_c=hotspot_delta_c,
@@ -685,6 +726,7 @@ def process_handoff(
                     "measurement_ranges": decoded.measurement_ranges,
                     "requested_overrides": dict(measurement_overrides or {}),
                     "statistics": statistics,
+                    "integrity": radiometry_integrity,
                 },
                 "analysis": {
                     "hotspots": hotspot_analysis,
@@ -751,6 +793,10 @@ def process_handoff(
                     "hotspot_retained_pixels": hotspot_analysis["retained_pixels"],
                     "hotspot_peak_temperature_c": peak.get("max_c"),
                     "hotspot_peak_delta_c": peak.get("delta_max_c"),
+                    "radiometry_integrity_status": radiometry_integrity["status"],
+                    "radiometry_integrity_flags": "|".join(
+                        str(flag) for flag in radiometry_integrity["flags"]
+                    ),
                 }
             )
 
@@ -780,6 +826,7 @@ def process_handoff(
                     "measurement_mode": decoded.measurement_mode,
                     "measurement_abi": decoded.measurement_abi,
                     "measurement_ranges": decoded.measurement_ranges,
+                    "radiometry_integrity": radiometry_integrity,
                 }
             )
     
@@ -821,6 +868,11 @@ def process_handoff(
             "hotspot_retained_pixels": sum(
                 int(item["hotspot_retained_pixels"])
                 for item in capture_summaries
+            ),
+            "radiometry_warning_capture_count": sum(
+                1
+                for item in capture_summaries
+                if item["radiometry_integrity_status"] == "WARN"
             ),
             "max_hotspot_peak_delta_c": max(peak_deltas) if peak_deltas else None,
             "diagnostic_scope": "HOTSPOT_CANDIDATES_ONLY",
@@ -866,6 +918,8 @@ def process_handoff(
                 "hotspot_retained_pixels",
                 "hotspot_peak_temperature_c",
                 "hotspot_peak_delta_c",
+                "radiometry_integrity_status",
+                "radiometry_integrity_flags",
             ]
             writer = csv.DictWriter(handle, fieldnames=fields)
             writer.writeheader()
