@@ -76,6 +76,7 @@ class Mission(Base):
     aircraft_sn: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     preferred_executor: Mapped[str | None] = mapped_column(String(32), nullable=True)
     external_ref: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    dji_favorited: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     plan_version: Mapped[int] = mapped_column(Integer, default=1)
     item_count: Mapped[int] = mapped_column(Integer, default=0)
     plan_sha256: Mapped[str] = mapped_column(String(64), index=True)
