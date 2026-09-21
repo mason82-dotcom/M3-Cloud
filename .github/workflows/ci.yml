@@ -47,10 +47,10 @@ jobs:
           name: ruff-formatted-sources
           if-no-files-found: error
           path: |
-            GroundStation/Python/lyrebird_groundstation/preflight.py
-            GroundStation/Python/lyrebird_groundstation/ugcs_wiretap.py
-            GroundStation/tests/test_preflight.py
-            GroundStation/tests/test_ugcs_wiretap.py
+            lyrebird/GroundStation/Python/lyrebird_groundstation/preflight.py
+            lyrebird/GroundStation/Python/lyrebird_groundstation/ugcs_wiretap.py
+            lyrebird/GroundStation/tests/test_preflight.py
+            lyrebird/GroundStation/tests/test_ugcs_wiretap.py
 
       - name: Radon complexity
         run: python scripts/check_radon_complexity.py
