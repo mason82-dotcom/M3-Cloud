@@ -265,22 +265,24 @@ def _gps_separation_m(
     lon1 = _metadata_number(first, "gps", "longitude")
     lat2 = _metadata_number(second, "gps", "latitude")
     lon2 = _metadata_number(second, "gps", "longitude")
-    if None in {lat1, lon1, lat2, lon2}:
+    if any(value is None for value in (lat1, lon1, lat2, lon2)):
         return None
-    assert lat1 is not None and lon1 is not None
-    assert lat2 is not None and lon2 is not None
+    lat1_value = float(lat1)
+    lon1_value = float(lon1)
+    lat2_value = float(lat2)
+    lon2_value = float(lon2)
     if not (
-        -90.0 <= lat1 <= 90.0
-        and -90.0 <= lat2 <= 90.0
-        and -180.0 <= lon1 <= 180.0
-        and -180.0 <= lon2 <= 180.0
+        -90.0 <= lat1_value <= 90.0
+        and -90.0 <= lat2_value <= 90.0
+        and -180.0 <= lon1_value <= 180.0
+        and -180.0 <= lon2_value <= 180.0
     ):
         return None
 
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
+    phi1 = math.radians(lat1_value)
+    phi2 = math.radians(lat2_value)
+    dphi = math.radians(lat2_value - lat1_value)
+    dlambda = math.radians(lon2_value - lon1_value)
     hav = (
         math.sin(dphi / 2.0) ** 2
         + math.cos(phi1)
@@ -855,6 +857,10 @@ def process_handoff(
                 delta_c=hotspot_delta_c,
                 min_pixels=hotspot_min_pixels,
             )
+            registration_audit = _registration_audit(
+                wide_item,
+                thermal_item,
+            )
             folder = staging / "captures" / _capture_output_name(index, capture_group)
             folder.mkdir(parents=True, exist_ok=True)
             temperature_path = folder / "temperature.tif"
@@ -941,10 +947,7 @@ def process_handoff(
                 "analysis": {
                     "hotspots": hotspot_analysis,
                 },
-                "registration": _registration_audit(
-                    wide_item,
-                    thermal_item,
-                ),
+                "registration": registration_audit,
                 "artifacts": {
                     "temperature_tif": temperature_path.relative_to(staging).as_posix(),
                     "preview_png": preview_path.relative_to(staging).as_posix(),
@@ -980,6 +983,7 @@ def process_handoff(
                 if point_feature is not None
                 else [None, None]
             )
+            pair_audit = registration_audit["pair_audit"]
             capture_summaries.append(
                 {
                     "capture_group": capture_group,
@@ -1003,6 +1007,13 @@ def process_handoff(
                     "radiometry_integrity_flags": "|".join(
                         str(flag) for flag in radiometry_integrity["flags"]
                     ),
+                    "registration_status": registration_audit["status"],
+                    "pair_capture_time_delta_ms": pair_audit[
+                        "capture_time_delta_ms"
+                    ],
+                    "pair_gps_separation_m": pair_audit[
+                        "gps_separation_m"
+                    ],
                 }
             )
 
@@ -1033,6 +1044,7 @@ def process_handoff(
                     "measurement_abi": decoded.measurement_abi,
                     "measurement_ranges": decoded.measurement_ranges,
                     "radiometry_integrity": radiometry_integrity,
+                    "registration": registration_audit,
                 }
             )
     
@@ -1080,6 +1092,17 @@ def process_handoff(
                 for item in capture_summaries
                 if item["radiometry_integrity_status"] == "WARN"
             ),
+            "registration_status": "NOT_REGISTERED",
+            "pair_capture_time_evidence_count": sum(
+                1
+                for item in capture_summaries
+                if item["pair_capture_time_delta_ms"] is not None
+            ),
+            "pair_gps_evidence_count": sum(
+                1
+                for item in capture_summaries
+                if item["pair_gps_separation_m"] is not None
+            ),
             "max_hotspot_peak_delta_c": max(peak_deltas) if peak_deltas else None,
             "diagnostic_scope": "HOTSPOT_CANDIDATES_ONLY",
         }
@@ -1126,6 +1149,9 @@ def process_handoff(
                 "hotspot_peak_delta_c",
                 "radiometry_integrity_status",
                 "radiometry_integrity_flags",
+                "registration_status",
+                "pair_capture_time_delta_ms",
+                "pair_gps_separation_m",
             ]
             writer = csv.DictWriter(handle, fieldnames=fields)
             writer.writeheader()
