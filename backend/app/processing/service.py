@@ -302,6 +302,7 @@ def thermal_result_manifest_details(root: Path) -> dict[str, dict[str, object]]:
             "width",
             "height",
             "sdk_label",
+            "api_version",
             "measurement_mode",
             "measurement_abi",
             "statistics",
