@@ -632,3 +632,87 @@ def test_radiometry_integrity_flags_frozen_metadata_dimension_mismatch():
     assert quality["source_image_width"] == 1280
     assert quality["source_image_height"] == 1024
 
+def test_registration_audit_compares_pair_metadata_without_registering_pixels():
+    from thermal_worker.processor import _registration_audit
+
+    wide = {
+        "capture_time_utc": "2026-09-21T01:02:03.000000+00:00",
+        "metadata": {
+            "gps": {"latitude": 49.1, "longitude": 8.5},
+            "gimbal_attitude": {
+                "yaw_deg": 179.0,
+                "pitch_deg": -90.0,
+                "roll_deg": 0.2,
+            },
+            "raw": {
+                "xmp": {
+                    "drone-dji": {
+                        "CalibratedFocalLength": "12000.000000",
+                        "CalibratedOpticalCenterX": "2640.000000",
+                        "CalibratedOpticalCenterY": "1978.000000",
+                    }
+                }
+            },
+        },
+    }
+    thermal = {
+        "capture_time_utc": "2026-09-21T01:02:03.025000+00:00",
+        "metadata": {
+            "gps": {"latitude": 49.1, "longitude": 8.5},
+            "gimbal_attitude": {
+                "yaw_deg": -179.0,
+                "pitch_deg": -89.0,
+                "roll_deg": -0.1,
+            },
+            "raw": {
+                "xmp": {
+                    "drone-dji": {
+                        "CalibratedFocalLength": "9100.000000",
+                        "CalibratedOpticalCenterX": "0.000000",
+                        "CalibratedOpticalCenterY": "0.000000",
+                    }
+                }
+            },
+        },
+    }
+
+    audit = _registration_audit(wide, thermal)
+
+    assert audit["status"] == "NOT_REGISTERED"
+    assert audit["wide_thermal_coregistered"] is False
+    assert audit["georeferenced_temperature_raster"] is False
+    pair = audit["pair_audit"]
+    assert pair["capture_time_delta_ms"] == pytest.approx(25.0)
+    assert pair["gps_separation_m"] == pytest.approx(0.0)
+    assert pair["gimbal_delta_deg"]["yaw_deg"] == pytest.approx(2.0)
+    assert pair["gimbal_delta_deg"]["pitch_deg"] == pytest.approx(1.0)
+    assert pair["gimbal_delta_deg"]["roll_deg"] == pytest.approx(0.3)
+    assert pair["wide_dji_calibration_raw"]["CalibratedFocalLength"] == "12000.000000"
+    assert pair["thermal_dji_calibration_raw"] == {
+        "CalibratedFocalLength": "9100.000000",
+        "CalibratedOpticalCenterX": "0.000000",
+        "CalibratedOpticalCenterY": "0.000000",
+    }
+    assert "No validated WIDE-to-THERMAL" in audit["note"]
+
+
+def test_registration_audit_leaves_missing_pair_evidence_unknown():
+    from thermal_worker.processor import _registration_audit
+
+    audit = _registration_audit(
+        {"metadata": {}},
+        {"metadata": {}},
+    )
+
+    assert audit["status"] == "NOT_REGISTERED"
+    pair = audit["pair_audit"]
+    assert pair["capture_time_delta_ms"] is None
+    assert pair["gps_separation_m"] is None
+    assert pair["gimbal_delta_deg"] == {
+        "yaw_deg": None,
+        "pitch_deg": None,
+        "roll_deg": None,
+    }
+    assert pair["wide_dji_calibration_raw"] == {}
+    assert pair["thermal_dji_calibration_raw"] == {}
+
