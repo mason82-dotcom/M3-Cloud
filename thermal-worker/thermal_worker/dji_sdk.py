@@ -119,6 +119,7 @@ class DjiThermalSdk:
         self.release_dir = self._resolve_release_dir(self.sdk_dir)
         self.sdk_label = sdk_label or os.environ.get("DJI_TSDK_VERSION") or self.sdk_dir.name
         self._dll_directory_handle = None
+        self._helper_libraries: list[ctypes.CDLL] = []
         self._library = self._load_library()
         self._bind()
 
@@ -165,14 +166,28 @@ class DjiThermalSdk:
         # DJI packages helper libraries beside libdirp. Preload what can be loaded
         # globally so libdirp can resolve optional codec/IR processing symbols.
         mode = getattr(ctypes, "RTLD_GLOBAL", 0)
+        pending = [
+            helper
+            for helper in sorted(self.release_dir.glob("*.so*"))
+            if helper.name != "libdirp.so"
+        ]
         deferred: list[tuple[Path, OSError]] = []
-        for helper in sorted(self.release_dir.glob("*.so*")):
-            if helper.name == "libdirp.so":
-                continue
-            try:
-                ctypes.CDLL(str(helper), mode=mode)
-            except OSError as exc:
-                deferred.append((helper, exc))
+        while pending:
+            next_pending: list[Path] = []
+            deferred = []
+            loaded_any = False
+            for helper in pending:
+                try:
+                    library = ctypes.CDLL(str(helper), mode=mode)
+                    self._helper_libraries.append(library)
+                    loaded_any = True
+                except OSError as exc:
+                    next_pending.append(helper)
+                    deferred.append((helper, exc))
+            if not loaded_any:
+                break
+            pending = next_pending
+
         try:
             return ctypes.CDLL(str(library_path), mode=mode)
         except OSError as exc:
