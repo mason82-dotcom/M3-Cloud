@@ -20,6 +20,24 @@ PostgreSQL/PostGIS
 
 Do not replace that production path with DJI's historical Spring Boot demo.
 
+## One-command Windows development setup
+
+For the Windows workstation used to build `com.lyrebird.rc`, run from the repository root:
+
+```powershell
+.\scripts\setup-dji-development.ps1
+```
+
+This resolves and verifies the already-pinned Android DJI dependencies (`MSDK 5.18.0`,
+`networkImp 5.18.0`, `wpmzsdk 1.0.5.1`) through the Gradle wrapper and installs the official
+Cloud API reference checkout under `.vendor/dji-cloud-api/`.
+
+To include DJI's deprecated Cloud API demo for protocol comparison only:
+
+```powershell
+.\scripts\setup-dji-development.ps1 -IncludeDeprecatedCloudDemo
+```
+
 ## Install the official reference material
 
 Windows PowerShell:
