@@ -22,3 +22,14 @@ def test_dji_service_create_wires_primary_domains() -> None:
     assert service.payloads.services is service.services
     assert service.cloud_control.services is service.services
     assert service.cloud_control.gateways is service.gateways
+
+
+def test_dji_service_cloud_control_is_wired_without_polluting_router() -> None:
+    redis = object()
+
+    service = DJIService.create(redis)  # type: ignore[arg-type]
+
+    assert service.cloud_control.services is service.services
+    assert service.cloud_control.gateways is service.gateways
+    assert service.cloud_control.settings is not None
+    assert not hasattr(service.router, "cloud_control")

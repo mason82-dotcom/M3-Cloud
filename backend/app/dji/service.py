@@ -80,7 +80,6 @@ class DJIService:
             events=events,
             requests=requests,
             drc_state=drc_state,
-            cloud_control=cloud_control,
         )
 
         return cls(
@@ -98,4 +97,5 @@ class DJIService:
             gateways=gateways,
             payloads=payloads,
             drc_state=drc_state,
+            cloud_control=cloud_control,
         )

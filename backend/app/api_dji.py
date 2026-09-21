@@ -42,6 +42,11 @@ class LiveLensBody(BaseModel):
     video_type: Literal["normal", "thermal", "wide", "zoom"]
 
 
+class CloudControlAuthorizationBody(BaseModel):
+    user_id: str = Field(min_length=1, max_length=128)
+    user_callsign: str = Field(min_length=1, max_length=128)
+
+
 
 
 
