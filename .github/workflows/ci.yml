@@ -87,17 +87,23 @@ jobs:
             echo "MAPLIBRE_TOKEN=dummy"
           } > local.properties
 
+      - name: Resolve dependency verification metadata
+        run: ./gradlew --no-daemon --write-verification-metadata sha256 help
+
+      - name: Verify pinned DJI dependency binaries
+        run: python3 scripts/verify_dji_dependency_metadata.py
+
       - name: Spotless, compile, and unit tests
-        run: ./gradlew --no-daemon --write-verification-metadata sha256 :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
+        run: ./gradlew --no-daemon :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
 
       - name: Lyrebird Detekt and Lint reports
-        run: ./gradlew --no-daemon --write-verification-metadata sha256 qualityLyrebird
+        run: ./gradlew --no-daemon qualityLyrebird
 
-      - name: Upload Gradle verification bootstrap
+      - name: Upload resolved Gradle verification metadata
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: gradle-verification-bootstrap
+          name: gradle-verification-audit
           if-no-files-found: error
           path: lyrebird/LyrebirdApp/android-sdk-v5-as/gradle/verification-metadata.xml
 
