@@ -11,6 +11,7 @@ aircraft-side trust mechanism.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import math
@@ -20,7 +21,6 @@ import struct
 import threading
 import time
 import zlib
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -545,7 +545,7 @@ class UgcsWiretapProxy:
         self._running.clear()
         for sock in (self._vsm_socket, self._aircraft_socket):
             if sock is not None:
-                with suppress(OSError):
+                with contextlib.suppress(OSError):
                     sock.close()
         self.recorder.close()
 
@@ -604,7 +604,7 @@ class UgcsWiretapProxy:
         while self._running.is_set():
             try:
                 data, peer = self._aircraft_socket.recvfrom(65535)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 return
@@ -868,7 +868,7 @@ def compare_wiretap_to_rc(
     if len(wire_items) != len(rc_items):
         differences.append(f"item count differs: wire={len(wire_items)} rc={len(rc_items)}")
 
-    for index, (wire, rc) in enumerate(zip(wire_items, rc_items)):
+    for index, (wire, rc) in enumerate(zip(wire_items, rc_items, strict=False)):
         differences.extend(
             _compare_item(
                 wire,
