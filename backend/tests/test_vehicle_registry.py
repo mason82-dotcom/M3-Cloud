@@ -104,3 +104,44 @@ async def test_registry_uses_dji_cloud_as_primary_and_keeps_lyrebird_rtk_fact():
     assert positioning["rtk_fixed"] is True
     assert positioning["rtk"]["fix"] == "FIXED"
     assert positioning["rtk"]["connected"] is True
+
+
+
+@pytest.mark.asyncio
+async def test_dji_cloud_offline_state_beats_lyrebird_online_fallback():
+    dji = VehicleSnapshot(
+        id="vehicle:A",
+        sn="A",
+        name="DJI_MAVIC_3T",
+        model="DJI_MAVIC_3T",
+        source="dji_cloud",
+        sources=("dji_cloud",),
+        online=False,
+        gateway_sn="RC-A",
+        updated_at_ms=2000,
+        telemetry={"latitude": 49.0},
+    )
+    lyrebird = VehicleSnapshot(
+        id="vehicle:A",
+        sn="A",
+        name="field-drone",
+        model="M3T",
+        source="lyrebird",
+        sources=("lyrebird",),
+        online=True,
+        updated_at_ms=2100,
+        telemetry={"latitude": 49.1},
+    )
+
+    registry = VehicleRegistry(
+        [
+            Provider("dji_cloud", [dji]),
+            Provider("lyrebird", [lyrebird]),
+        ]
+    )
+    vehicle = (await registry.list_vehicles())[0]
+
+    assert vehicle.source == "dji_cloud"
+    assert vehicle.online is False
+    assert vehicle.sources == ("dji_cloud", "lyrebird")
+    assert vehicle.telemetry["latitude"] == 49.0
