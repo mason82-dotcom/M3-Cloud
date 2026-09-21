@@ -51,10 +51,15 @@ internal data class MavlinkSnapshot(
     val velocityEastMps: Double = 0.0,
     val velocityDownMps: Double = 0.0,
 
-    // Attitude and heading in degrees. [headingDeg] is true north, as DJI reports it.
+    // Aircraft attitude in degrees. headingDeg is DJI Compass Heading; no true-vs-magnetic
+    // north claim is made here because MSDK 5.18 documents it only as compass heading.
     val rollDeg: Double = 0.0,
     val pitchDeg: Double = 0.0,
     val yawDeg: Double = 0.0,
+    /** Derived from successive attitude samples because this telemetry path exposes no body-rate key. */
+    val rollRateRadS: Double = 0.0,
+    val pitchRateRadS: Double = 0.0,
+    val yawRateRadS: Double = 0.0,
     val headingDeg: Double = 0.0,
 
     val satelliteCount: Int = INVALID_SATELLITES,
@@ -199,6 +204,7 @@ internal data class MavlinkSnapshot(
 
     val timeNeededToGoHomeS: Int = 0,
     val timeNeededToLandS: Int = 0,
+    /** Elapsed motor-on flight time, converted from DJI KeyFlightTimeInSeconds' 0.1 s raw unit. */
     val totalFlightTimeS: Int = 0,
     val maxRadiusCanFlyAndGoHomeM: Double = 0.0,
     val batteryNeededToGoHomePercent: Int = 0,

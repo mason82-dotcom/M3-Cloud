@@ -483,6 +483,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         }
     }
     private val telemetryCoordinator = TelemetryCoordinator()
+    private val attitudeRateEstimator = com.lyrebird.rc.telemetry.AttitudeRateEstimator()
     private val rtkTelemetryMonitor = RtkTelemetryMonitor()
 
     /**
@@ -735,6 +736,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private val areMotorsOnKey: DJIKey<Boolean> = FlightControllerKey.KeyAreMotorsOn.create()
     private val isFailSafeKey: DJIKey<Boolean> = FlightControllerKey.KeyIsFailSafe.create()
     private val compassHasErrorKey: DJIKey<Boolean> = FlightControllerKey.KeyCompassHasError.create()
+    // Despite the key name, MSDK 5.18 documents the raw unit as 0.1 s.
+    private val flightTimeDecisecondsKey: DJIKey<Int> =
+        FlightControllerKey.KeyFlightTimeInSeconds.create()
 
     // Aircraft idle (low-power / eco) detection.
     // DJI exposes no arming/eco key here (KeyAreMotorsOn is unreliable — it reports true/null in
@@ -6263,6 +6267,11 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         val homeLocation = getHomeLocation()
         val speed = getSpeed()
         val attitude = getAttitude()
+        val attitudeRates = attitudeRateEstimator.update(
+            rollDeg = attitude.roll,
+            pitchDeg = attitude.pitch,
+            yawDeg = attitude.yaw
+        )
         val altitudeRelativeTakeoff = getAltitude()
         val takeoffAltitudeAmsl = getTakeoffAltitudeAmsl()
         val rawGimbalAttitude = getRawGimbalAttitude()
@@ -6298,6 +6307,9 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             rollDeg = attitude.roll,
             pitchDeg = attitude.pitch,
             yawDeg = attitude.yaw,
+            rollRateRadS = attitudeRates.rollRadS,
+            pitchRateRadS = attitudeRates.pitchRadS,
+            yawRateRadS = attitudeRates.yawRadS,
             headingDeg = getHeading(),
             satelliteCount = getSatelliteCount(),
             gnssSignalLevel = getGpsSignalLevel(),
@@ -6378,7 +6390,7 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
             timeNeededToGoHomeS = getTimeNeededToGoHome(),
             timeNeededToLandS = getTimeNeededToLand(),
-            totalFlightTimeS = getTimeNeededToGoHome() + getTimeNeededToLand(),
+            totalFlightTimeS = (flightTimeDecisecondsKey.get(0).coerceAtLeast(0) / 10),
             maxRadiusCanFlyAndGoHomeM = goHomeInfo.maxRadiusCanFlyAndGoHome.toDouble(),
             batteryNeededToGoHomePercent = goHomeInfo.batteryPercentNeededToGoHome,
             batteryNeededToLandPercent = goHomeInfo.batteryPercentNeededToLand,

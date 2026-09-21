@@ -8,6 +8,24 @@ import org.junit.Test
 class MavlinkAircraftStatusTest {
 
     @Test
+    fun attitudeCarriesDerivedAngularRates() {
+        val payload = ByteBuffer.wrap(
+            MavlinkMessages.attitude(
+                MavlinkSnapshot(
+                    rollRateRadS = 0.1,
+                    pitchRateRadS = -0.2,
+                    yawRateRadS = 0.3
+                ),
+                timeBootMs = 123L
+            )
+        ).order(ByteOrder.LITTLE_ENDIAN)
+
+        assertEquals(0.1f, payload.getFloat(16), 0.0001f)
+        assertEquals(-0.2f, payload.getFloat(20), 0.0001f)
+        assertEquals(0.3f, payload.getFloat(24), 0.0001f)
+    }
+
+    @Test
     fun extendedStateUsesUndefinedVtolAndActualFlyingState() {
         val payload = MavlinkMessages.extendedSysState(
             MavlinkSnapshot(motorsRunning = true, isFlying = false, flightMode = "UNKNOWN")

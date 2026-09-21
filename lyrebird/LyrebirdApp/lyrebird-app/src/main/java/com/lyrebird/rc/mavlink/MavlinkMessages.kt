@@ -229,8 +229,9 @@ internal object MavlinkMessages {
             .f32((snapshot.rollDeg * DEG_TO_RAD).toFloat())
             .f32((snapshot.pitchDeg * DEG_TO_RAD).toFloat())
             .f32((wrapPi(snapshot.yawDeg) * DEG_TO_RAD).toFloat())
-            // Angular rates are not exposed by the DJI SDK telemetry Lyrebird reads.
-            .f32(0f).f32(0f).f32(0f)
+            .f32(snapshot.rollRateRadS.toFloat())
+            .f32(snapshot.pitchRateRadS.toFloat())
+            .f32(snapshot.yawRateRadS.toFloat())
             .build()
 
     /**
