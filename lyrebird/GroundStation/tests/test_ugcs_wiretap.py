@@ -97,15 +97,9 @@ def test_safe_dry_run_is_fail_closed_for_noise_mavlink1_and_unknown_message():
 
 
 def test_safe_dry_run_allows_mission_upload_but_blocks_zero_count_clear():
-    assert should_block_dry_run(
-        mav_frame(MSG_MISSION_COUNT, mission_count_payload(8))
-    )[0] is False
-    assert should_block_dry_run(
-        mav_frame(MSG_MISSION_ITEM_INT, mission_item_payload())
-    )[0] is False
-    blocked, reason = should_block_dry_run(
-        mav_frame(MSG_MISSION_COUNT, mission_count_payload(0))
-    )
+    assert should_block_dry_run(mav_frame(MSG_MISSION_COUNT, mission_count_payload(8)))[0] is False
+    assert should_block_dry_run(mav_frame(MSG_MISSION_ITEM_INT, mission_item_payload()))[0] is False
+    blocked, reason = should_block_dry_run(mav_frame(MSG_MISSION_COUNT, mission_count_payload(0)))
     assert blocked is True
     assert "clear" in reason.lower()
 

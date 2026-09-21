@@ -155,6 +155,11 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
             "measurement_abi": "AMBIENT_V2",
             "api_version": {"api": 8, "magic": "DIRP"},
         },
+        "source_identity": {
+            "expected_platform": "M3T",
+            "confirmed_capture_count": 1,
+            "unconfirmed_capture_count": 0,
+        },
         "georeferenced_capture_count": 1,
         "capture_points_geojson": "capture-points.geojson",
         "registration_audit_json": "registration-audit.json",
@@ -166,6 +171,8 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
             "max_c": 42.5,
             "hotspot_component_count": 1,
             "diagnostic_scope": "HOTSPOT_CANDIDATES_ONLY",
+            "m3t_identity_confirmed_count": 1,
+            "m3t_identity_unconfirmed_count": 0,
             "registration_status": "NOT_REGISTERED",
             "pair_capture_time_evidence_count": 1,
             "pair_gps_evidence_count": 1,
@@ -197,6 +204,10 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
                 "measurement_mode": "sdk_native",
                 "measurement_ranges": {
                     "distance_m": {"min": 1.0, "max": 500.0},
+                },
+                "source_identity": {
+                    "status": "CONFIRMED",
+                    "expected_platform": "M3T",
                 },
                 "registration": {
                     "status": "NOT_REGISTERED",
@@ -248,6 +259,8 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert summary_json["decoder_provenance"]["sdk_library_sha256"] == "d" * 64
     assert summary_csv["result_kind"] == "THERMAL_SUMMARY_CSV"
     assert summary_json["thermal_summary"]["max_c"] == 42.5
+    assert summary_json["thermal_summary"]["m3t_identity_confirmed_count"] == 1
+    assert summary_json["thermal_summary"]["m3t_identity_unconfirmed_count"] == 0
     assert summary_json["thermal_summary"]["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
     assert temperature["result_kind"] == "TEMPERATURE_RASTER"
     assert temperature["temperature_unit"] == "degree_Celsius"
@@ -259,6 +272,7 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert temperature["decoder_provenance"] == manifest["decoder_provenance"]
     assert temperature["api_version"] == {"api": 8, "magic": "DIRP"}
     assert temperature["measurement_ranges"]["distance_m"]["max"] == 500.0
+    assert temperature["source_identity"]["status"] == "CONFIRMED"
     assert temperature["registration"]["status"] == "NOT_REGISTERED"
     assert temperature["registration"]["wide_thermal_coregistered"] is False
     assert temperature["registration"]["pair_audit"]["capture_time_delta_ms"] == 25.0
@@ -274,6 +288,9 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert details["result-manifest.json"]["result_kind"] == "THERMAL_MANIFEST"
     assert details["result-manifest.json"]["decoder_provenance"] == (
         manifest["decoder_provenance"]
+    )
+    assert details["result-manifest.json"]["source_identity"] == (
+        manifest["source_identity"]
     )
 
 
