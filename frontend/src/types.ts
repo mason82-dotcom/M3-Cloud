@@ -211,6 +211,7 @@ export interface MissionPlannerProfile {
   horizontal_fov_deg: number;
   vertical_fov_deg: number;
   min_interval_s: number;
+  stored_assets_per_exposure: number;
   geometry_source: string;
   note: string;
 }
@@ -247,6 +248,10 @@ export interface MissionGridPreview {
     route_distance_m: number;
     capture_distance_m: number;
     expected_photos_upper_bound: number;
+    expected_media_assets_upper_bound: number;
+    stored_assets_per_exposure: number;
+    nominal_route_time_s: number;
+    nominal_capture_time_s: number;
   };
   cadence: {
     minimum_interval_s: number;

@@ -65,6 +65,9 @@ def test_m3e_2cm_grid_matches_camera_geometry_and_is_wire_ready():
     assert commands[:3] == [22, 178, 1000]
     assert commands.count(206) == geometry["capture_segment_count"] * 2
     assert preview["mission_item_count"] == 3 + geometry["capture_segment_count"] * 4
+    assert geometry["expected_photos_upper_bound"] >= 1
+    assert geometry["expected_media_assets_upper_bound"] == geometry["expected_photos_upper_bound"]
+    assert geometry["nominal_route_time_s"] > geometry["nominal_capture_time_s"]
 
 
 def test_each_grid_segment_has_trigger_start_and_stop_so_transits_do_not_capture():
@@ -110,6 +113,10 @@ def test_m3m_multispectral_uses_narrower_ms_footprint_and_two_second_cadence():
     assert cadence["max_camera_speed_mps"] == pytest.approx(3.912, abs=0.01)
     assert cadence["effective_speed_mps"] == pytest.approx(3.912, abs=0.01)
     assert cadence["speed_limited_by_camera"] is True
+    assert geometry["stored_assets_per_exposure"] == 6
+    assert geometry["expected_media_assets_upper_bound"] == (
+        geometry["expected_photos_upper_bound"] * 6
+    )
     assert preview["warnings"]
 
 

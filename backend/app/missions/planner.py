@@ -25,6 +25,7 @@ class CameraPlanningProfile:
     horizontal_fov_deg: float
     vertical_fov_deg: float
     min_interval_s: float
+    stored_assets_per_exposure: int
     geometry_source: str
     note: str = ""
 
@@ -66,6 +67,7 @@ PLANNING_PROFILES: dict[str, CameraPlanningProfile] = {
         horizontal_fov_deg=_M3E_HFOV,
         vertical_fov_deg=_M3E_VFOV,
         min_interval_s=0.7,
+        stored_assets_per_exposure=1,
         geometry_source="DJI_SPEC_DIAGONAL_FOV_DERIVED_AXES",
         note=(
             "84 degree diagonal FOV and 5280x3956 image size are DJI specifications; "
@@ -82,6 +84,7 @@ PLANNING_PROFILES: dict[str, CameraPlanningProfile] = {
         horizontal_fov_deg=_M3T_12MP_HFOV,
         vertical_fov_deg=_M3T_12MP_VFOV,
         min_interval_s=2.0,
+        stored_assets_per_exposure=1,
         geometry_source="DJI_SPEC_12MP_MODE_DERIVED_DIMENSIONS",
         note=(
             "DJI specifies an 84 degree wide-camera FOV and 12 MP/48 MP modes. "
@@ -99,6 +102,7 @@ PLANNING_PROFILES: dict[str, CameraPlanningProfile] = {
         horizontal_fov_deg=61.2,
         vertical_fov_deg=48.10,
         min_interval_s=2.0,
+        stored_assets_per_exposure=6,
         geometry_source="DJI_SPEC",
         note=(
             "The multispectral sensor is the limiting footprint/cadence for the current "
@@ -484,7 +488,13 @@ def build_grid_preview(
 
         segment_distance = _distance(start_xy, end_xy)
         active_distance_m += segment_distance
-        expected_photos += max(1, math.ceil(segment_distance / trigger_distance_m))
+        # Conservative resource bound: DJI's distance trigger can produce an exposure at/near
+        # a segment boundary depending on executor semantics. One extra exposure per independent
+        # trigger span avoids under-estimating storage and processing load.
+        expected_photos += max(
+            1,
+            math.ceil(segment_distance / trigger_distance_m) + 1,
+        )
         route_xy.extend((start_xy, end_xy))
 
     if len(items) > MAX_MISSION_ITEMS:
@@ -496,6 +506,11 @@ def build_grid_preview(
     route_distance_m = sum(
         _distance(current, following)
         for current, following in zip(route_xy, route_xy[1:])
+    )
+    nominal_route_time_s = route_distance_m / effective_speed_mps
+    nominal_capture_time_s = active_distance_m / effective_speed_mps
+    expected_media_assets_upper_bound = (
+        expected_photos * profile.stored_assets_per_exposure
     )
 
     planning_context = {
@@ -521,6 +536,8 @@ def build_grid_preview(
             "effective_speed_mps": effective_speed_mps,
             "capture_segment_count": len(segments_xy),
             "expected_photos_upper_bound": expected_photos,
+            "expected_media_assets_upper_bound": expected_media_assets_upper_bound,
+            "nominal_route_time_s": nominal_route_time_s,
         },
     }
     plan = normalize_plan(items, planning=planning_context)
@@ -570,6 +587,10 @@ def build_grid_preview(
             "route_distance_m": route_distance_m,
             "capture_distance_m": active_distance_m,
             "expected_photos_upper_bound": expected_photos,
+            "expected_media_assets_upper_bound": expected_media_assets_upper_bound,
+            "stored_assets_per_exposure": profile.stored_assets_per_exposure,
+            "nominal_route_time_s": nominal_route_time_s,
+            "nominal_capture_time_s": nominal_capture_time_s,
         },
         "cadence": {
             "minimum_interval_s": profile.min_interval_s,

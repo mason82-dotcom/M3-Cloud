@@ -1148,7 +1148,9 @@ export function MissionsView() {
                     <span>Trigger <b>{plannerPreview.geometry.trigger_distance_m.toFixed(1)} m</b></span>
                     <span>Speed <b>{plannerPreview.cadence.effective_speed_mps.toFixed(1)} m/s</b></span>
                     <span>Segments <b>{plannerPreview.geometry.capture_segment_count}</b></span>
-                    <span>Photos ≤ <b>{plannerPreview.geometry.expected_photos_upper_bound}</b></span>
+                    <span>Exposures ≤ <b>{plannerPreview.geometry.expected_photos_upper_bound}</b></span>
+                    <span>Files ≤ <b>{plannerPreview.geometry.expected_media_assets_upper_bound}</b></span>
+                    <span>Nominal time <b>{Math.ceil(plannerPreview.geometry.nominal_route_time_s / 60)} min</b></span>
                     <span>Items <b>{plannerPreview.mission_item_count}</b></span>
                     <span>Area <b>{(plannerPreview.geometry.area_m2 / 10_000).toFixed(2)} ha</b></span>
                   </div>
