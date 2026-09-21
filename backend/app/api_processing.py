@@ -228,6 +228,63 @@ async def download_processing_result(
     )
 
 
+@router.get("/jobs/{job_id}/results/{result_id}/view")
+async def view_processing_result(
+    job_id: uuid.UUID,
+    result_id: uuid.UUID,
+) -> StreamingResponse:
+    async with session_factory() as session:
+        result = await session.get(ProcessingResult, result_id)
+        if result is None or result.job_id != job_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Processing result not found",
+            )
+        details = result.details or {}
+        if details.get("result_kind") not in {"THERMAL_PREVIEW", "HOTSPOT_MASK"}:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Processing result is not an inline thermal image",
+            )
+        if result.content_type not in {"image/png", "image/jpeg", "image/webp"}:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Processing result content type is not allowed inline",
+            )
+        bucket = result.bucket
+        object_key = result.object_key
+        content_type = result.content_type
+        size_bytes = result.size_bytes
+
+    client = create_storage_client()
+    try:
+        response = client.get_object(Bucket=bucket, Key=object_key)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Result object unavailable: {type(exc).__name__}",
+        ) from exc
+
+    body = response["Body"]
+
+    def chunks():
+        try:
+            yield from body.iter_chunks(chunk_size=512 * 1024)
+        finally:
+            body.close()
+
+    return StreamingResponse(
+        chunks(),
+        media_type=content_type,
+        headers={
+            "Content-Length": str(size_bytes),
+            "Content-Disposition": "inline",
+            "Cache-Control": "private, max-age=300",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.post("/webodm", status_code=status.HTTP_202_ACCEPTED)
 async def create_webodm_job(
     body: WebODMJobRequest,
