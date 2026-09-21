@@ -27,3 +27,6 @@ where = ["."]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff.lint]
+ignore = ["I001"]
