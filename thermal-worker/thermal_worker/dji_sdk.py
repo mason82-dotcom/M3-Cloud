@@ -75,6 +75,7 @@ class DecodeResult:
     api_version: dict[str, int | str]
     rjpeg_version: dict[str, int]
     measurement_params: MeasurementParams | None
+    measurement_ranges: dict[str, dict[str, float]] | None
     measurement_mode: str
     measurement_error_code: int | None
     sdk_label: str
@@ -116,6 +117,35 @@ class _DirpMeasurementParams(ctypes.Structure):
         ("emissivity", ctypes.c_float),
         ("reflection", ctypes.c_float),
         ("ambient_temp", ctypes.c_float),
+    ]
+
+
+class _FloatRange(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("min", ctypes.c_float),
+        ("max", ctypes.c_float),
+    ]
+
+
+class _DirpMeasurementParamsRangeLegacy(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("distance", _FloatRange),
+        ("humidity", _FloatRange),
+        ("emissivity", _FloatRange),
+        ("reflection", _FloatRange),
+    ]
+
+
+class _DirpMeasurementParamsRangeV2(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("distance", _FloatRange),
+        ("humidity", _FloatRange),
+        ("emissivity", _FloatRange),
+        ("reflection", _FloatRange),
+        ("ambient_temp", _FloatRange),
     ]
 
 
@@ -257,10 +287,8 @@ class DjiThermalSdk:
         self._destroy.restype = ctypes.c_int32
 
         self._get_api_version = self._library.dirp_get_api_version
-        self._get_api_version.argtypes = [
-            ctypes.c_void_p,
-            ctypes.POINTER(_DirpApiVersion),
-        ]
+        # dirp_get_api_version is a global API query and does not take a DIRP handle.
+        self._get_api_version.argtypes = [ctypes.POINTER(_DirpApiVersion)]
         self._get_api_version.restype = ctypes.c_int32
 
         self._get_version = self._library.dirp_get_rjpeg_version
@@ -291,6 +319,28 @@ class DjiThermalSdk:
         ]
         self._set_measurement.restype = ctypes.c_int32
 
+        self._get_measurement_range = getattr(
+            self._library,
+            "dirp_get_measurement_params_range",
+            None,
+        )
+        if self._get_measurement_range is not None and self._measurement_abi in {
+            "LEGACY_V1",
+            "AMBIENT_V2",
+        }:
+            range_type = (
+                _DirpMeasurementParamsRangeV2
+                if self._measurement_abi == "AMBIENT_V2"
+                else _DirpMeasurementParamsRangeLegacy
+            )
+            self._get_measurement_range.argtypes = [
+                ctypes.c_void_p,
+                ctypes.POINTER(range_type),
+            ]
+            self._get_measurement_range.restype = ctypes.c_int32
+        else:
+            self._get_measurement_range = None
+
         self._measure_ex = self._library.dirp_measure_ex
         self._measure_ex.argtypes = [
             ctypes.c_void_p,
@@ -315,23 +365,82 @@ class DjiThermalSdk:
         if not overrides:
             return {}
         result = {str(key): float(value) for key, value in overrides.items()}
-        ranges = {
-            "distance_m": (1.0, 25.0),
-            "humidity_pct": (20.0, 100.0),
-            "emissivity": (0.10, 1.00),
-            "reflection_c": (-40.0, 500.0),
-            "ambient_temp_c": (-50.0, 80.0),
+        allowed = {
+            "distance_m",
+            "humidity_pct",
+            "emissivity",
+            "reflection_c",
+            "ambient_temp_c",
         }
-        unknown = set(result) - set(ranges)
+        unknown = set(result) - allowed
         if unknown:
             raise ValueError(f"Unsupported measurement overrides: {sorted(unknown)}")
         for key, value in result.items():
-            minimum, maximum = ranges[key]
-            if not np.isfinite(value) or not minimum <= value <= maximum:
-                raise ValueError(
-                    f"{key} must be finite and in [{minimum}, {maximum}], got {value}"
-                )
+            if not np.isfinite(value):
+                raise ValueError(f"{key} must be finite, got {value}")
+        if "distance_m" in result and result["distance_m"] <= 0:
+            raise ValueError("distance_m must be greater than zero")
+        if "humidity_pct" in result and not 0.0 <= result["humidity_pct"] <= 100.0:
+            raise ValueError("humidity_pct must be in [0, 100]")
+        if "emissivity" in result and not 0.0 < result["emissivity"] <= 1.0:
+            raise ValueError("emissivity must be in (0, 1]")
         return result
+
+    @staticmethod
+    def _range_dict(value: ctypes.Structure, *, include_ambient: bool) -> dict[str, dict[str, float]]:
+        fields = [
+            ("distance_m", "distance"),
+            ("humidity_pct", "humidity"),
+            ("emissivity", "emissivity"),
+            ("reflection_c", "reflection"),
+        ]
+        if include_ambient:
+            fields.append(("ambient_temp_c", "ambient_temp"))
+        return {
+            output: {
+                "min": float(getattr(value, field).min),
+                "max": float(getattr(value, field).max),
+            }
+            for output, field in fields
+        }
+
+    def _measurement_ranges(
+        self,
+        handle: ctypes.c_void_p,
+    ) -> dict[str, dict[str, float]] | None:
+        if self._get_measurement_range is None:
+            return None
+        value = (
+            _DirpMeasurementParamsRangeV2()
+            if self._measurement_abi == "AMBIENT_V2"
+            else _DirpMeasurementParamsRangeLegacy()
+        )
+        code = int(self._get_measurement_range(handle, ctypes.byref(value)))
+        if code in {DIRP_ERROR_UNSUPPORTED_FUNC, DIRP_ERROR_NOT_READY}:
+            return None
+        self._check("dirp_get_measurement_params_range", code)
+        return self._range_dict(
+            value,
+            include_ambient=self._measurement_abi == "AMBIENT_V2",
+        )
+
+    @staticmethod
+    def _validate_against_sdk_ranges(
+        requested: Mapping[str, float],
+        ranges: Mapping[str, Mapping[str, float]] | None,
+    ) -> None:
+        if not ranges:
+            return
+        for key, value in requested.items():
+            bounds = ranges.get(key)
+            if not bounds:
+                continue
+            minimum = float(bounds["min"])
+            maximum = float(bounds["max"])
+            if not minimum <= value <= maximum:
+                raise ValueError(
+                    f"{key}={value} is outside DJI DIRP range [{minimum}, {maximum}]"
+                )
 
     def decode_file(
         self,
@@ -379,7 +488,7 @@ class DjiThermalSdk:
             api_version = _DirpApiVersion()
             self._check(
                 "dirp_get_api_version",
-                int(self._get_api_version(handle, ctypes.byref(api_version))),
+                int(self._get_api_version(ctypes.byref(api_version))),
             )
 
             version = _DirpRjpegVersion()
@@ -403,6 +512,8 @@ class DjiThermalSdk:
                 )
 
             params = _DirpMeasurementParams()
+            measurement_ranges = self._measurement_ranges(handle)
+            self._validate_against_sdk_ranges(requested, measurement_ranges)
             measurement_code = int(
                 self._get_measurement(handle, ctypes.byref(params))
             )
@@ -511,6 +622,7 @@ class DjiThermalSdk:
                     "curve": int(version.curve),
                 },
                 measurement_params=measurement,
+                measurement_ranges=measurement_ranges,
                 measurement_mode=measurement_mode,
                 measurement_error_code=measurement_error_code,
                 sdk_label=self.sdk_label,
