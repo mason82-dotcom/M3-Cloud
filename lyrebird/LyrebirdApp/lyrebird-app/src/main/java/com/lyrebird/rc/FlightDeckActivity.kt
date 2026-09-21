@@ -1661,6 +1661,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private fun jsonEscape(value: String): String =
         value.replace("\\", "\\\\").replace("\"", "\\\"")
 
+    override fun readMavlinkMissionTraceJson(): String =
+        mavlinkEndpoint?.latestMissionTraceJson()
+            ?: """{"available":false,"count":0,"missionDigest":"","items":[]}"""
+
     override fun readSettingsJson(): String {
         return buildString {
             append("{")

@@ -10,6 +10,8 @@ import java.net.InetSocketAddress
 import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * MAVLink 2 telemetry endpoint: streams the phase-1 message set over UDP so a stock ground station
@@ -173,6 +175,47 @@ internal class MavlinkTelemetryEndpoint(
     /** Called when a shutter is started, so capture status shows it in progress. */
     fun reportCaptureStarted() {
         capturing = true
+    }
+
+    /**
+     * Exact logical mission currently accepted by the MAVLink mission store.
+     *
+     * Read-only diagnostic surface used by the UgCS wiretap before flight.
+     */
+    fun latestMissionTraceJson(): String {
+        val items = missions.snapshot()
+        val array = JSONArray()
+        items.forEach { item ->
+            fun jsonFloat(value: Float): Any = when {
+                value.isNaN() -> "NaN"
+                value == Float.POSITIVE_INFINITY -> "Inf"
+                value == Float.NEGATIVE_INFINITY -> "-Inf"
+                else -> value.toDouble()
+            }
+            array.put(
+                JSONObject()
+                    .put("seq", item.seq)
+                    .put("command", item.command)
+                    .put("frame", item.frame)
+                    .put("autocontinue", item.autocontinue)
+                    .put("param1", jsonFloat(item.param1))
+                    .put("param2", jsonFloat(item.param2))
+                    .put("param3", jsonFloat(item.param3))
+                    .put("param4", jsonFloat(item.param4))
+                    .put("latitude", item.latitudeDeg)
+                    .put("longitude", item.longitudeDeg)
+                    .put("altitude", item.altitudeM)
+            )
+        }
+        return JSONObject()
+            .put("available", items.isNotEmpty())
+            .put("count", items.size)
+            .put("planId", Integer.toUnsignedLong(missions.currentPlanId()))
+            .put("missionDigest", missionPlanDigest(items))
+            .put("state", missions.missionState())
+            .put("currentSeq", if (items.isEmpty()) -1 else missions.currentIndex())
+            .put("items", array)
+            .toString()
     }
 
     fun start() {

@@ -129,6 +129,38 @@ internal fun missionPlanFingerprint(items: List<MissionItem>): Int {
     return crc.value.toInt()
 }
 
+/**
+ * Strong, cross-language mission identity for UgCS wire-vs-RC validation.
+ *
+ * Uses the same canonical logical MISSION_ITEM_INT fields as [missionPlanFingerprint], but SHA-256
+ * is collision-resistant enough to be used as a forensic correlation id in capture logs.
+ */
+internal fun missionPlanDigest(items: List<MissionItem>): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    items.forEach { item ->
+        val buffer = java.nio.ByteBuffer.allocate(35).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        fun putCanonicalFloat(value: Float) {
+            buffer.putInt(if (value.isNaN()) 0x7fc00000 else value.toRawBits())
+        }
+        putCanonicalFloat(item.param1)
+        putCanonicalFloat(item.param2)
+        putCanonicalFloat(item.param3)
+        putCanonicalFloat(item.param4)
+        buffer.putInt(java.lang.Math.round(item.latitudeDeg * 1e7).toInt())
+        buffer.putInt(java.lang.Math.round(item.longitudeDeg * 1e7).toInt())
+        putCanonicalFloat(item.altitudeM.toFloat())
+        buffer.putShort((item.seq and 0xffff).toShort())
+        buffer.putShort((item.command and 0xffff).toShort())
+        buffer.put((item.frame and 0xff).toByte())
+        buffer.put(if (item.autocontinue) 1.toByte() else 0.toByte())
+        buffer.put(MavlinkMissionStore.MISSION_TYPE_MISSION.toByte())
+        digest.update(buffer.array())
+    }
+    return digest.digest().joinToString("") { byte ->
+        "%02x".format(byte.toInt() and 0xff)
+    }
+}
+
 
 internal object MissionResult {
     const val ACCEPTED = 0

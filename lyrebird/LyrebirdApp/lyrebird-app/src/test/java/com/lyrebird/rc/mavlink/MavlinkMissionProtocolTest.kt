@@ -243,6 +243,20 @@ class MavlinkMissionProtocolTest {
     }
 
     @Test
+    fun missionDigestIsStableAndChangesWithMissionContent() {
+        val plan = listOf(
+            waypoint(0, lat = 49.1, lon = 8.6, alt = 70.0),
+            waypoint(1, lat = 49.2, lon = 8.7, alt = 71.0)
+        )
+        val digest = missionPlanDigest(plan)
+        assertEquals(64, digest.length)
+        assertEquals(digest, missionPlanDigest(plan))
+        assertFalse(digest == missionPlanDigest(plan.mapIndexed { index, item ->
+            if (index == 1) item.copy(altitudeM = 72.0) else item
+        }))
+    }
+
+    @Test
     fun theCurrentIndexStaysInsideThePlan() {
         uploadPlan(2)
         store.setCurrent(99)

@@ -67,6 +67,9 @@ internal interface LyrebirdCommandHost {
     /** Full settings snapshot (app prefs + DJI flight limits) as JSON, for GET /config/settings. */
     fun readSettingsJson(): String
 
+    /** Exact currently accepted MAVLink mission, for safe UgCS wire-vs-RC comparison. */
+    fun readMavlinkMissionTraceJson(): String
+
     /** Set the drone name pref; returns false when the name is rejected. */
     fun setDroneName(name: String): Boolean
 
@@ -868,6 +871,7 @@ internal class SimpleHttpServer(
                 "/get/camera/live-source" -> CameraLiveSourceController.readCurrent().toJson()
                 "/get/camera/live-source/history" -> CameraLiveSourceController.historyJson()
                 "/get/survey/latest" -> LyrebirdFlightLogger.latestSurveyInfoJson()
+                "/get/mavlink/mission/latest" -> host.readMavlinkMissionTraceJson()
                 else -> "Use POST for commands. Telemetry available on port $TELEMETRY_PORT. " +
                     "Config available at GET /config; settings at GET /config/settings"
             }
