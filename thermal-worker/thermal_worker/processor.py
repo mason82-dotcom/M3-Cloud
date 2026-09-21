@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import math
@@ -539,6 +540,7 @@ def process_handoff(
     try:
         results: list[dict[str, Any]] = []
         capture_point_features: list[dict[str, Any]] = []
+        capture_summaries: list[dict[str, Any]] = []
         for index, group in enumerate(groups, start=1):
             if not isinstance(group, dict):
                 raise TypeError("Invalid capture group entry")
@@ -698,6 +700,41 @@ def process_handoff(
             if point_feature is not None:
                 capture_point_features.append(point_feature)
 
+            components = hotspot_analysis.get("components")
+            peak = (
+                components[0]
+                if isinstance(components, list)
+                and components
+                and isinstance(components[0], Mapping)
+                else {}
+            )
+            point_coordinates = (
+                point_feature["geometry"]["coordinates"]
+                if point_feature is not None
+                else [None, None]
+            )
+            capture_summaries.append(
+                {
+                    "capture_group": capture_group,
+                    "capture_time_utc": (
+                        thermal_item.get("capture_time_utc")
+                        or wide_item.get("capture_time_utc")
+                    ),
+                    "latitude": point_coordinates[1],
+                    "longitude": point_coordinates[0],
+                    "min_c": statistics["min_c"],
+                    "max_c": statistics["max_c"],
+                    "mean_c": statistics["mean_c"],
+                    "finite_pixels": statistics["finite_pixels"],
+                    "hotspot_baseline_c": hotspot_analysis["baseline_c"],
+                    "hotspot_threshold_c": hotspot_analysis["threshold_c"],
+                    "hotspot_component_count": hotspot_analysis["component_count"],
+                    "hotspot_retained_pixels": hotspot_analysis["retained_pixels"],
+                    "hotspot_peak_temperature_c": peak.get("max_c"),
+                    "hotspot_peak_delta_c": peak.get("delta_max_c"),
+                }
+            )
+
             results.append(
                 {
                     "capture_group": capture_group,
@@ -727,6 +764,94 @@ def process_handoff(
                 }
             )
     
+        total_finite_pixels = sum(
+            int(item["finite_pixels"])
+            for item in capture_summaries
+        )
+        weighted_mean_c = (
+            sum(
+                float(item["mean_c"]) * int(item["finite_pixels"])
+                for item in capture_summaries
+            )
+            / total_finite_pixels
+            if total_finite_pixels > 0
+            else None
+        )
+        peak_deltas = [
+            float(item["hotspot_peak_delta_c"])
+            for item in capture_summaries
+            if isinstance(item.get("hotspot_peak_delta_c"), (int, float))
+            and not isinstance(item.get("hotspot_peak_delta_c"), bool)
+        ]
+        aggregate_summary = {
+            "capture_count": len(capture_summaries),
+            "georeferenced_capture_count": len(capture_point_features),
+            "min_c": min(float(item["min_c"]) for item in capture_summaries),
+            "max_c": max(float(item["max_c"]) for item in capture_summaries),
+            "weighted_mean_c": weighted_mean_c,
+            "finite_pixels": total_finite_pixels,
+            "captures_with_hotspot_candidates": sum(
+                1
+                for item in capture_summaries
+                if int(item["hotspot_component_count"]) > 0
+            ),
+            "hotspot_component_count": sum(
+                int(item["hotspot_component_count"])
+                for item in capture_summaries
+            ),
+            "hotspot_retained_pixels": sum(
+                int(item["hotspot_retained_pixels"])
+                for item in capture_summaries
+            ),
+            "max_hotspot_peak_delta_c": max(peak_deltas) if peak_deltas else None,
+            "diagnostic_scope": "HOTSPOT_CANDIDATES_ONLY",
+        }
+
+        summary_json_path = staging / "thermal-summary.json"
+        summary_json_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "contract": RESULT_CONTRACT,
+                    "workflow": "THERMOGRAM",
+                    "platform": "M3T",
+                    "job_id": handoff.get("job_id"),
+                    "aggregate": aggregate_summary,
+                    "captures": capture_summaries,
+                    "note": (
+                        "Hotspot counts are generic thermal candidates. "
+                        "They are not PV/equipment defect classifications."
+                    ),
+                },
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        summary_csv_path = staging / "thermal-summary.csv"
+        with summary_csv_path.open("w", encoding="utf-8", newline="") as handle:
+            fields = [
+                "capture_group",
+                "capture_time_utc",
+                "latitude",
+                "longitude",
+                "min_c",
+                "max_c",
+                "mean_c",
+                "finite_pixels",
+                "hotspot_baseline_c",
+                "hotspot_threshold_c",
+                "hotspot_component_count",
+                "hotspot_retained_pixels",
+                "hotspot_peak_temperature_c",
+                "hotspot_peak_delta_c",
+            ]
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(capture_summaries)
+
         capture_points_path = staging / "capture-points.geojson"
         capture_points = {
             "type": "FeatureCollection",
@@ -757,6 +882,9 @@ def process_handoff(
             "capture_group_count": len(results),
             "georeferenced_capture_count": len(capture_point_features),
             "capture_points_geojson": "capture-points.geojson",
+            "summary_json": "thermal-summary.json",
+            "summary_csv": "thermal-summary.csv",
+            "summary": aggregate_summary,
             "capture_groups": results,
         }
         manifest_path = staging / "result-manifest.json"
