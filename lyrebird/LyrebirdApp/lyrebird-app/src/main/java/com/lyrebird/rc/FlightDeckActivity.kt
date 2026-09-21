@@ -2632,22 +2632,36 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     private fun startStreamingForClient(clientIp: String) {
         val publisherHealthy = webRTCStreamer?.isRunning() == true &&
             webRTCStreamer?.isPublishing() == true
-        if (lastClientIp == clientIp && lastWhipUrl != null) {
-            if (publisherHealthy) return
-            Log.w(TAG, "Restarting stale WHIP publisher for $clientIp")
-        }
-        // Guard against stream hijacking: a healthy publisher must not be retargeted just
-        // because a different client connected to the telemetry port. Field incidents:
-        // phones probing each other's telemetry port made the app repoint WHIP at another
-        // phone (which runs no MediaMTX), killing video until an app restart. Only retarget
-        // when the current publisher is unhealthy, or when no client was ever recorded.
-        if (lastClientIp != null && lastClientIp != clientIp && publisherHealthy) {
-            Log.w(
+        val nativeTransitionActive =
+            lastNativeStreamStatus == "starting" ||
+                lastNativeStreamStatus == "stopping" ||
+                lastNativeStreamStatus.startsWith("retrying")
+        val nativeStreaming = liveStreamVM.isStreaming()
+        val webRtcSessionRunning = webRTCStreamer?.isRunning() == true
+
+        if (
+            !shouldStartStreamingForPeer(
+                currentClientIp = lastClientIp,
+                candidateClientIp = clientIp,
+                publisherHealthy = publisherHealthy,
+                nativeTransitionActive = nativeTransitionActive,
+                nativeStreaming = nativeStreaming,
+                webRtcSessionRunning = webRtcSessionRunning
+            )
+        ) {
+            Log.i(
                 TAG,
-                "Ignoring telemetry client $clientIp while healthy publisher targets $lastClientIp"
+                "Ignoring streaming peer $clientIp while target=$lastClientIp " +
+                    "nativeStatus=$lastNativeStreamStatus nativeStreaming=$nativeStreaming " +
+                    "webRtcRunning=$webRtcSessionRunning publishing=$publisherHealthy"
             )
             return
         }
+
+        if (lastClientIp == clientIp && lastWhipUrl != null && !publisherHealthy) {
+            Log.w(TAG, "Restarting stale WHIP publisher for $clientIp")
+        }
+
         Log.i(TAG, "Starting active streaming for $clientIp")
         lastClientIp = clientIp
         rebuildTelemetryCache()
@@ -5121,15 +5135,35 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                 this,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED) {
-            // Request permissions if not granted
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                1
+            )
             return
         }
-        runCatching {
-            locationManager?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
-            locationManager?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 1f, locationListener)
-        }.onFailure { error ->
-            Log.e(TAG, "Error requesting location updates: ${error.message}", error)
+
+        val manager = locationManager ?: return
+        val availableProviders = manager.allProviders.toSet()
+
+        listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER
+        ).forEach { provider ->
+            if (provider !in availableProviders) {
+                Log.i(TAG, "Location provider unavailable on this controller: $provider")
+                return@forEach
+            }
+
+            runCatching {
+                manager.requestLocationUpdates(provider, 1000L, 1f, locationListener)
+            }.onFailure { error ->
+                Log.w(
+                    TAG,
+                    "Could not start location provider $provider: ${error.message}",
+                    error
+                )
+            }
         }
     }
 
