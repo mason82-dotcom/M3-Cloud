@@ -729,11 +729,20 @@ export function MissionsView() {
     (vehicle) => vehicle.sn === selected?.aircraft_sn,
   );
   const plannerReference = plannerStartReference(selectedVehicle);
-  const mapPlannerReference =
-    plannerPreview?.input.start_reference ??
-    planningStartReference(draftPlanning) ??
-    plannerReference;
+  const gridPlannerActive =
+    plannerPreview !== null ||
+    draftPlanning?.planner === "M3_CLOUD_GRID" ||
+    plannerPoints.length > 0 ||
+    plannerDrawing;
+  const mapPlannerReference = gridPlannerActive
+    ? (
+        plannerPreview?.input.start_reference ??
+        planningStartReference(draftPlanning) ??
+        plannerReference
+      )
+    : null;
   const mapPlannerReturnToReference =
+    gridPlannerActive &&
     (
       plannerPreview?.input.finish_action ??
       draftPlanning?.parameters?.finish_action
