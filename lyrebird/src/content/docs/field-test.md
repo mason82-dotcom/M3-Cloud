@@ -244,3 +244,55 @@ diagnostics because their wall clocks are not assumed to be synchronized.
 `--live-flight` disables the dry-run filter and forwards datagrams from the pinned VSM peer
 unchanged. Do not use it as the first test; first require a clean mission-frame gate and a matching
 wire-vs-RC digest.
+
+
+## 8. Phase 10: one-command GO / NO-GO
+
+Run this immediately after the Phase-9 dry-run mission upload and before enabling live flight:
+
+```powershell
+lyrebird-preflight `
+  --rc 192.168.178.63 `
+  --wiretap .\ugcs-wiretap\ugcs-wiretap-YYYYMMDD-HHMMSS.jsonl `
+  --expect-platform M3E `
+  --expect-capture-profile M3E_MAPPING `
+  --output .\preflight\survey-preflight.json
+```
+
+Keep camera identity explicit across the three supported Mavic 3 Enterprise-family payloads:
+
+```text
+M3E -> M3E_MAPPING
+M3T -> M3T_WIDE
+M3M -> M3M_RGB_MULTISPECTRAL
+```
+
+The command is read-only. It does not arm, take off, prepare the camera, select storage or modify
+RTK. `GET /get/preflight` supplies current MSDK/Lyrebird facts; the Python gate combines them
+with the currently accepted MAVLink mission and the Phase-9 capture.
+
+A GO requires aircraft/camera/RC/AirLink connectivity, aircraft on ground, failsafe clear, healthy
+compass, MAVLink flight permission, manual-override clear, DJI ready-to-takeoff, Home set, SD card
+inserted and selected, sufficient policy storage, valid **raw** gimbal telemetry, a product-correct
+M3E/M3T/M3M survey profile, fresh connected/healthy RTK, a frame-compatible accepted mission and
+an exact wiretap/RC mission match.
+
+The defaults are operator policy, not DJI hardware limits:
+
+```text
+minimum aircraft battery     50 %
+minimum free SD storage      2048 MB
+maximum RTK sample age       3000 ms
+maximum RC snapshot age      5000 ms
+maximum accepted-mission age 120 s
+RTK FLOAT allowed            no
+```
+
+`--allow-rtk-float` is an explicit policy override. AirLink quality is recorded but has no invented
+hard percentage threshold.
+
+Mission age is evaluated on the RC clock only. The wiretap may run on a computer with a different
+wall-clock offset, so cross-device time delta is diagnostic; identity is established by the
+canonical SHA-256 mission digest, CRC32 plan id and the observed accepted `MISSION_ACK`.
+
+Exit code 0 means GO; NO-GO exits 2.
