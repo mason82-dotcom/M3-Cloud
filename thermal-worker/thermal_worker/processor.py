@@ -296,6 +296,7 @@ def process_handoff(
                         if decoded.measurement_params is not None
                         else None
                     ),
+                    "measurement_ranges": decoded.measurement_ranges,
                     "requested_overrides": dict(measurement_overrides or {}),
                     "statistics": statistics,
                 },
@@ -330,6 +331,7 @@ def process_handoff(
                     "api_version": decoded.api_version,
                     "measurement_mode": decoded.measurement_mode,
                     "measurement_abi": decoded.measurement_abi,
+                    "measurement_ranges": decoded.measurement_ranges,
                 }
             )
     
