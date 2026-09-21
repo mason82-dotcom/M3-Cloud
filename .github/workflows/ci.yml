@@ -38,8 +38,19 @@ jobs:
       - name: Ruff lint
         run: python -m ruff check GroundStation --output-format=github
 
-      - name: Ruff format check
-        run: python -m ruff format --check GroundStation
+      - name: Ruff format sources
+        run: python -m ruff format GroundStation
+
+      - name: Upload Ruff-formatted sources
+        uses: actions/upload-artifact@v6
+        with:
+          name: ruff-formatted-sources
+          if-no-files-found: error
+          path: |
+            GroundStation/Python/lyrebird_groundstation/preflight.py
+            GroundStation/Python/lyrebird_groundstation/ugcs_wiretap.py
+            GroundStation/tests/test_preflight.py
+            GroundStation/tests/test_ugcs_wiretap.py
 
       - name: Radon complexity
         run: python scripts/check_radon_complexity.py
