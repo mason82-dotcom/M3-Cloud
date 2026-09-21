@@ -128,6 +128,42 @@ class Settings(BaseSettings):
         default="",
         validation_alias="M3CLOUD_DJI_PILOT_WS_URL",
     )
+    dji_pilot_storage_endpoint: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_ENDPOINT",
+    )
+    dji_pilot_storage_sts_endpoint: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_STS_ENDPOINT",
+    )
+    dji_pilot_storage_provider: str = Field(
+        default="minio",
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_PROVIDER",
+    )
+    dji_pilot_storage_region: str = Field(
+        default="us-east-1",
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_REGION",
+    )
+    dji_pilot_storage_bucket: str = Field(
+        default="m3-media",
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_BUCKET",
+    )
+    dji_pilot_storage_role_arn: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_ROLE_ARN",
+    )
+    dji_pilot_storage_access_key: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_ACCESS_KEY",
+    )
+    dji_pilot_storage_secret_key: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_SECRET_KEY",
+    )
+    dji_pilot_storage_sts_duration_seconds: int = Field(
+        default=3600,
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_STS_DURATION_SECONDS",
+    )
     dji_pilot_live_publish_type: str = Field(
         default="video-on-demand",
         validation_alias="M3CLOUD_DJI_PILOT_LIVE_PUBLISH_TYPE",
