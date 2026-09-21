@@ -229,66 +229,114 @@ This follows ODM's supported Mavic 3 Multispectral workflow. The `camera+sun` mo
 by default because ODM currently documents it as experimental.
 
 
-### M3T Thermogram handoff
+### M3T radiometric processing
 
-Thermogram integration is intentionally limited to **DJI Mavic 3 Thermal (M3T)** datasets.
-M3-Cloud detects complete `*_W.JPG` + `*_T.JPG` capture pairs, freezes those exact
-`MediaAsset` records in a persistent `THERMOGRAM` processing job, and keeps the source
-folder read-only.
+M3-Cloud limits the thermal workflow to **DJI Mavic 3 Thermal (M3T)** datasets.
+It detects complete `*_W.JPG` + `*_T.JPG` capture pairs, freezes those exact
+`MediaAsset` records in a persistent `THERMOGRAM` processing job, and keeps
+the source folder read-only.
 
-Thermogram itself runs externally (typically on Windows) and opens the original DJI folder as
-created from the SD card. Thermogram explicitly supports M3T and recommends preserving DJI's
-original file organization. Configure the path visible from that workstation when it differs
-from the backend container path:
+The preferred processing path is the separate x86-64 `thermal-worker/`. It
+loads a locally supplied DJI Thermal SDK (the SDK binaries are not vendored in
+this repository), verifies each frozen source by size/SHA-256, and decodes the
+original thermal R-JPEG through DIRP. The backend itself never loads DJI's
+native thermal libraries.
 
-```dotenv
-# Example SMB/UNC share visible from Windows:
-M3CLOUD_MEDIA_IMPORT_HANDOFF_ROOT=\\\\m3-cloud\\media-import
-```
+The native worker produces, per capture:
 
-The Thermogram workflow is available only when the media dataset platform is `M3T` and at least
-one complete Wide/Thermal capture pair exists.
+- Float32 Celsius `temperature.tif` in thermal-sensor pixel space.
+- Display-only `preview.png`.
+- Generic `hotspot-mask.png` and `hotspots.json` candidate analysis.
+- `thermal.json` with SDK/R-JPEG provenance, measurement parameters/ranges,
+  statistics, and explicit registration limitations.
+
+It also produces job-level `capture-points.geojson`,
+`thermal-summary.json`, `thermal-summary.csv`, and
+`result-manifest.json`. Capture points use the source-image GPS only and are
+marked `CAPTURE_CENTER_ONLY`; they do **not** georeference individual thermal
+pixels or hotspot masks.
+
+The worker's generic hotspot detector is deliberately not a PV/equipment defect
+classifier. It identifies connected sensor-space regions above a configurable
+median ΔT threshold so that later domain-specific inspection logic has a
+repeatable candidate set.
+
+The workflow is available only when the media dataset platform is `M3T` and at
+least one complete Wide/Thermal capture pair exists.
 
 ```text
 POST /api/v1/processing/thermogram
 GET  /api/v1/processing/jobs/<UUID>/handoff
 GET  /api/v1/processing/jobs/<UUID>/handoff/download
+POST /api/v1/processing/jobs/<UUID>/external-claim
 POST /api/v1/processing/jobs/<UUID>/external-status
 ```
 
-External job states are tracked as `WAITING_EXTERNAL`, `RUNNING_EXTERNAL`,
-`COMPLETED_EXTERNAL`, or `FAILED_EXTERNAL`. The handoff JSON contains the exact original
-relative paths, SHA-256 hashes and capture groups selected for the job.
+The dedicated `external-claim` endpoint is used by automatic workers to claim a
+job atomically. Status updates remain separately idempotent so retries after a
+lost HTTP response do not create a second processing run.
 
+For an integrated Linux x86-64 deployment, mount the DJI TSDK and enable the
+optional Compose profile:
 
-#### Thermogram result return
+```dotenv
+DJI_TSDK_HOST_PATH=/opt/dji-thermal-sdk
+DJI_TSDK_VERSION=1.8_20251211
+M3_THERMAL_HOTSPOT_DELTA_C=10
+M3_THERMAL_HOTSPOT_MIN_PIXELS=4
+```
 
-External Thermogram exports can be returned to M3-Cloud through a dedicated read-only
-processing-import mount. Each processing job gets its own drop folder named by the job UUID:
+```bash
+docker compose --profile thermal up -d thermal-worker
+```
+
+The normal stack does not start the worker unless this profile is selected.
+
+#### External Thermogram fallback
+
+The versioned handoff remains usable with an external Thermogram/Windows
+workflow or another processing tool that needs the untouched DJI folder. When a
+workstation sees the media through a different path, configure its handoff
+path, for example:
+
+```dotenv
+M3CLOUD_MEDIA_IMPORT_HANDOFF_ROOT=\\\\m3-cloud\\media-import
+```
+
+External/manual job states are tracked as `WAITING_EXTERNAL`,
+`RUNNING_EXTERNAL`, `COMPLETED_EXTERNAL`, or `FAILED_EXTERNAL`. The same
+handoff JSON contains the original relative paths, SHA-256 hashes, capture
+groups, metadata snapshots, and result-drop path.
+
+#### Thermal result return
+
+Both the native worker and manual external tools return results through the
+dedicated processing-import mount. Each processing job owns one drop folder:
 
 ```text
 /processing-import/<job-uuid>/
 ```
 
-Configure the host/share paths:
+Configure the host/share paths as needed:
 
 ```dotenv
 M3CLOUD_PROCESSING_IMPORT_HOST_PATH=/mnt/m3-processing-import
 M3CLOUD_PROCESSING_IMPORT_HANDOFF_ROOT=\\m3-cloud\processing-import
 ```
 
-After Thermogram has finished, copy its exported files into that job folder and mark the job
-`COMPLETED_EXTERNAL`. M3-Cloud snapshots each file, verifies that it did not change during the
-copy, computes SHA-256, uploads it to the `m3-results` bucket, and registers it as a normal
-`ProcessingResult`.
+M3-Cloud snapshots each returned file, verifies that it did not change during
+the copy, computes SHA-256, uploads it to the `m3-results` bucket, and
+registers it as a normal `ProcessingResult`.
 
 ```text
 GET  /api/v1/processing/jobs/<UUID>/external-results/status
 POST /api/v1/processing/jobs/<UUID>/external-results/import
 ```
 
-Imported Thermogram outputs use the same result download API and flight/job lineage as WebODM.
-
+Native results are classified as temperature raster, thermal preview, hotspot
+mask/analysis, capture-center GeoJSON, summary JSON/CSV, metadata, and manifest.
+The Processing UI can preview thermal images/masks and map capture-center points
+while keeping the sensor-space/georeferencing distinction explicit.
 
 ### Immutable processing input manifests
 
