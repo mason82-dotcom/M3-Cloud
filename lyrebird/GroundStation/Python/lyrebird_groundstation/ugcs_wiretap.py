@@ -879,8 +879,10 @@ def _mission_digest_comparison(
     wire_digest = mission_digest(wire_items) if wire_items else ""
     rc_digest = str(rc_trace.get("missionDigest") or "")
     if wire_items and rc_digest and wire_digest != rc_digest:
-        return wire_digest, rc_digest, (
-            f"mission digest differs: wire={wire_digest} rc={rc_digest}"
+        return (
+            wire_digest,
+            rc_digest,
+            (f"mission digest differs: wire={wire_digest} rc={rc_digest}"),
         )
     return wire_digest, rc_digest, None
 
@@ -893,8 +895,10 @@ def _mission_plan_id_comparison(
     rc_plan_id_raw = rc_trace.get("planId")
     rc_plan_id = int(rc_plan_id_raw) & 0xFFFFFFFF if rc_plan_id_raw is not None else None
     if wire_items and rc_plan_id is not None and wire_plan_id != rc_plan_id:
-        return wire_plan_id, rc_plan_id, (
-            f"mission planId differs: wire={wire_plan_id:#010x} rc={rc_plan_id:#010x}"
+        return (
+            wire_plan_id,
+            rc_plan_id,
+            (f"mission planId differs: wire={wire_plan_id:#010x} rc={rc_plan_id:#010x}"),
         )
     return wire_plan_id, rc_plan_id, None
 
@@ -912,9 +916,7 @@ def _compare_mission_identity(
         rc_trace,
     )
     differences = [
-        difference
-        for difference in (digest_difference, plan_difference)
-        if difference is not None
+        difference for difference in (digest_difference, plan_difference) if difference is not None
     ]
     return differences, wire_digest, rc_digest, wire_plan_id, rc_plan_id
 
