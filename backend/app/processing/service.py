@@ -700,6 +700,7 @@ class ProcessingManager:
                         media_kind=asset.media_kind,
                         capture_group=asset.capture_group,
                         capture_time_utc=asset.capture_time_utc,
+                        metadata_snapshot=asset_metadata_payload(asset),
                     )
                     for index, asset in enumerate(assets)
                 ]
