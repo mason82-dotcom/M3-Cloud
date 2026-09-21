@@ -57,6 +57,15 @@ class DJIPropertySetRejected(DJIDeviceError):
 
 
 @dataclass(frozen=True)
+class DJIPayloadContext:
+    aircraft_sn: str
+    gateway_sn: str
+    m3_sub_type: int
+    payload_index: str
+    camera_state: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class DJIDeviceSnapshot:
     identity: dict[str, Any]
     thing_state: dict[str, Any] | None
@@ -82,6 +91,77 @@ class DJIDeviceService:
         return DJIDeviceSnapshot(
             identity=identity,
             thing_state=await self.telemetry.get(sn),
+        )
+
+    async def resolve_payload_context(
+        self,
+        aircraft_sn: str,
+        *,
+        payload_index: str | None = None,
+    ) -> DJIPayloadContext:
+        snapshot = await self.get(aircraft_sn)
+        identity = snapshot.identity
+        if identity.get("role") != "aircraft" or not is_m3_identity(
+            identity.get("type"),
+            identity.get("sub_type"),
+        ):
+            raise DJIUnsupportedDevice(
+                f"DJI device {aircraft_sn} is not an M3E/M3T/M3M aircraft"
+            )
+        if identity.get("online") is not True:
+            raise DJIDeviceOffline(f"DJI aircraft is offline: {aircraft_sn}")
+
+        gateway_sn = identity.get("gateway_sn")
+        sub_type = identity.get("sub_type")
+        if not isinstance(gateway_sn, str) or not gateway_sn:
+            raise DJIDeviceError(
+                f"DJI aircraft {aircraft_sn} has no Pilot 2 gateway association"
+            )
+        if not isinstance(sub_type, int) or isinstance(sub_type, bool):
+            raise DJIUnsupportedDevice(
+                f"DJI aircraft {aircraft_sn} has invalid M3 subtype"
+            )
+
+        state = snapshot.thing_state or {}
+        cameras = state.get("cameras")
+        candidates = [
+            camera
+            for camera in cameras
+            if isinstance(camera, dict)
+            and isinstance(camera.get("payload_index"), str)
+        ] if isinstance(cameras, list) else []
+
+        if payload_index is not None:
+            candidates = [
+                camera
+                for camera in candidates
+                if camera["payload_index"] == payload_index
+            ]
+
+        if not candidates:
+            detail = (
+                f"payload {payload_index!r} is not present"
+                if payload_index is not None
+                else "no DJI camera payload is present in the current thing state"
+            )
+            raise DJIDeviceError(f"{aircraft_sn}: {detail}")
+        if len(candidates) > 1 and payload_index is None:
+            raise DJIDeviceError(
+                f"{aircraft_sn}: multiple DJI payloads are present; "
+                "payload_index must be explicit"
+            )
+
+        camera = candidates[0]
+        resolved_index = camera["payload_index"]
+        from app.dji.models.payload import validate_payload_index
+
+        validate_payload_index(sub_type, resolved_index)
+        return DJIPayloadContext(
+            aircraft_sn=aircraft_sn,
+            gateway_sn=gateway_sn,
+            m3_sub_type=sub_type,
+            payload_index=resolved_index,
+            camera_state=dict(camera),
         )
 
     async def set_m3_properties(
