@@ -77,6 +77,15 @@ function thermalResultSummary(result: ProcessingResult): string | null {
   if (kind === "THERMAL_PREVIEW") return "Thermal preview";
   if (kind === "THERMAL_METADATA") return "Thermal metadata";
   if (kind === "HOTSPOT_MASK") return "Hotspot candidate mask";
+  if (kind === "THERMAL_CAPTURE_POINTS") {
+    const count =
+      typeof details.feature_count === "number"
+        ? details.feature_count
+        : null;
+    return count === null
+      ? "Thermal capture centers"
+      : `Thermal capture centers · ${count}`;
+  }
   if (kind === "HOTSPOT_ANALYSIS") {
     const hotspots =
       details.hotspots && typeof details.hotspots === "object"
