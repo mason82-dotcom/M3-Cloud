@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/dji-cloud-primary-core # temporary dependency-verification bootstrap
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -87,10 +88,18 @@ jobs:
           } > local.properties
 
       - name: Spotless, compile, and unit tests
-        run: ./gradlew --no-daemon :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
+        run: ./gradlew --no-daemon --write-verification-metadata sha256 :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
 
       - name: Lyrebird Detekt and Lint reports
-        run: ./gradlew --no-daemon qualityLyrebird
+        run: ./gradlew --no-daemon --write-verification-metadata sha256 qualityLyrebird
+
+      - name: Upload Gradle verification bootstrap
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gradle-verification-bootstrap
+          if-no-files-found: error
+          path: lyrebird/LyrebirdApp/android-sdk-v5-as/gradle/verification-metadata.xml
 
       - name: Upload Android quality reports
         if: always()
