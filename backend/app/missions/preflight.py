@@ -285,20 +285,40 @@ def evaluate_preflight(
             else {}
         )
         nominal_route_time_s = derived.get("nominal_route_time_s")
+        nominal_total_time_s = derived.get("nominal_total_time_s")
+        required_time_s = (
+            nominal_total_time_s
+            if isinstance(nominal_total_time_s, (int, float))
+            and not isinstance(nominal_total_time_s, bool)
+            and nominal_total_time_s > 0
+            else nominal_route_time_s
+        )
         if (
-            isinstance(nominal_route_time_s, (int, float))
-            and not isinstance(nominal_route_time_s, bool)
-            and nominal_route_time_s > 0
+            isinstance(required_time_s, (int, float))
+            and not isinstance(required_time_s, bool)
+            and required_time_s > 0
         ):
             if (
                 isinstance(remain_flight_time_s, (int, float))
                 and not isinstance(remain_flight_time_s, bool)
                 and remain_flight_time_s > 0
             ):
-                margin_s = float(remain_flight_time_s) - float(nominal_route_time_s)
-                recommended_reserve_s = max(120.0, float(nominal_route_time_s) * 0.20)
+                margin_s = float(remain_flight_time_s) - float(required_time_s)
+                recommended_reserve_s = max(120.0, float(required_time_s) * 0.20)
                 details = {
-                    "nominal_route_time_s": float(nominal_route_time_s),
+                    "nominal_route_time_s": (
+                        float(nominal_route_time_s)
+                        if isinstance(nominal_route_time_s, (int, float))
+                        and not isinstance(nominal_route_time_s, bool)
+                        else None
+                    ),
+                    "nominal_total_time_s": (
+                        float(nominal_total_time_s)
+                        if isinstance(nominal_total_time_s, (int, float))
+                        and not isinstance(nominal_total_time_s, bool)
+                        else None
+                    ),
+                    "required_time_s": float(required_time_s),
                     "remain_flight_time_s": float(remain_flight_time_s),
                     "margin_s": margin_s,
                     "recommended_reserve_s": recommended_reserve_s,
@@ -334,8 +354,24 @@ def evaluate_preflight(
                     "INFO",
                     "Grid duration is known, but DJI remaining-flight-time telemetry is unavailable.",
                     {
-                        "nominal_route_time_s": float(nominal_route_time_s),
-                        "scope": "GRID_ROUTE_ONLY",
+                        "nominal_route_time_s": (
+                            float(nominal_route_time_s)
+                            if isinstance(nominal_route_time_s, (int, float))
+                            and not isinstance(nominal_route_time_s, bool)
+                            else None
+                        ),
+                        "nominal_total_time_s": (
+                            float(nominal_total_time_s)
+                            if isinstance(nominal_total_time_s, (int, float))
+                            and not isinstance(nominal_total_time_s, bool)
+                            else None
+                        ),
+                        "required_time_s": float(required_time_s),
+                        "scope": (
+                            "GRID_PLUS_REFERENCE_TRANSIT"
+                            if required_time_s is nominal_total_time_s
+                            else "GRID_ROUTE_ONLY"
+                        ),
                     },
                 )
 
