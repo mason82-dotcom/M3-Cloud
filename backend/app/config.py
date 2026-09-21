@@ -104,6 +104,14 @@ class Settings(BaseSettings):
         default="Self-hosted DJI Enterprise operations",
         validation_alias="M3CLOUD_DJI_PILOT_WORKSPACE_DESC",
     )
+    dji_pilot_map_user_name: str = Field(
+        default="M3-Cloud",
+        validation_alias="M3CLOUD_DJI_PILOT_MAP_USER_NAME",
+    )
+    dji_pilot_map_element_prefix: str = Field(
+        default="M3CLOUD",
+        validation_alias="M3CLOUD_DJI_PILOT_MAP_ELEMENT_PREFIX",
+    )
     dji_pilot_api_url: str = Field(
         default="",
         validation_alias="M3CLOUD_DJI_PILOT_API_URL",
