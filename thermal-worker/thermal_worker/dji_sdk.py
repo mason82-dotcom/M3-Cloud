@@ -34,6 +34,8 @@ _ERROR_NAMES = {
     -12: "UNSUPPORTED_FUNC",
     -13: "NOT_READY",
     -14: "ACTIVATION",
+    -15: "INVALID_INI",
+    -16: "INVALID_SUB_DLL",
     -32: "ADVANCED",
 }
 
