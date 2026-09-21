@@ -149,6 +149,15 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
         "input_fingerprint": "a" * 64,
         "georeferenced_capture_count": 1,
         "capture_points_geojson": "capture-points.geojson",
+        "summary_json": "thermal-summary.json",
+        "summary_csv": "thermal-summary.csv",
+        "summary": {
+            "capture_count": 1,
+            "georeferenced_capture_count": 1,
+            "max_c": 42.5,
+            "hotspot_component_count": 1,
+            "diagnostic_scope": "HOTSPOT_CANDIDATES_ONLY",
+        },
         "capture_groups": [
             {
                 "capture_group": "M3T/site/DJI_0001",
@@ -186,6 +195,8 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     details = thermal_result_manifest_details(root, expected_job_id="job")
 
     capture_points = details["capture-points.geojson"]
+    summary_json = details["thermal-summary.json"]
+    summary_csv = details["thermal-summary.csv"]
     temperature = details[
         "captures/00001_DJI_0001_deadbeef00/temperature.tif"
     ]
@@ -202,6 +213,10 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert capture_points["geometry_scope"] == "CAPTURE_CENTER_ONLY"
     assert capture_points["temperature_pixels_georeferenced"] is False
     assert capture_points["feature_count"] == 1
+    assert summary_json["result_kind"] == "THERMAL_SUMMARY"
+    assert summary_csv["result_kind"] == "THERMAL_SUMMARY_CSV"
+    assert summary_json["thermal_summary"]["max_c"] == 42.5
+    assert summary_json["thermal_summary"]["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
     assert temperature["result_kind"] == "TEMPERATURE_RASTER"
     assert temperature["temperature_unit"] == "degree_Celsius"
     assert temperature["georeferenced"] is False
