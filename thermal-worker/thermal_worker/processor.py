@@ -9,6 +9,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
@@ -194,6 +195,165 @@ def _radiometry_integrity(
         "note": (
             "Integrity flags describe decoder/provenance completeness only; "
             "they are not a thermographic defect assessment."
+        ),
+    }
+
+
+def _metadata_mapping(
+    item: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    metadata = item.get("metadata")
+    return metadata if isinstance(metadata, Mapping) else {}
+
+
+def _metadata_number(
+    item: Mapping[str, Any],
+    section: str,
+    field: str,
+) -> float | None:
+    value = _metadata_mapping(item).get(section)
+    if not isinstance(value, Mapping):
+        return None
+    number = value.get(field)
+    if (
+        isinstance(number, (int, float))
+        and not isinstance(number, bool)
+        and math.isfinite(float(number))
+    ):
+        return float(number)
+    return None
+
+
+def _metadata_xmp_value(
+    item: Mapping[str, Any],
+    name: str,
+) -> str | None:
+    raw = _metadata_mapping(item).get("raw")
+    if not isinstance(raw, Mapping):
+        return None
+    xmp = raw.get("xmp")
+    if not isinstance(xmp, Mapping):
+        return None
+    wanted = name.casefold()
+    for values in xmp.values():
+        if not isinstance(values, Mapping):
+            continue
+        for key, value in values.items():
+            if str(key).casefold() == wanted and value is not None:
+                return str(value)
+    return None
+
+
+def _capture_time(item: Mapping[str, Any]) -> datetime | None:
+    value = item.get("capture_time_utc")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
+
+
+def _gps_separation_m(
+    first: Mapping[str, Any],
+    second: Mapping[str, Any],
+) -> float | None:
+    lat1 = _metadata_number(first, "gps", "latitude")
+    lon1 = _metadata_number(first, "gps", "longitude")
+    lat2 = _metadata_number(second, "gps", "latitude")
+    lon2 = _metadata_number(second, "gps", "longitude")
+    if None in {lat1, lon1, lat2, lon2}:
+        return None
+    assert lat1 is not None and lon1 is not None
+    assert lat2 is not None and lon2 is not None
+    if not (
+        -90.0 <= lat1 <= 90.0
+        and -90.0 <= lat2 <= 90.0
+        and -180.0 <= lon1 <= 180.0
+        and -180.0 <= lon2 <= 180.0
+    ):
+        return None
+
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    hav = (
+        math.sin(dphi / 2.0) ** 2
+        + math.cos(phi1)
+        * math.cos(phi2)
+        * math.sin(dlambda / 2.0) ** 2
+    )
+    return 2.0 * 6_371_008.8 * math.asin(min(1.0, math.sqrt(hav)))
+
+
+def _angle_delta_deg(first: float, second: float) -> float:
+    return abs((first - second + 180.0) % 360.0 - 180.0)
+
+
+def _gimbal_delta(
+    wide_item: Mapping[str, Any],
+    thermal_item: Mapping[str, Any],
+) -> dict[str, float | None]:
+    result: dict[str, float | None] = {}
+    for axis in ("yaw_deg", "pitch_deg", "roll_deg"):
+        wide = _metadata_number(wide_item, "gimbal_attitude", axis)
+        thermal = _metadata_number(thermal_item, "gimbal_attitude", axis)
+        if wide is None or thermal is None:
+            result[axis] = None
+        elif axis == "yaw_deg":
+            result[axis] = _angle_delta_deg(wide, thermal)
+        else:
+            result[axis] = abs(wide - thermal)
+    return result
+
+
+def _dji_calibration_hints(
+    item: Mapping[str, Any],
+) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for name in (
+        "CalibratedFocalLength",
+        "CalibratedOpticalCenterX",
+        "CalibratedOpticalCenterY",
+    ):
+        value = _metadata_xmp_value(item, name)
+        if value is not None:
+            result[name] = value
+    return result
+
+
+def _registration_audit(
+    wide_item: Mapping[str, Any],
+    thermal_item: Mapping[str, Any],
+) -> dict[str, Any]:
+    wide_time = _capture_time(wide_item)
+    thermal_time = _capture_time(thermal_item)
+    capture_time_delta_ms = (
+        abs((thermal_time - wide_time).total_seconds()) * 1000.0
+        if wide_time is not None and thermal_time is not None
+        else None
+    )
+    return {
+        "status": "NOT_REGISTERED",
+        "wide_thermal_coregistered": False,
+        "georeferenced_temperature_raster": False,
+        "pair_audit": {
+            "capture_time_delta_ms": capture_time_delta_ms,
+            "gps_separation_m": _gps_separation_m(wide_item, thermal_item),
+            "gimbal_delta_deg": _gimbal_delta(wide_item, thermal_item),
+            "wide_dji_calibration_raw": _dji_calibration_hints(wide_item),
+            "thermal_dji_calibration_raw": _dji_calibration_hints(
+                thermal_item
+            ),
+        },
+        "note": (
+            "Pair audit compares frozen source metadata only. No validated "
+            "WIDE-to-THERMAL intrinsic/extrinsic transform is available, so "
+            "thermal pixels and hotspot masks remain in sensor-pixel space."
         ),
     }
 
@@ -781,14 +941,10 @@ def process_handoff(
                 "analysis": {
                     "hotspots": hotspot_analysis,
                 },
-                "registration": {
-                    "wide_thermal_coregistered": False,
-                    "georeferenced_temperature_raster": False,
-                    "note": (
-                        "Temperature TIFF is sensor-pixel space only. "
-                        "WIDE/THERMAL registration and map georeferencing are separate stages."
-                    ),
-                },
+                "registration": _registration_audit(
+                    wide_item,
+                    thermal_item,
+                ),
                 "artifacts": {
                     "temperature_tif": temperature_path.relative_to(staging).as_posix(),
                     "preview_png": preview_path.relative_to(staging).as_posix(),
