@@ -20,6 +20,20 @@ release directory containing `libdirp.dll` or `libdirp.so` directly.
 Review and comply with the DJI Thermal SDK license/EULA for the SDK version you
 install. No DJI binary is committed to this repository.
 
+For production use, pin the exact native decoder binary as well as the human-readable
+SDK label. Calculate the hash from the installed release and configure it before starting
+the worker:
+
+```bash
+sha256sum /opt/dji-tsdk/libdirp.so
+export DJI_TSDK_EXPECTED_SHA256=<64-hex-sha256>
+```
+
+On Windows, calculate the SHA-256 of `libdirp.dll` and set the same environment
+variable. If `DJI_TSDK_EXPECTED_SHA256` is set, M3-Cloud compares it before loading
+the native library and fails closed on a mismatch. Result provenance also records
+SHA-256 fingerprints for native helper libraries shipped beside DIRP.
+
 ## Output contract
 
 For each complete M3T WIDE/THERMAL capture pair the worker writes:
