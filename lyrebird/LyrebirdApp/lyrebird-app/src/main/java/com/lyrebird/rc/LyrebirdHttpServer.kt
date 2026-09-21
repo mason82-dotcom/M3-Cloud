@@ -125,7 +125,10 @@ internal class LyrebirdHttpCommandHandler(
                 "Return to home command sent."
             },
             "/send/camera/live-source" to { postData ->
-                val result = CameraLiveSourceController.setAndReadback(postData)
+                val result = CameraLiveSourceController.setAndReadback(
+                    postData,
+                    reason = "http-command"
+                )
                 if (
                     result.setStatus == "OK" &&
                     result.readStatus == "OK" &&
@@ -863,6 +866,7 @@ internal class SimpleHttpServer(
                     .toString()
                 "/get/camera/vision-assist" -> VisionAssistProbe.snapshot().toJsonObject().toString()
                 "/get/camera/live-source" -> CameraLiveSourceController.readCurrent().toJson()
+                "/get/camera/live-source/history" -> CameraLiveSourceController.historyJson()
                 "/get/survey/latest" -> LyrebirdFlightLogger.latestSurveyInfoJson()
                 else -> "Use POST for commands. Telemetry available on port $TELEMETRY_PORT. " +
                     "Config available at GET /config; settings at GET /config/settings"
