@@ -16,6 +16,21 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.add_column(
+        "missions",
+        sa.Column(
+            "dji_favorited",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.false(),
+        ),
+    )
+    op.create_index(
+        "ix_missions_dji_favorited",
+        "missions",
+        ["dji_favorited"],
+    )
+
     op.create_table(
         "dji_wayline_files",
         sa.Column(
@@ -95,3 +110,5 @@ def downgrade() -> None:
     op.drop_index("ix_dji_wayline_files_name", table_name="dji_wayline_files")
     op.drop_index("ix_dji_wayline_files_workspace_id", table_name="dji_wayline_files")
     op.drop_table("dji_wayline_files")
+    op.drop_index("ix_missions_dji_favorited", table_name="missions")
+    op.drop_column("missions", "dji_favorited")
