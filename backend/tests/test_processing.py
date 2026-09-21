@@ -218,13 +218,19 @@ def test_thermogram_handoff_is_m3t_and_preserves_original_paths() -> None:
         handoff_root=r"\\m3-cloud\media-import",
     )
 
+    assert handoff["schema_version"] == 3
     assert handoff["workflow"] == "THERMOGRAM"
+    assert handoff["worker_contract"] == "M3T_RJPEG_V1"
     assert handoff["platform"] == "M3T"
     assert handoff["capture_group_count"] == 1
     assert handoff["asset_count"] == 2
     assert handoff["external_path"] == r"\\m3-cloud\media-import\M3T\site"
     files = handoff["capture_groups"][0]["files"]
     assert [item["filename"] for item in files] == [
+        "DJI_0001_W.JPG",
+        "DJI_0001_T.JPG",
+    ]
+    assert [item["path_relative_to_input"] for item in files] == [
         "DJI_0001_W.JPG",
         "DJI_0001_T.JPG",
     ]
