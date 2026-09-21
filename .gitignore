@@ -14,3 +14,6 @@ build/
 local.properties
 *.jks
 *.keystore
+
+# Locally installed third-party reference SDK/source trees
+.vendor/
