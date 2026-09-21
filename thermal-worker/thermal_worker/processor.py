@@ -119,6 +119,8 @@ def _preview(temperature: np.ndarray, statistics: Mapping[str, float | int]) -> 
 def _radiometry_integrity(
     decoded: DecodeResult,
     statistics: Mapping[str, float | int],
+    *,
+    source_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     finite_pixels = int(statistics["finite_pixels"])
     invalid_pixels = int(statistics["invalid_pixels"])
@@ -134,6 +136,38 @@ def _radiometry_integrity(
     api_version_query_status = decoded.api_version.get("query_status")
     if api_version_query_status == "SKIPPED_UNCONFIRMED_ABI":
         flags.append("API_VERSION_ABI_UNCONFIRMED")
+
+    source_width = None
+    source_height = None
+    if isinstance(source_metadata, Mapping):
+        image = source_metadata.get("image")
+        if isinstance(image, Mapping):
+            width = image.get("width")
+            height = image.get("height")
+            if (
+                isinstance(width, (int, float))
+                and not isinstance(width, bool)
+                and math.isfinite(float(width))
+                and float(width) > 0
+            ):
+                source_width = int(width)
+            if (
+                isinstance(height, (int, float))
+                and not isinstance(height, bool)
+                and math.isfinite(float(height))
+                and float(height) > 0
+            ):
+                source_height = int(height)
+
+    if (
+        source_width is not None
+        and source_height is not None
+        and (
+            source_width != decoded.width
+            or source_height != decoded.height
+        )
+    ):
+        flags.append("SOURCE_DIMENSION_MISMATCH")
 
     return {
         "status": "WARN" if flags else "PASS",
@@ -153,6 +187,10 @@ def _radiometry_integrity(
         "measurement_ranges_available": decoded.measurement_ranges is not None,
         "measurement_abi": decoded.measurement_abi,
         "api_version_query_status": api_version_query_status,
+        "decoded_width": decoded.width,
+        "decoded_height": decoded.height,
+        "source_image_width": source_width,
+        "source_image_height": source_height,
         "note": (
             "Integrity flags describe decoder/provenance completeness only; "
             "they are not a thermographic defect assessment."
@@ -643,7 +681,15 @@ def process_handoff(
                 )
     
             statistics = _stats(temperature)
-            radiometry_integrity = _radiometry_integrity(decoded, statistics)
+            radiometry_integrity = _radiometry_integrity(
+                decoded,
+                statistics,
+                source_metadata=(
+                    thermal_item.get("metadata")
+                    if isinstance(thermal_item.get("metadata"), Mapping)
+                    else None
+                ),
+            )
             hotspot_analysis, hotspot_mask = _hotspot_analysis(
                 temperature,
                 delta_c=hotspot_delta_c,
