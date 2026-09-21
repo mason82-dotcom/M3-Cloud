@@ -131,6 +131,9 @@ def _radiometry_integrity(
         flags.append("MEASUREMENT_PARAMS_UNREADABLE")
     if decoded.measurement_abi == "UNKNOWN":
         flags.append("MEASUREMENT_ABI_UNCONFIRMED")
+    api_version_query_status = decoded.api_version.get("query_status")
+    if api_version_query_status == "SKIPPED_UNCONFIRMED_ABI":
+        flags.append("API_VERSION_ABI_UNCONFIRMED")
 
     return {
         "status": "WARN" if flags else "PASS",
@@ -149,6 +152,7 @@ def _radiometry_integrity(
         "measurement_params_available": decoded.measurement_params is not None,
         "measurement_ranges_available": decoded.measurement_ranges is not None,
         "measurement_abi": decoded.measurement_abi,
+        "api_version_query_status": api_version_query_status,
         "note": (
             "Integrity flags describe decoder/provenance completeness only; "
             "they are not a thermographic defect assessment."
