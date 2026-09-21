@@ -197,3 +197,42 @@ async def test_nonzero_dji_property_result_is_rejected():
         await service.set_m3_properties("M3T123", {"height_limit": 120})
 
     assert exc_info.value.failed == {"height_limit": 1}
+
+
+
+@pytest.mark.asyncio
+async def test_payload_context_uses_live_dji_camera_index():
+    service = DJIDeviceService(
+        FakeRegistry({"M3T123": m3_identity()}),
+        FakeTelemetry(
+            {
+                "cameras": [
+                    {
+                        "payload_index": "67-0-0",
+                        "wide_exposure_mode": 1,
+                        "ir_metering_mode": 0,
+                    }
+                ]
+            }
+        ),
+        FakeProperties(),
+    )
+
+    context = await service.resolve_payload_context("M3T123")
+
+    assert context.gateway_sn == "RC123"
+    assert context.m3_sub_type == 1
+    assert context.payload_index == "67-0-0"
+    assert context.camera_state["ir_metering_mode"] == 0
+
+
+@pytest.mark.asyncio
+async def test_payload_context_rejects_cross_model_payload_index():
+    service = DJIDeviceService(
+        FakeRegistry({"M3T123": m3_identity()}),
+        FakeTelemetry({"cameras": [{"payload_index": "66-0-0"}]}),
+        FakeProperties(),
+    )
+
+    with pytest.raises(ValueError, match="expected payload type 67"):
+        await service.resolve_payload_context("M3T123")
