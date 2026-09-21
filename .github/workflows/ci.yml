@@ -88,6 +88,9 @@ jobs:
       - name: Lyrebird Detekt and Lint reports
         run: ./gradlew --no-daemon qualityLyrebird
 
+      - name: Enforce Android Lint correctness errors
+        run: python3 ../../scripts/check_android_lint_errors.py ../lyrebird-app/build/reports/lint-results-currentDebug.xml
+
       - name: Upload Android quality reports
         if: always()
         uses: actions/upload-artifact@v6
