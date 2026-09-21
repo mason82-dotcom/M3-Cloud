@@ -21,6 +21,7 @@ import struct
 import threading
 import time
 import zlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -260,6 +261,141 @@ def _json_float(value: float) -> float | str:
     return value
 
 
+FrameDecoder = Callable[[MavlinkFrame, bytes, dict[str, Any]], None]
+
+
+def _decode_mission_count(
+    frame: MavlinkFrame,
+    payload: bytes,
+    data: dict[str, Any],
+) -> None:
+    data["count"] = struct.unpack_from("<H", payload, 0)[0]
+    data["targetSystem"] = payload[2]
+    data["targetComponent"] = payload[3]
+    data["missionType"] = payload[4] if len(frame.payload) > 4 else 0
+
+
+def _decode_mission_request(
+    frame: MavlinkFrame,
+    payload: bytes,
+    data: dict[str, Any],
+) -> None:
+    data["missionSeq"] = struct.unpack_from("<H", payload, 0)[0]
+    data["targetSystem"] = payload[2]
+    data["targetComponent"] = payload[3]
+    data["missionType"] = payload[4] if len(frame.payload) > 4 else 0
+
+
+def _decode_mission_item_int(
+    frame: MavlinkFrame,
+    payload: bytes,
+    data: dict[str, Any],
+) -> None:
+    p1, p2, p3, p4 = struct.unpack_from("<ffff", payload, 0)
+    x, y = struct.unpack_from("<ii", payload, 16)
+    z = struct.unpack_from("<f", payload, 24)[0]
+    mission_seq, command = struct.unpack_from("<HH", payload, 28)
+    data.update(
+        {
+            "missionSeq": mission_seq,
+            "command": command,
+            "commandName": COMMAND_NAMES.get(command, f"MAV_CMD_{command}"),
+            "targetSystem": payload[32],
+            "targetComponent": payload[33],
+            "frame": payload[34],
+            "current": payload[35],
+            "autocontinue": payload[36],
+            "missionType": payload[37] if len(frame.payload) > 37 else 0,
+            "param1": _json_float(p1),
+            "param2": _json_float(p2),
+            "param3": _json_float(p3),
+            "param4": _json_float(p4),
+            "latitudeE7": x,
+            "longitudeE7": y,
+            "latitude": x / 1e7,
+            "longitude": y / 1e7,
+            "altitude": _json_float(z),
+        }
+    )
+
+
+def _decode_command(
+    frame: MavlinkFrame,
+    payload: bytes,
+    data: dict[str, Any],
+) -> None:
+    command = struct.unpack_from("<H", payload, 28)[0]
+    data["command"] = command
+    data["commandName"] = COMMAND_NAMES.get(command, f"MAV_CMD_{command}")
+    if frame.message_id == MSG_COMMAND_LONG:
+        params = struct.unpack_from("<fffffff", payload, 0)
+        data["params"] = [_json_float(value) for value in params]
+        data["targetSystem"] = payload[30]
+        data["targetComponent"] = payload[31]
+        return
+
+    p1, p2, p3, p4 = struct.unpack_from("<ffff", payload, 0)
+    x, y = struct.unpack_from("<ii", payload, 16)
+    z = struct.unpack_from("<f", payload, 24)[0]
+    data["params"] = [
+        _json_float(p1),
+        _json_float(p2),
+        _json_float(p3),
+        _json_float(p4),
+        x / 1e7,
+        y / 1e7,
+        _json_float(z),
+    ]
+    data["targetSystem"] = payload[30]
+    data["targetComponent"] = payload[31]
+    data["frame"] = payload[32]
+
+
+def _decode_mission_ack(
+    frame: MavlinkFrame,
+    payload: bytes,
+    data: dict[str, Any],
+) -> None:
+    data["targetSystem"] = payload[0]
+    data["targetComponent"] = payload[1]
+    data["result"] = payload[2]
+    data["missionType"] = payload[3] if len(frame.payload) > 3 else 0
+
+
+def _decode_command_ack(
+    frame: MavlinkFrame,
+    payload: bytes,
+    data: dict[str, Any],
+) -> None:
+    del frame
+    data["command"] = struct.unpack_from("<H", payload, 0)[0]
+    data["result"] = payload[2]
+
+
+def _decode_set_mode(
+    frame: MavlinkFrame,
+    payload: bytes,
+    data: dict[str, Any],
+) -> None:
+    del frame
+    data["customMode"] = struct.unpack_from("<I", payload, 0)[0]
+    data["targetSystem"] = payload[4]
+    data["baseMode"] = payload[5]
+
+
+_FRAME_DECODERS: dict[int, FrameDecoder] = {
+    MSG_MISSION_COUNT: _decode_mission_count,
+    MSG_MISSION_REQUEST: _decode_mission_request,
+    MSG_MISSION_REQUEST_INT: _decode_mission_request,
+    MSG_MISSION_ITEM_INT: _decode_mission_item_int,
+    MSG_COMMAND_LONG: _decode_command,
+    MSG_COMMAND_INT: _decode_command,
+    MSG_MISSION_ACK: _decode_mission_ack,
+    MSG_COMMAND_ACK: _decode_command_ack,
+    MSG_SET_MODE: _decode_set_mode,
+}
+
+
 def decode_frame(frame: MavlinkFrame) -> dict[str, Any]:
     """Decode only fields needed for safety policy and mission forensics."""
     data: dict[str, Any] = {
@@ -270,83 +406,9 @@ def decode_frame(frame: MavlinkFrame) -> dict[str, Any]:
         "componentId": frame.component_id,
         "signed": frame.signed,
     }
-    payload = _padded(frame.payload)
-
-    if frame.message_id == MSG_MISSION_COUNT:
-        data["count"] = struct.unpack_from("<H", payload, 0)[0]
-        data["targetSystem"] = payload[2]
-        data["targetComponent"] = payload[3]
-        data["missionType"] = payload[4] if len(frame.payload) > 4 else 0
-    elif frame.message_id in {MSG_MISSION_REQUEST, MSG_MISSION_REQUEST_INT}:
-        data["missionSeq"] = struct.unpack_from("<H", payload, 0)[0]
-        data["targetSystem"] = payload[2]
-        data["targetComponent"] = payload[3]
-        data["missionType"] = payload[4] if len(frame.payload) > 4 else 0
-    elif frame.message_id == MSG_MISSION_ITEM_INT:
-        p1, p2, p3, p4 = struct.unpack_from("<ffff", payload, 0)
-        x, y = struct.unpack_from("<ii", payload, 16)
-        z = struct.unpack_from("<f", payload, 24)[0]
-        mission_seq, command = struct.unpack_from("<HH", payload, 28)
-        data.update(
-            {
-                "missionSeq": mission_seq,
-                "command": command,
-                "commandName": COMMAND_NAMES.get(command, f"MAV_CMD_{command}"),
-                "targetSystem": payload[32],
-                "targetComponent": payload[33],
-                "frame": payload[34],
-                "current": payload[35],
-                "autocontinue": payload[36],
-                "missionType": payload[37] if len(frame.payload) > 37 else 0,
-                "param1": _json_float(p1),
-                "param2": _json_float(p2),
-                "param3": _json_float(p3),
-                "param4": _json_float(p4),
-                "latitudeE7": x,
-                "longitudeE7": y,
-                "latitude": x / 1e7,
-                "longitude": y / 1e7,
-                "altitude": _json_float(z),
-            }
-        )
-    elif frame.message_id in {MSG_COMMAND_LONG, MSG_COMMAND_INT}:
-        command = struct.unpack_from("<H", payload, 28)[0]
-        data["command"] = command
-        data["commandName"] = COMMAND_NAMES.get(command, f"MAV_CMD_{command}")
-        if frame.message_id == MSG_COMMAND_LONG:
-            params = struct.unpack_from("<fffffff", payload, 0)
-            data["params"] = [_json_float(value) for value in params]
-            data["targetSystem"] = payload[30]
-            data["targetComponent"] = payload[31]
-        else:
-            p1, p2, p3, p4 = struct.unpack_from("<ffff", payload, 0)
-            x, y = struct.unpack_from("<ii", payload, 16)
-            z = struct.unpack_from("<f", payload, 24)[0]
-            data["params"] = [
-                _json_float(p1),
-                _json_float(p2),
-                _json_float(p3),
-                _json_float(p4),
-                x / 1e7,
-                y / 1e7,
-                _json_float(z),
-            ]
-            data["targetSystem"] = payload[30]
-            data["targetComponent"] = payload[31]
-            data["frame"] = payload[32]
-    elif frame.message_id == MSG_MISSION_ACK:
-        data["targetSystem"] = payload[0]
-        data["targetComponent"] = payload[1]
-        data["result"] = payload[2]
-        data["missionType"] = payload[3] if len(frame.payload) > 3 else 0
-    elif frame.message_id == MSG_COMMAND_ACK:
-        data["command"] = struct.unpack_from("<H", payload, 0)[0]
-        data["result"] = payload[2]
-    elif frame.message_id == MSG_SET_MODE:
-        data["customMode"] = struct.unpack_from("<I", payload, 0)[0]
-        data["targetSystem"] = payload[4]
-        data["baseMode"] = payload[5]
-
+    decoder = _FRAME_DECODERS.get(frame.message_id)
+    if decoder is not None:
+        decoder(frame, _padded(frame.payload), data)
     return data
 
 
@@ -546,6 +608,53 @@ class UgcsWiretapProxy:
                     sock.close()
         self.recorder.close()
 
+    def _rejected_vsm_reason(self) -> str:
+        if self._vsm_peer is None:
+            return "invalid first datagram; peer not pinned"
+        return f"VSM peer mismatch; pinned={self._vsm_peer[0]}:{self._vsm_peer[1]}"
+
+    def _process_vsm_datagram(
+        self,
+        data: bytes,
+        peer: tuple[str, int],
+    ) -> bool:
+        assert self._aircraft_socket is not None
+
+        frames, noise = split_mavlink2_frames(data)
+        structurally_valid = bool(frames) and not noise
+        if not self._accept_vsm_peer(peer, structurally_valid=structurally_valid):
+            self.recorder.record(
+                "VSM_TO_RC",
+                peer,
+                self.rc,
+                data,
+                blocked=True,
+                block_reason=self._rejected_vsm_reason(),
+            )
+            return True
+
+        blocked, reason = (
+            should_block_dry_run_datagram(data)
+            if self.safe_dry_run
+            else (False, None)
+        )
+        self.recorder.record(
+            "VSM_TO_RC",
+            peer,
+            self.rc,
+            data,
+            blocked=blocked,
+            block_reason=reason,
+        )
+        if blocked:
+            return True
+
+        try:
+            self._aircraft_socket.send(data)
+        except OSError:
+            return False
+        return True
+
     def _pump_vsm_to_aircraft(self) -> None:
         assert self._vsm_socket is not None
         assert self._aircraft_socket is not None
@@ -558,41 +667,8 @@ class UgcsWiretapProxy:
             except OSError:
                 return
 
-            frames, noise = split_mavlink2_frames(data)
-            structurally_valid = bool(frames) and not noise
-            if not self._accept_vsm_peer(peer, structurally_valid=structurally_valid):
-                self.recorder.record(
-                    "VSM_TO_RC",
-                    peer,
-                    self.rc,
-                    data,
-                    blocked=True,
-                    block_reason=(
-                        "invalid first datagram; peer not pinned"
-                        if self._vsm_peer is None
-                        else f"VSM peer mismatch; pinned={self._vsm_peer[0]}:{self._vsm_peer[1]}"
-                    ),
-                )
-                continue
-
-            blocked = False
-            reason: str | None = None
-            if self.safe_dry_run:
-                blocked, reason = should_block_dry_run_datagram(data)
-
-            self.recorder.record(
-                "VSM_TO_RC",
-                peer,
-                self.rc,
-                data,
-                blocked=blocked,
-                block_reason=reason,
-            )
-            if not blocked:
-                try:
-                    self._aircraft_socket.send(data)
-                except OSError:
-                    return
+            if not self._process_vsm_datagram(data, peer):
+                return
 
     def _pump_aircraft_to_vsm(self) -> None:
         assert self._vsm_socket is not None
@@ -618,9 +694,8 @@ class UgcsWiretapProxy:
                 return
 
 
-def load_wiretap_capture(path: str | Path) -> dict[str, Any]:
-    """Return the latest VSM mission-upload transaction represented in a JSONL capture."""
-    capture: dict[str, Any] = {
+def _empty_wiretap_capture() -> dict[str, Any]:
+    return {
         "expectedCount": None,
         "missionCountEpochNs": None,
         "itemsBySeq": {},
@@ -628,43 +703,58 @@ def load_wiretap_capture(path: str | Path) -> dict[str, Any]:
         "ackEpochNs": None,
     }
 
+
+def _starts_mission_capture(row: dict[str, Any]) -> bool:
+    return (
+        row.get("direction") == "VSM_TO_RC"
+        and row.get("message") == "MISSION_COUNT"
+        and not row.get("blocked")
+        and int(row.get("count", 0)) > 0
+    )
+
+
+def _is_mission_item_row(row: dict[str, Any], capture: dict[str, Any]) -> bool:
+    return (
+        row.get("direction") == "VSM_TO_RC"
+        and row.get("message") == "MISSION_ITEM_INT"
+        and not row.get("blocked")
+        and capture["expectedCount"] is not None
+    )
+
+
+def _is_mission_ack_row(row: dict[str, Any], capture: dict[str, Any]) -> bool:
+    return (
+        row.get("direction") == "RC_TO_VSM"
+        and row.get("message") == "MISSION_ACK"
+        and capture["expectedCount"] is not None
+    )
+
+
+def _apply_capture_row(
+    capture: dict[str, Any],
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    if _starts_mission_capture(row):
+        capture = _empty_wiretap_capture()
+        capture["expectedCount"] = int(row["count"])
+        capture["missionCountEpochNs"] = row.get("epochNs")
+        return capture
+
+    if _is_mission_item_row(row, capture):
+        capture["itemsBySeq"][int(row["missionSeq"])] = row
+    elif _is_mission_ack_row(row, capture):
+        capture["acceptedAck"] = int(row.get("result", -1)) == 0
+        capture["ackEpochNs"] = row.get("epochNs")
+    return capture
+
+
+def load_wiretap_capture(path: str | Path) -> dict[str, Any]:
+    """Return the latest VSM mission-upload transaction represented in a JSONL capture."""
+    capture = _empty_wiretap_capture()
+
     with Path(path).open(encoding="utf-8") as handle:
         for line in handle:
-            row = json.loads(line)
-            direction = row.get("direction")
-            message = row.get("message")
-
-            if (
-                direction == "VSM_TO_RC"
-                and message == "MISSION_COUNT"
-                and not row.get("blocked")
-                and int(row.get("count", 0)) > 0
-            ):
-                capture = {
-                    "expectedCount": int(row["count"]),
-                    "missionCountEpochNs": row.get("epochNs"),
-                    "itemsBySeq": {},
-                    "acceptedAck": False,
-                    "ackEpochNs": None,
-                }
-                continue
-
-            if (
-                direction == "VSM_TO_RC"
-                and message == "MISSION_ITEM_INT"
-                and not row.get("blocked")
-                and capture["expectedCount"] is not None
-            ):
-                capture["itemsBySeq"][int(row["missionSeq"])] = row
-                continue
-
-            if (
-                direction == "RC_TO_VSM"
-                and message == "MISSION_ACK"
-                and capture["expectedCount"] is not None
-            ):
-                capture["acceptedAck"] = int(row.get("result", -1)) == 0
-                capture["ackEpochNs"] = row.get("epochNs")
+            capture = _apply_capture_row(capture, json.loads(line))
 
     items_by_seq = capture.pop("itemsBySeq")
     capture["items"] = [items_by_seq[index] for index in sorted(items_by_seq)]
@@ -812,23 +902,54 @@ def _compare_item(
     return differences
 
 
-def _compare_mission_identity(
+def _mission_digest_identity(
     wire_items: list[dict[str, Any]],
     rc_trace: dict[str, Any],
-) -> tuple[list[str], str, str, int, int | None]:
-    differences: list[str] = []
+) -> tuple[str, str, str | None]:
     wire_digest = mission_digest(wire_items) if wire_items else ""
     rc_digest = str(rc_trace.get("missionDigest") or "")
     if wire_items and rc_digest and wire_digest != rc_digest:
-        differences.append(f"mission digest differs: wire={wire_digest} rc={rc_digest}")
+        return (
+            wire_digest,
+            rc_digest,
+            f"mission digest differs: wire={wire_digest} rc={rc_digest}",
+        )
+    return wire_digest, rc_digest, None
 
+
+def _mission_plan_identity(
+    wire_items: list[dict[str, Any]],
+    rc_trace: dict[str, Any],
+) -> tuple[int, int | None, str | None]:
     wire_plan_id = mission_plan_id(wire_items) if wire_items else 0
     rc_plan_id_raw = rc_trace.get("planId")
     rc_plan_id = int(rc_plan_id_raw) & 0xFFFFFFFF if rc_plan_id_raw is not None else None
     if wire_items and rc_plan_id is not None and wire_plan_id != rc_plan_id:
-        differences.append(
-            f"mission planId differs: wire={wire_plan_id:#010x} rc={rc_plan_id:#010x}"
+        return (
+            wire_plan_id,
+            rc_plan_id,
+            f"mission planId differs: wire={wire_plan_id:#010x} rc={rc_plan_id:#010x}",
         )
+    return wire_plan_id, rc_plan_id, None
+
+
+def _compare_mission_identity(
+    wire_items: list[dict[str, Any]],
+    rc_trace: dict[str, Any],
+) -> tuple[list[str], str, str, int, int | None]:
+    wire_digest, rc_digest, digest_difference = _mission_digest_identity(
+        wire_items,
+        rc_trace,
+    )
+    wire_plan_id, rc_plan_id, plan_difference = _mission_plan_identity(
+        wire_items,
+        rc_trace,
+    )
+    differences = [
+        difference
+        for difference in (digest_difference, plan_difference)
+        if difference is not None
+    ]
     return differences, wire_digest, rc_digest, wire_plan_id, rc_plan_id
 
 
