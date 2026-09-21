@@ -3,7 +3,8 @@
 Standalone x86-64 worker for radiometric DJI M3T R-JPEG processing.
 
 The worker consumes the versioned M3-Cloud `THERMOGRAM` handoff, verifies the
-frozen source file size/SHA256, decodes the `*_T.JPG` with DJI's DIRP API, and
+frozen source file size/SHA256, decodes the catalogued M3T thermal R-JPEG
+(including DJI `*_T.JPG` and `*_R.JPG` naming) with DJI's DIRP API, and
 writes immutable processing artifacts into the job result-drop directory.
 
 ## Why it is separate from the backend
@@ -27,6 +28,10 @@ install. No DJI binary is committed to this repository.
 ## M3T-only source identity
 
 The native workflow is intentionally scoped to DJI **Mavic 3 Thermal (M3T)**.
+M3-Cloud recognizes both the `_T` thermal suffix used by current datasets and
+the `_R` radiometric-JPEG suffix present in the reviewed M3T reference files.
+The latter is distinct from M3M's `_MS_R.TIF` red spectral band and is
+classified only as M3T `THERMAL`.
 Before decoding each frozen WIDE/THERMAL pair, the worker inspects the
 already-catalogued camera-model metadata from M3-Cloud:
 
