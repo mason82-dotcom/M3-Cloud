@@ -250,6 +250,10 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
     @Volatile
     private var planId = 0
 
+    /** Wall-clock epoch time of the last successfully committed non-empty mission upload. */
+    @Volatile
+    private var committedAtEpochMs = 0L
+
     @Synchronized
     fun count(): Int = items.size
 
@@ -268,6 +272,9 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
     @Synchronized
     fun currentPlanId(): Int = planId
 
+    @Synchronized
+    fun currentPlanCommittedAtEpochMs(): Long = committedAtEpochMs
+
     /**
      * Begin an upload of [count] items. Returns null to proceed, or a MAV_MISSION_RESULT to refuse.
      *
@@ -284,6 +291,7 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
         if (count == 0) {
             items.clear()
             planId = 0
+            committedAtEpochMs = 0L
             state = MissionState.NO_MISSION
             currentSeq = -1
         }
@@ -326,6 +334,7 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
         incoming.clear()
         uploading = false
         planId = missionPlanFingerprint(items)
+        committedAtEpochMs = if (items.isEmpty()) 0L else System.currentTimeMillis()
         currentSeq = -1
         state = if (items.isEmpty()) MissionState.NO_MISSION else MissionState.NOT_STARTED
     }
@@ -343,6 +352,7 @@ internal class MavlinkMissionStore(private val maxItems: Int = MAX_ITEMS) {
         incoming.clear()
         uploading = false
         planId = 0
+        committedAtEpochMs = 0L
         currentSeq = -1
         state = MissionState.NO_MISSION
     }

@@ -36,6 +36,7 @@ class MavlinkMissionProtocolTest {
 
         store.commitUpload()
         assertEquals(3, store.count())
+        assertTrue("committed upload gets a correlation timestamp", store.currentPlanCommittedAtEpochMs() > 0L)
         assertEquals(MissionState.NOT_STARTED, store.missionState())
     }
 
@@ -75,6 +76,7 @@ class MavlinkMissionProtocolTest {
 
         assertNull(store.beginUpload(0, MavlinkMissionStore.MISSION_TYPE_MISSION))
         assertEquals(0, store.count())
+        assertEquals(0L, store.currentPlanCommittedAtEpochMs())
         assertEquals(MissionState.NO_MISSION, store.missionState())
         assertNull("a zero-item upload has nothing to request", store.nextRequestIndex())
     }

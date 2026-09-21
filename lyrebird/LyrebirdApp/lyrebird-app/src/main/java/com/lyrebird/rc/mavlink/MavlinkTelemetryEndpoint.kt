@@ -212,6 +212,7 @@ internal class MavlinkTelemetryEndpoint(
             .put("count", items.size)
             .put("planId", Integer.toUnsignedLong(missions.currentPlanId()))
             .put("missionDigest", missionPlanDigest(items))
+            .put("uploadedAtEpochMs", missions.currentPlanCommittedAtEpochMs())
             .put("state", missions.missionState())
             .put("currentSeq", if (items.isEmpty()) -1 else missions.currentIndex())
             .put("items", array)
