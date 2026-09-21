@@ -830,6 +830,7 @@ export interface ProcessingJob {
 export interface ThermogramHandoffFile {
   id: string;
   relative_path: string;
+  path_relative_to_input: string;
   filename: string;
   media_kind: "WIDE" | "THERMAL" | string;
   size_bytes: number;
@@ -845,12 +846,14 @@ export interface ThermogramHandoffGroup {
 
 export interface ThermogramHandoff {
   schema_version: number;
+  worker_contract: "M3T_RJPEG_V1" | string;
   workflow: "THERMOGRAM";
   platform: "M3T";
   job_id: string;
   flight_id?: string | null;
   input_prefix: string;
   external_path: string;
+  result_drop_path: string;
   required_media_kinds: string[];
   capture_group_count: number;
   asset_count: number;
