@@ -34,6 +34,7 @@ class FakeDecoder:
                 humidity_pct=70.0,
                 emissivity=0.95,
                 reflection_c=23.0,
+                ambient_temp_c=21.0,
             ),
             measurement_mode="sdk_native",
             measurement_error_code=None,
