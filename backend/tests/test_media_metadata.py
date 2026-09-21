@@ -68,3 +68,64 @@ def test_extracts_dji_xmp_gps_altitude_and_attitude_without_rewriting_file(tmp_p
     assert result.capture_time_utc == datetime(2026, 9, 20, 12, 34, 56, tzinfo=timezone.utc)
     assert result.capture_time_source == "XMP_CREATE_DATE_OFFSET"
     assert "drone-dji" in result.metadata_json["xmp"]
+
+def test_prefers_dji_utc_at_exposure_over_local_exif_or_create_date(tmp_path: Path) -> None:
+    path = tmp_path / "M3T" / "DJI_0001_T.JPG"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(
+        b'''<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:Description
+ xmlns:drone-dji="http://www.dji.com/drone-dji/1.0/"
+ drone-dji:UTCAtExposure="2022-07-23T07:12:22.872778"
+ drone-dji:CreateDate="2022-07-23T15:12:19+08:00"
+ drone-dji:GpsLatitude="22.6939917"
+ drone-dji:GpsLongitude="114.9658667"/>
+</x:xmpmeta>'''
+    )
+
+    result = extract_media_metadata(
+        path,
+        default_timezone="Europe/Berlin",
+        fallback_capture_time_utc=datetime(
+            2022,
+            7,
+            23,
+            13,
+            12,
+            19,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    assert result.capture_time_utc == datetime(
+        2022,
+        7,
+        23,
+        7,
+        12,
+        22,
+        872778,
+        tzinfo=timezone.utc,
+    )
+    assert result.capture_time_source == "XMP_DJI_UTC_AT_EXPOSURE"
+
+
+def test_parses_exiftool_style_dji_utc_at_exposure() -> None:
+    from app.media.metadata import _parse_dji_utc_at_exposure
+
+    parsed, source = _parse_dji_utc_at_exposure(
+        "2022:07:23 07:12:22.872778"
+    )
+
+    assert parsed == datetime(
+        2022,
+        7,
+        23,
+        7,
+        12,
+        22,
+        872778,
+        tzinfo=timezone.utc,
+    )
+    assert source == "XMP_DJI_UTC_AT_EXPOSURE"
+
