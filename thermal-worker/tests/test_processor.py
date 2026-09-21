@@ -715,11 +715,30 @@ def test_registration_audit_compares_pair_metadata_without_registering_pixels():
     wide = {
         "capture_time_utc": "2026-09-21T01:02:03.000000+00:00",
         "metadata": {
-            "gps": {"latitude": 49.1, "longitude": 8.5},
+            "gps": {
+                "latitude": 49.1,
+                "longitude": 8.5,
+                "altitude_m": 145.0,
+            },
+            "dji_altitude": {
+                "absolute_ellipsoid_m": 145.5,
+                "relative_takeoff_m": 60.0,
+            },
+            "flight_attitude": {
+                "yaw_deg": 178.0,
+                "pitch_deg": 2.0,
+                "roll_deg": -1.0,
+            },
             "gimbal_attitude": {
                 "yaw_deg": 179.0,
                 "pitch_deg": -90.0,
                 "roll_deg": 0.2,
+            },
+            "image": {
+                "width": 5280,
+                "height": 3956,
+                "focal_length_mm": 12.29,
+                "focal_length_35mm": 24.0,
             },
             "raw": {
                 "xmp": {
@@ -735,11 +754,30 @@ def test_registration_audit_compares_pair_metadata_without_registering_pixels():
     thermal = {
         "capture_time_utc": "2026-09-21T01:02:03.025000+00:00",
         "metadata": {
-            "gps": {"latitude": 49.1, "longitude": 8.5},
+            "gps": {
+                "latitude": 49.1,
+                "longitude": 8.5,
+                "altitude_m": 145.2,
+            },
+            "dji_altitude": {
+                "absolute_ellipsoid_m": 145.7,
+                "relative_takeoff_m": 60.2,
+            },
+            "flight_attitude": {
+                "yaw_deg": -179.0,
+                "pitch_deg": 1.5,
+                "roll_deg": -0.4,
+            },
             "gimbal_attitude": {
                 "yaw_deg": -179.0,
                 "pitch_deg": -89.0,
                 "roll_deg": -0.1,
+            },
+            "image": {
+                "width": 640,
+                "height": 512,
+                "focal_length_mm": 9.1,
+                "focal_length_35mm": 40.0,
             },
             "raw": {
                 "xmp": {
@@ -764,13 +802,45 @@ def test_registration_audit_compares_pair_metadata_without_registering_pixels():
     assert pair["gimbal_delta_deg"]["yaw_deg"] == pytest.approx(2.0)
     assert pair["gimbal_delta_deg"]["pitch_deg"] == pytest.approx(1.0)
     assert pair["gimbal_delta_deg"]["roll_deg"] == pytest.approx(0.3)
+    assert pair["flight_attitude_delta_deg"] == {
+        "yaw_deg": pytest.approx(3.0),
+        "pitch_deg": pytest.approx(0.5),
+        "roll_deg": pytest.approx(0.6),
+    }
+    assert pair["altitude_delta_m"]["absolute_ellipsoid_m"] == pytest.approx(0.2)
+    assert pair["altitude_delta_m"]["relative_takeoff_m"] == pytest.approx(0.2)
+    assert pair["altitude_delta_m"]["gps_altitude_m"] == pytest.approx(0.2)
+    assert pair["wide_image"] == {
+        "width": 5280,
+        "height": 3956,
+        "focal_length_mm": pytest.approx(12.29),
+        "focal_length_35mm": pytest.approx(24.0),
+    }
+    assert pair["thermal_image"] == {
+        "width": 640,
+        "height": 512,
+        "focal_length_mm": pytest.approx(9.1),
+        "focal_length_35mm": pytest.approx(40.0),
+    }
     assert pair["wide_dji_calibration_raw"]["CalibratedFocalLength"] == "12000.000000"
     assert pair["thermal_dji_calibration_raw"] == {
         "CalibratedFocalLength": "9100.000000",
         "CalibratedOpticalCenterX": "0.000000",
         "CalibratedOpticalCenterY": "0.000000",
     }
-    assert "No validated WIDE-to-THERMAL" in audit["note"]
+    assert pair["evidence"] == {
+        "capture_time_pair": True,
+        "gps_pair": True,
+        "gimbal_attitude_pair": True,
+        "flight_attitude_pair": True,
+        "dji_altitude_pair": True,
+        "wide_image_dimensions": True,
+        "thermal_image_dimensions": True,
+        "wide_dji_calibration": True,
+        "thermal_dji_calibration": True,
+    }
+    assert "does not establish registration" in audit["note"]
+    assert audit["status"] == "NOT_REGISTERED"
 
 
 def test_registration_audit_leaves_missing_pair_evidence_unknown():
@@ -790,8 +860,26 @@ def test_registration_audit_leaves_missing_pair_evidence_unknown():
         "pitch_deg": None,
         "roll_deg": None,
     }
+    assert pair["flight_attitude_delta_deg"] == {
+        "yaw_deg": None,
+        "pitch_deg": None,
+        "roll_deg": None,
+    }
+    assert pair["altitude_delta_m"] == {
+        "absolute_ellipsoid_m": None,
+        "relative_takeoff_m": None,
+        "gps_altitude_m": None,
+    }
+    assert pair["wide_image"] == {
+        "width": None,
+        "height": None,
+        "focal_length_mm": None,
+        "focal_length_35mm": None,
+    }
+    assert pair["thermal_image"] == pair["wide_image"]
     assert pair["wide_dji_calibration_raw"] == {}
     assert pair["thermal_dji_calibration_raw"] == {}
+    assert not any(pair["evidence"].values())
 
 def test_process_handoff_rejects_decoder_provenance_change_between_captures(
     tmp_path,
