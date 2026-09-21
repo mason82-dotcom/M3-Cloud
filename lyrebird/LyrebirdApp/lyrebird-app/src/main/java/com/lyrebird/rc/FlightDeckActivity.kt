@@ -5469,24 +5469,11 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             .uppercase()
         if (preferred.isBlank()) return
 
-        // Several startup paths can request a restore at nearly the same time. Do not drop the
-        // later request permanently just because a DJI callback is still outstanding: coalesce it
-        // into a bounded retry. M3M field traces show the camera can report VIDEO_NORMAL several
-        // seconds before KeyCameraVideoStreamSource accepts a write.
-        if (cameraLiveSourceRestoreInFlight) {
-            if (attempt < CAMERA_SOURCE_RESTORE_MAX_ATTEMPTS) {
-                mainHandler.postDelayed(
-                    {
-                        restorePreferredCameraLiveSourceAsync(
-                            reason,
-                            attempt + 1
-                        )
-                    },
-                    CAMERA_SOURCE_RESTORE_RETRY_MS
-                )
-            }
-            return
-        }
+        // Several startup paths can request a restore at nearly the same time. One active
+        // restore owns the retry chain; duplicate startup triggers simply coalesce into it. M3M
+        // field traces show the camera can report VIDEO_NORMAL several seconds before
+        // KeyCameraVideoStreamSource accepts a write.
+        if (cameraLiveSourceRestoreInFlight) return
 
         cameraLiveSourceRestoreInFlight = true
         cameraSettingsExecutor.execute {
