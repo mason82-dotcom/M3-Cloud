@@ -10,6 +10,7 @@ ext {
     deps.gson = 'com.google.code.gson:gson:2.14.0'
     deps.okio = 'com.squareup.okio:okio:1.17.2'
     deps.rx3Android = 'io.reactivex.rxjava3:rxandroid:3.0.2'
+    deps.rx3Java = 'io.reactivex.rxjava3:rxjava:3.1.5'
     deps.rx3Kt = 'io.reactivex.rxjava3:rxkotlin:3.0.0'
     deps.sqlcipher = 'net.zetetic:android-database-sqlcipher:4.5.4'
     deps.wire = 'com.squareup.wire:wire-runtime:2.2.0'
