@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -123,6 +124,7 @@ class DroneDBClient:
         *,
         source: Path,
         remote_path: str,
+        expected_sha256: str | None = None,
         allow_existing: bool = True,
     ) -> dict[str, Any]:
         mime = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
@@ -136,7 +138,14 @@ class DroneDBClient:
             existing = self._existing_object(org_slug, dataset_slug, remote_path)
             if existing is not None:
                 size = existing.get("size", existing.get("Size"))
-                if size is None or int(size) == source.stat().st_size:
+                digest = existing.get("hash", existing.get("Hash"))
+                expected = expected_sha256 or hashlib.sha256(source.read_bytes()).hexdigest()
+                if (
+                    size is not None
+                    and int(size) == source.stat().st_size
+                    and isinstance(digest, str)
+                    and digest.lower() == expected.lower()
+                ):
                     return existing
         response.raise_for_status()
         payload = response.json()
@@ -162,7 +171,14 @@ class DroneDBClient:
             existing = self._existing_object(org_slug, dataset_slug, remote_path)
             if existing is not None:
                 size = existing.get("size", existing.get("Size"))
-                if size is None or int(size) == len(data):
+                digest = existing.get("hash", existing.get("Hash"))
+                expected = hashlib.sha256(data).hexdigest()
+                if (
+                    size is not None
+                    and int(size) == len(data)
+                    and isinstance(digest, str)
+                    and digest.lower() == expected
+                ):
                     return existing
         response.raise_for_status()
         payload = response.json()
