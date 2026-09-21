@@ -107,6 +107,13 @@ jobs:
           unzip -Z1 "$APK" | sort > "$REPORT_DIR/apk-contents.txt"
           unzip -q "$APK" 'lib/*' -d "$EXTRACT_DIR"
 
+          ZIPALIGN="$(find "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools" -type f -name zipalign | sort -V | tail -1)"
+          if [ -n "$ZIPALIGN" ]; then
+            "$ZIPALIGN" -c -P 16 -v 4 "$APK" > "$REPORT_DIR/zipalign-16k.txt" 2>&1 || true
+          else
+            echo "zipalign not found" > "$REPORT_DIR/zipalign-16k.txt"
+          fi
+
           ABIS="$(find "$EXTRACT_DIR/lib" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -u)"
           test "$ABIS" = "arm64-v8a"
 
@@ -132,6 +139,7 @@ jobs:
                   sha256sum "$LIB"
                   file "$LIB"
                   readelf -h "$LIB" | grep -E 'Class:|Data:|Machine:'
+                  readelf -lW "$LIB" | grep -E ' LOAD |GNU_RELRO|GNU_STACK' || true
                   readelf -d "$LIB" | grep -E '\(SONAME\)|\(NEEDED\)' || true
                   echo
                 done
