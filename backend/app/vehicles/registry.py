@@ -154,7 +154,10 @@ def merge_vehicle_snapshots(
         name=primary.name or secondary.name,
         model=_model(primary, secondary),
         source=primary.source,
-        online=left.online or right.online,
+        # Source priority applies to connectivity as well as identity/telemetry.
+        # In particular, an explicit DJI Cloud offline transition must not be
+        # overwritten by a still-live/stale Lyrebird fallback snapshot.
+        online=primary.online,
         gateway_sn=primary.gateway_sn or secondary.gateway_sn,
         updated_at_ms=max(timestamps) if timestamps else None,
         telemetry=telemetry,
