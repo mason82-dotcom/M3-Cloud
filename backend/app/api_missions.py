@@ -23,6 +23,7 @@ from app.missions.plans import (
     plan_sha256,
 )
 from app.missions.preflight import evaluate_preflight
+from app.missions.planner import build_grid_preview, planner_profile_catalog
 from app.models import Mission, MissionDeployment, MissionRevision, Survey
 
 
@@ -58,6 +59,24 @@ class MissionUpdate(BaseModel):
     preferred_executor: Literal["DJI_NATIVE", "ONBOARD"] | None = None
     status: Literal["DRAFT", "READY", "ARCHIVED"] | None = None
     items: list[MissionItemInput] | None = None
+
+
+class GridPlannerPoint(BaseModel):
+    latitude_deg: float = Field(ge=-90.0, le=90.0)
+    longitude_deg: float = Field(ge=-180.0, le=180.0)
+
+
+class GridPlannerPreviewRequest(BaseModel):
+    platform: Literal["M3E", "M3T", "M3M"]
+    capture_profile: str | None = None
+    polygon: list[GridPlannerPoint] = Field(min_length=3, max_length=200)
+    gsd_cm: float = Field(default=2.0, gt=0.0, le=50.0)
+    forward_overlap_pct: float = Field(default=80.0, ge=0.0, le=95.0)
+    side_overlap_pct: float = Field(default=70.0, ge=0.0, le=95.0)
+    direction_deg: float = Field(default=0.0, ge=0.0, lt=360.0)
+    speed_mps: float = Field(default=8.0, gt=0.0, le=25.0)
+    gimbal_pitch_deg: float = Field(default=-90.0, ge=-90.0, le=35.0)
+    overshoot_m: float | None = Field(default=None, ge=0.0, le=500.0)
 
 
 def _base_payload(mission: Mission) -> dict[str, Any]:
@@ -164,6 +183,44 @@ def _input_plan(items: list[MissionItemInput]) -> dict[str, object]:
                 }
                 for index, item in enumerate(items)
             ]
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/planner/profiles")
+async def mission_planner_profiles() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "profiles": planner_profile_catalog(),
+        "note": (
+            "Only profiles currently selectable by Lyrebird's DJI-native survey preparation "
+            "are exposed. M3T thermal and M3M RGB-only require an explicit mission capture-profile "
+            "contract before they can be planned safely."
+        ),
+    }
+
+
+@router.post("/planner/grid-preview")
+async def mission_grid_preview(body: GridPlannerPreviewRequest) -> dict[str, Any]:
+    try:
+        return build_grid_preview(
+            platform=body.platform,
+            capture_profile=body.capture_profile,
+            polygon=[
+                (point.latitude_deg, point.longitude_deg)
+                for point in body.polygon
+            ],
+            gsd_cm=body.gsd_cm,
+            forward_overlap_pct=body.forward_overlap_pct,
+            side_overlap_pct=body.side_overlap_pct,
+            direction_deg=body.direction_deg,
+            speed_mps=body.speed_mps,
+            gimbal_pitch_deg=body.gimbal_pitch_deg,
+            overshoot_m=body.overshoot_m,
         )
     except ValueError as exc:
         raise HTTPException(
