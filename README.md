@@ -236,8 +236,8 @@ GET /api/v1/media/datasets/manifest?prefix=M3T/site-a
 Workflow readiness is reported separately:
 
 - `WEBODM`: at least two present, non-duplicate RGB/Wide originals.
-- `THERMOGRAM`: M3T capture groups contain both Wide and Thermal originals.
-- `MULTISPECTRAL`: M3M capture groups contain RGB plus Green, Red, Red Edge, and NIR.
+- `THERMOGRAM`: M3T has radiometric Thermal originals; Wide companions are retained when present.
+- `DRONEDB`: M3M has at least two complete RGB + Green/Red/Red Edge/NIR capture groups.
 
 The handoff manifest contains the original relative paths, SHA-256 values, capture groups, and
 completeness status. It references `/media-import/<prefix>`; it does not copy, rename, resize,
@@ -251,20 +251,59 @@ a changed original aborts the job instead of silently processing different bytes
 handoff manifests are generated from the same frozen snapshot.
 
 
-### M3M multispectral processing
+### M3M DroneDB handoff
 
-M3-Cloud exposes a dedicated `m3m-multispectral` WebODM profile. A job is offered only when the
-dataset contains at least two complete M3M captures, each with RGB plus Green, Red, Red Edge, and
-NIR originals. Incomplete capture groups are excluded from the immutable job snapshot.
+M3M multispectral processing is deliberately decoupled from the M3-Cloud WebODM path. The media
+catalog still owns ingest, flight/survey association, EXIF/XMP metadata, capture grouping, and
+SHA-256 provenance, but complete M3M datasets are published to the integrated DroneDB Registry.
 
-The profile uploads all five channels together and sets:
+A DroneDB handoff is offered only when at least two M3M capture groups each contain the five
+required originals:
 
 ```text
-radiometric-calibration = camera
+RGB + Green + Red + Red Edge + NIR
 ```
 
-This follows ODM's supported Mavic 3 Multispectral workflow. The `camera+sun` mode is not enabled
-by default because ODM currently documents it as experimental.
+Creating the job freezes those exact media records in `processing_job_assets`. Before transfer,
+M3-Cloud verifies every source against its frozen byte size and SHA-256. DroneDB receives the
+unchanged originals below `raw/` plus `m3cloud-handoff.json`, which contains the original
+relative paths, hashes, capture groups, capture timestamps, metadata snapshots, flight/survey
+association, and the remote DroneDB dataset identity. Incomplete groups are not uploaded.
+
+```text
+POST /api/v1/processing/dronedb
+GET  /api/v1/processing/jobs/<UUID>/dronedb-handoff
+GET  /api/v1/processing/jobs/<UUID>/dronedb-handoff/download
+```
+
+The default Compose stack runs DroneDB Registry with a MariaDB database and a separate DroneDB
+processing node. Configure credentials before deployment:
+
+```dotenv
+DRONEDB_IMAGE=dronedb/registry:v2.6.6
+DRONEDB_DB_IMAGE=mariadb:10.6
+DRONEDB_PORT=5000
+DRONEDB_PUBLIC_URL=http://localhost:5000
+DRONEDB_SECRET=change-me-dronedb-secret-please-rotate
+DRONEDB_ADMIN_USERNAME=admin
+DRONEDB_ADMIN_PASSWORD=change-me-dronedb
+DRONEDB_DB_ROOT_PASSWORD=change-me-dronedb-root
+DRONEDB_DB_PASSWORD=change-me-dronedb-db
+
+M3CLOUD_DRONEDB_ENABLED=true
+M3CLOUD_DRONEDB_URL=http://dronedb:5000
+M3CLOUD_DRONEDB_PUBLIC_URL=http://localhost:5000
+M3CLOUD_DRONEDB_ORG=m3cloud
+```
+
+The Registry is exposed on port 5000 by default. M3-Cloud authenticates over the internal Compose
+network, creates the configured organization and a private dataset per handoff, then uploads the
+verified originals. If the backend restarts during transfer, the job is re-queued and the persisted
+DroneDB dataset identity is reused so the transfer can resume safely.
+
+Photogrammetry, reflectance calibration, vegetation indices, and other multispectral derivatives
+remain DroneDB-side processing concerns. M3-Cloud does not silently route M3M multispectral data
+back through its WebODM profile catalog.
 
 
 ### M3T radiometric processing
@@ -388,8 +427,8 @@ GET /api/v1/processing/jobs/<UUID>/inputs
 GET /api/v1/processing/jobs/<UUID>/inputs/download
 ```
 
-WebODM verifies each source file against this snapshot immediately before upload. A changed source
-aborts processing instead of silently changing the job input.
+WebODM and DroneDB verify each source file against this snapshot immediately before upload. A
+changed source aborts processing instead of silently changing the job input.
 
 
 ### Automatic media-to-flight matching
@@ -418,9 +457,9 @@ reported as `AMBIGUOUS`. A manual flight assignment is never overwritten by late
 ### Processing input capture timestamps
 
 Processing input snapshots also freeze each original's normalized capture time. This applies to
-both WebODM and Thermogram jobs. Thermogram job creation now freezes the same path, byte size,
-SHA-256, media kind, capture group, and capture timestamp contract as WebODM, so later media
-catalog rescans cannot silently change an external handoff.
+WebODM, DroneDB, and Thermogram jobs. DroneDB M3M publishing and Thermogram job creation use the
+same path, byte size, SHA-256, media kind, capture group, capture timestamp, and metadata snapshot
+contract, so later media catalog rescans cannot silently change a handoff.
 
 
 ### EXIF / GPS / DJI XMP
