@@ -4,12 +4,19 @@ import pytest
 
 from app.dji.protocol import (
     ProtocolError,
+    make_message,
     make_property_reply,
     make_reply,
     parse_envelope,
     parse_property_message,
 )
-from app.dji.topics import TopicKind, parse_topic, status_reply_topic
+from app.dji.topics import (
+    SUBSCRIPTIONS,
+    TopicDirection,
+    TopicKind,
+    parse_topic,
+    status_reply_topic,
+)
 
 
 def test_status_topic_parser() -> None:
@@ -17,7 +24,29 @@ def test_status_topic_parser() -> None:
 
     assert parsed.gateway_sn == "RC123"
     assert parsed.kind is TopicKind.STATUS
+    assert parsed.direction is TopicDirection.UPLINK
     assert status_reply_topic("RC123") == "sys/product/RC123/status_reply"
+
+
+def test_subscription_set_contains_only_dji_uplink_topics() -> None:
+    assert "thing/product/+/services_reply" in SUBSCRIPTIONS
+    assert "thing/product/+/events" in SUBSCRIPTIONS
+    assert "thing/product/+/requests" in SUBSCRIPTIONS
+    assert "thing/product/+/property/set_reply" in SUBSCRIPTIONS
+    assert "thing/product/+/drc/up" in SUBSCRIPTIONS
+
+    assert "thing/product/+/services" not in SUBSCRIPTIONS
+    assert "thing/product/+/events_reply" not in SUBSCRIPTIONS
+    assert "thing/product/+/requests_reply" not in SUBSCRIPTIONS
+    assert "thing/product/+/property/set" not in SUBSCRIPTIONS
+    assert "thing/product/+/drc/down" not in SUBSCRIPTIONS
+
+
+def test_topic_direction_is_explicit() -> None:
+    assert parse_topic("thing/product/RC/services").direction is TopicDirection.DOWNLINK
+    assert parse_topic("thing/product/RC/services_reply").direction is TopicDirection.UPLINK
+    assert parse_topic("thing/product/RC/drc/up").kind is TopicKind.DRC_UP
+    assert parse_topic("thing/product/RC/drc/down").kind is TopicKind.DRC_DOWN
 
 
 def test_update_topo_envelope_and_reply_keep_correlation_ids() -> None:
@@ -39,6 +68,24 @@ def test_update_topo_envelope_and_reply_keep_correlation_ids() -> None:
         "timestamp": 456,
         "method": "update_topo",
         "data": {"result": 0},
+    }
+
+
+def test_make_message_builds_service_envelope() -> None:
+    payload = make_message(
+        "live_start_push",
+        {"video_id": "M3T/67-0-0/normal-0"},
+        tid="t",
+        bid="b",
+        timestamp_ms=123,
+    )
+
+    assert payload == {
+        "tid": "t",
+        "bid": "b",
+        "timestamp": 123,
+        "data": {"video_id": "M3T/67-0-0/normal-0"},
+        "method": "live_start_push",
     }
 
 
