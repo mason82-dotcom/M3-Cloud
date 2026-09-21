@@ -34,6 +34,8 @@ const ACTIVE_STATUSES = new Set([
   "SUBMITTED",
   "QUEUED_REMOTE",
   "RUNNING",
+  "WAITING_EXTERNAL",
+  "RUNNING_EXTERNAL",
   "IMPORTING_RESULTS",
 ]);
 
@@ -404,7 +406,7 @@ export function ProcessingView() {
         <div className="panelHead">
           <div>
             <h2>M3T Thermogram</h2>
-            <small>External M3T Wide + Thermal processing · originals stay read-only</small>
+            <small>M3T radiometric R-JPEG processing · originals stay read-only</small>
           </div>
           <span>{thermogramDatasets.length} M3T datasets</span>
         </div>
@@ -440,7 +442,7 @@ export function ProcessingView() {
             onClick={() => void submitThermogram()}
             type="button"
           >
-            {thermogramSubmitting ? "Creating…" : "Create M3T handoff"}
+            {thermogramSubmitting ? "Creating…" : "Create M3T thermal job"}
           </button>
         </div>
 
@@ -454,11 +456,12 @@ export function ProcessingView() {
         ) : null}
 
         <div className="processingProfile thermogramProfile">
-          <strong>Thermogram desktop handoff</strong>
+          <strong>M3T radiometric worker handoff</strong>
           <span>
-            M3-Cloud freezes the complete M3T Wide/Thermal pairs and their SHA-256
-            hashes. Open the referenced original DJI folder in Thermogram; no source
-            image is renamed, resized or copied by M3-Cloud.
+            M3-Cloud freezes complete M3T Wide/Thermal pairs and SHA-256 hashes.
+            The x86-64 thermal worker decodes the original DJI R-JPEG with DJI TSDK,
+            writes Float32 °C TIFF + preview + provenance, and leaves all source
+            images unchanged. The external/manual handoff remains usable as fallback.
           </span>
         </div>
       </section>
@@ -507,7 +510,7 @@ export function ProcessingView() {
               {job.kind === "THERMOGRAM" ? (
                 <div className="thermogramActions">
                   <a href={thermogramHandoffDownloadUrl(job.id)}>
-                    Download M3T handoff
+                    Download worker handoff
                   </a>
                   <button
                     onClick={() => {
@@ -595,13 +598,15 @@ export function ProcessingView() {
 
               {handoffs[job.id] ? (
                 <div className="thermogramPath">
-                  <span>Thermogram folder</span>
+                  <span>M3T worker input</span>
                   <code>{handoffs[job.id].external_path}</code>
                   <small>
-                    {handoffs[job.id].capture_group_count} complete pairs · {
-                      handoffs[job.id].asset_count
-                    } frozen originals
+                    {handoffs[job.id].worker_contract} · {
+                      handoffs[job.id].capture_group_count
+                    } complete pairs · {handoffs[job.id].asset_count} frozen originals
                   </small>
+                  <span>Result drop</span>
+                  <code>{handoffs[job.id].result_drop_path}</code>
                 </div>
               ) : null}
 
