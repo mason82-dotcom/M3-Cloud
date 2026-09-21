@@ -8,13 +8,11 @@ from typing import Any, Iterable
 PAYLOAD_TYPE_BY_M3_SUBTYPE = {
     0: 66,  # M3E
     1: 67,  # M3T
-    2: 68,  # M3M
 }
 
 CAMERA_TYPES_BY_M3_SUBTYPE = {
     0: frozenset({"wide", "zoom"}),
     1: frozenset({"wide", "zoom", "ir"}),
-    2: frozenset({"wide"}),
 }
 
 _PAYLOAD_INDEX_RE = re.compile(r"^(\d+)-(\d+)-(\d+)$")
@@ -105,7 +103,7 @@ def normalized_storage_settings(
     allowed = {"current", "vision"}
     if m3_sub_type == 1:
         allowed.add("ir")
-    elif m3_sub_type not in (0, 2):
+    elif m3_sub_type != 0:
         raise DJIPayloadValidationError(
             f"unsupported M3 subtype: {m3_sub_type!r}"
         )

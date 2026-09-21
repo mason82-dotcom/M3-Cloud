@@ -7,7 +7,10 @@ from app.dji.registry import model_name, topology_identities
 def test_m3_model_mapping() -> None:
     assert model_name(77, 0) == "DJI_MAVIC_3E"
     assert model_name(77, 1) == "DJI_MAVIC_3T"
-    assert model_name(77, 2) == "DJI_MAVIC_3M"
+    # DJI Cloud API currently documents no M3M 77/x identity.
+    # Keep subtype 2 raw instead of inventing a device mapping.
+    assert model_name(77, 2) == "DJI_TYPE_77_2"
+    assert model_name(77, 3) == "DJI_MAVIC_3TA"
     assert model_name(144, 0) == "DJI_RC_PRO_ENTERPRISE"
 
 

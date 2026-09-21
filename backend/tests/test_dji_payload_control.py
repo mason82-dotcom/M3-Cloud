@@ -110,24 +110,18 @@ async def test_visible_and_ir_zoom_ranges_are_separate():
 
 
 @pytest.mark.asyncio
-async def test_m3m_does_not_inherit_m3t_or_zoom_camera_types():
+async def test_undocumented_m3m_cloud_payload_identity_fails_closed():
     services = FakeServices()
     payloads = DJIPayloadControl(services)
 
-    await payloads.photo_take(
-        "RC123",
-        m3_sub_type=2,
-        payload_index="68-0-0",
-    )
-
-    with pytest.raises(DJIPayloadValidationError):
-        await payloads.exposure_mode_set(
+    with pytest.raises(DJIPayloadValidationError, match="unsupported M3 subtype"):
+        await payloads.photo_take(
             "RC123",
             m3_sub_type=2,
             payload_index="68-0-0",
-            camera_type="zoom",
-            exposure_mode=1,
         )
+
+    assert services.calls == []
 
 
 @pytest.mark.asyncio

@@ -12,13 +12,16 @@ from app.dji.models.rc_pro import is_rc_pro_enterprise_identity
 def test_m3_model_identity_keeps_variants_separate():
     assert is_m3_identity(77, 0)
     assert is_m3_identity(77, 1)
-    assert is_m3_identity(77, 2)
+    assert not is_m3_identity(77, 2)
+    # M3TA has a documented Cloud identity, but this M3E/M3T control model
+    # does not claim its property/payload contract without separate validation.
     assert not is_m3_identity(77, 3)
     assert not is_m3_identity(True, 1)
 
     assert m3_model_name(0) == "DJI_MAVIC_3E"
     assert m3_model_name(1) == "DJI_MAVIC_3T"
-    assert m3_model_name(2) == "DJI_MAVIC_3M"
+    with pytest.raises(M3ThingModelValidationError):
+        m3_model_name(2)
 
 
 def test_rc_pro_enterprise_identity():

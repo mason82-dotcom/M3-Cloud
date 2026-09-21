@@ -33,7 +33,7 @@ class DeviceIdentity:
 _MODEL_BY_TYPE: dict[tuple[int, int], str] = {
     (77, 0): "DJI_MAVIC_3E",
     (77, 1): "DJI_MAVIC_3T",
-    (77, 2): "DJI_MAVIC_3M",
+    (77, 3): "DJI_MAVIC_3TA",
     (144, 0): "DJI_RC_PRO_ENTERPRISE",
 }
 

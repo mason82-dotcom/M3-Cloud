@@ -111,8 +111,8 @@ async def test_m3_property_set_routes_aircraft_via_pilot_gateway():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("sub_type", [0, 1, 2])
-async def test_all_m3_variants_use_same_validated_property_transport(sub_type):
+@pytest.mark.parametrize("sub_type", [0, 1])
+async def test_validated_m3_cloud_variants_use_same_property_transport(sub_type):
     properties = FakeProperties()
     service = DJIDeviceService(
         FakeRegistry({"AIR": m3_identity(sn="AIR", sub_type=sub_type)}),
@@ -236,3 +236,18 @@ async def test_payload_context_rejects_cross_model_payload_index():
 
     with pytest.raises(ValueError, match="expected payload type 67"):
         await service.resolve_payload_context("M3T123")
+
+
+@pytest.mark.asyncio
+async def test_undocumented_m3m_cloud_subtype_is_rejected_before_publish():
+    properties = FakeProperties()
+    service = DJIDeviceService(
+        FakeRegistry({"AIR": m3_identity(sn="AIR", sub_type=2)}),
+        FakeTelemetry(),
+        properties,
+    )
+
+    with pytest.raises(DJIUnsupportedDevice):
+        await service.set_m3_properties("AIR", {"height_limit": 100})
+
+    assert properties.calls == []

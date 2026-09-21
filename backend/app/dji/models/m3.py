@@ -7,12 +7,9 @@ from typing import Any, Mapping
 M3_PRODUCT_TYPE = 77
 M3E_SUB_TYPE = 0
 M3T_SUB_TYPE = 1
-M3M_SUB_TYPE = 2
-
 M3_MODELS: dict[int, str] = {
     M3E_SUB_TYPE: "DJI_MAVIC_3E",
     M3T_SUB_TYPE: "DJI_MAVIC_3T",
-    M3M_SUB_TYPE: "DJI_MAVIC_3M",
 }
 
 M3_WRITABLE_PROPERTIES = frozenset(

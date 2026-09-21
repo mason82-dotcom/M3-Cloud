@@ -106,7 +106,7 @@ class DJIDeviceService:
             identity.get("sub_type"),
         ):
             raise DJIUnsupportedDevice(
-                f"DJI device {aircraft_sn} is not an M3E/M3T/M3M aircraft"
+                f"DJI device {aircraft_sn} is not an M3E/M3T aircraft"
             )
         if identity.get("online") is not True:
             raise DJIDeviceOffline(f"DJI aircraft is offline: {aircraft_sn}")
@@ -177,7 +177,7 @@ class DJIDeviceService:
             identity.get("sub_type"),
         ):
             raise DJIUnsupportedDevice(
-                f"DJI device {aircraft_sn} is not an M3E/M3T/M3M aircraft"
+                f"DJI device {aircraft_sn} is not an M3E/M3T aircraft"
             )
         if identity.get("online") is not True:
             raise DJIDeviceOffline(f"DJI aircraft is offline: {aircraft_sn}")
