@@ -280,7 +280,7 @@ The default Compose stack runs DroneDB Registry with a MariaDB database and a se
 processing node. Configure credentials before deployment:
 
 ```dotenv
-DRONEDB_IMAGE=dronedb/registry:v2.6.6
+DRONEDB_IMAGE=dronedb/registry:latest
 DRONEDB_DB_IMAGE=mariadb:10.6
 DRONEDB_PORT=5000
 DRONEDB_PUBLIC_URL=http://localhost:5000
