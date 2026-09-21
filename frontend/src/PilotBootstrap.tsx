@@ -55,6 +55,11 @@ interface Bootstrap {
     host: string;
     token: string;
   };
+  media: {
+    auto_upload_photo: boolean;
+    auto_upload_photo_type: number;
+    auto_upload_video: boolean;
+  };
   liveshare: {
     video_publish_type: string;
   };
@@ -226,6 +231,15 @@ export function PilotBootstrap() {
       if (config.components.mission) {
         setStatus("Loading DJI mission library…");
         loadComponent(bridge, "mission", {});
+      }
+
+      if (config.components.media) {
+        setStatus("Loading DJI media management…");
+        loadComponent(bridge, "media", {
+          autoUploadPhoto: config.media.auto_upload_photo,
+          autoUploadPhotoType: config.media.auto_upload_photo_type,
+          autoUploadVideo: config.media.auto_upload_video,
+        });
       }
 
       if (config.components.liveshare) {
