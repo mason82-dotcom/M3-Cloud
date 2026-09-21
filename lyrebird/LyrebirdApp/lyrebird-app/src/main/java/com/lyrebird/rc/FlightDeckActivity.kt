@@ -253,6 +253,8 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
     companion object {
         private const val TAG = "LyrebirdDefaultLayout"
+        private const val CAMERA_SOURCE_RESTORE_MAX_ATTEMPTS = 6
+        private const val CAMERA_SOURCE_RESTORE_RETRY_MS = 1_500L
         private const val SURVEY_MEDIA_QUIET_MS = 1_500L
         private const val SURVEY_MEDIA_MAX_SETTLE_MS = 10_000L
         private const val SURVEY_MEDIA_SETTLE_POLL_MS = 100L
@@ -5454,7 +5456,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
         return true
     }
 
-    private fun restorePreferredCameraLiveSourceAsync(reason: String) {
+    private fun restorePreferredCameraLiveSourceAsync(
+        reason: String,
+        attempt: Int = 1
+    ) {
         if (!aircraftConnected || cameraSettingsExecutor.isShutdown) return
 
         val preferred = sharedPreferences
@@ -5462,40 +5467,83 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
             .orEmpty()
             .trim()
             .uppercase()
-        if (preferred.isBlank() || cameraLiveSourceRestoreInFlight) return
+        if (preferred.isBlank()) return
+
+        // Several startup paths can request a restore at nearly the same time. Do not drop the
+        // later request permanently just because a DJI callback is still outstanding: coalesce it
+        // into a bounded retry. M3M field traces show the camera can report VIDEO_NORMAL several
+        // seconds before KeyCameraVideoStreamSource accepts a write.
+        if (cameraLiveSourceRestoreInFlight) {
+            if (attempt < CAMERA_SOURCE_RESTORE_MAX_ATTEMPTS) {
+                mainHandler.postDelayed(
+                    {
+                        restorePreferredCameraLiveSourceAsync(
+                            reason,
+                            attempt + 1
+                        )
+                    },
+                    CAMERA_SOURCE_RESTORE_RETRY_MS
+                )
+            }
+            return
+        }
 
         cameraLiveSourceRestoreInFlight = true
         cameraSettingsExecutor.execute {
+            var confirmed = false
             try {
                 val current = CameraLiveSourceController.readCurrent()
                 if (current.readStatus == "OK" && current.source == preferred) {
-                    Log.i(TAG, "Camera live source already $preferred ($reason)")
+                    confirmed = true
+                    Log.i(
+                        TAG,
+                        "Camera live source already $preferred ($reason attempt=$attempt)"
+                    )
                     return@execute
                 }
 
                 val result = CameraLiveSourceController.setAndReadback(
                     preferred,
-                    reason = "restore:$reason"
+                    reason = "restore:$reason:attempt=$attempt"
                 )
-                if (
+                confirmed =
                     result.setStatus == "OK" &&
-                    result.readStatus == "OK" &&
-                    result.source == preferred
-                ) {
+                        result.readStatus == "OK" &&
+                        result.source == preferred
+
+                if (confirmed) {
                     Log.i(
                         TAG,
-                        "Restored preferred camera live source $preferred ($reason)"
+                        "Restored preferred camera live source $preferred " +
+                            "($reason attempt=$attempt)"
                     )
                 } else {
                     Log.w(
                         TAG,
-                        "Could not restore preferred camera live source $preferred ($reason): " +
+                        "Could not restore preferred camera live source $preferred " +
+                            "($reason attempt=$attempt): " +
                             "set=${result.setStatus} read=${result.readStatus} " +
                             "actual=${result.source} error=${result.error}"
                     )
                 }
             } finally {
                 cameraLiveSourceRestoreInFlight = false
+                if (
+                    !confirmed &&
+                    aircraftConnected &&
+                    !cameraSettingsExecutor.isShutdown &&
+                    attempt < CAMERA_SOURCE_RESTORE_MAX_ATTEMPTS
+                ) {
+                    mainHandler.postDelayed(
+                        {
+                            restorePreferredCameraLiveSourceAsync(
+                                reason,
+                                attempt + 1
+                            )
+                        },
+                        CAMERA_SOURCE_RESTORE_RETRY_MS
+                    )
+                }
             }
         }
     }
