@@ -108,7 +108,6 @@ class PeriodicKeyframeEncoderFactoryTest {
 
         override fun isHardwareEncoder(): Boolean = false
 
-        override fun createNativeVideoEncoder(): Long = 0
     }
 
     /** Hands back a single fixed [VideoEncoder] instance, so the test can control it directly. */
