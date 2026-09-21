@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "gradle": "9.7.1",
+    "generated_from_ci_run": 35564914931,
+    "verification_metadata_sha256": "199226a37377b8d1f9a3535a435130e3b9d86d6106f58a41dbb8beb149fd37d1"
+  },
+  "components": {
+    "com.dji:dji-sdk-v5-aircraft:5.18.0": {
+      "dji-sdk-v5-aircraft-5.18.0.aar": "b2d659c6caf7e8c3bdf672ceacebbcbb17d88d29309fa53f3e232bc26e9b6aa3",
+      "dji-sdk-v5-aircraft-5.18.0.pom": "e81f5ed66c20269a9b2203e474fdfddefade48f32913545932331f977eb2846e"
+    },
+    "com.dji:dji-sdk-v5-aircraft-provided:5.18.0": {
+      "dji-sdk-v5-aircraft-provided-5.18.0.jar": "3dd3de8e25f96686ede3e75856f8983b994e263932fa715434939913d6a9a614",
+      "dji-sdk-v5-aircraft-provided-5.18.0.pom": "ce1d801a45eb59210ed1e3850b1a01d180e3f6cceb0000a7cb4ed70745ec9635"
+    },
+    "com.dji:dji-sdk-v5-networkImp:5.18.0": {
+      "dji-sdk-v5-networkImp-5.18.0.aar": "53be5f4db43778857b6683342ecc83bf09cac801513ba2ac2a5479d154b3dad6",
+      "dji-sdk-v5-networkImp-5.18.0.pom": "2e0b06b08b3ddee1b2ed865412e01c4b028c66909c88bfe13616762c2186b460"
+    },
+    "com.dji:wpmzsdk:1.0.5.0": {
+      "wpmzsdk-1.0.5.0.aar": "9a16c27d861e6cc37f9657639a214cfb6819c3ac3e46c206f50837a21dc0c0ba",
+      "wpmzsdk-1.0.5.0.pom": "7d974233836579286ba180f69a790be4f4774903e3fe55f9617b661470686c85"
+    }
+  }
+}
