@@ -234,11 +234,19 @@ function validPlannerPoint(
 }
 
 function plannerStartReference(vehicle: Vehicle | undefined): MissionPlannerPoint | null {
-  const home = vehicle?.telemetry?.aircraft_state?.home;
-  return (
-    validPlannerPoint(home?.latitude, home?.longitude) ??
-    validPlannerPoint(vehicle?.telemetry?.latitude, vehicle?.telemetry?.longitude)
+  const current = validPlannerPoint(
+    vehicle?.telemetry?.latitude,
+    vehicle?.telemetry?.longitude,
   );
+  if (current) return current;
+  const home = vehicle?.telemetry?.aircraft_state?.home;
+  return validPlannerPoint(home?.latitude, home?.longitude);
+}
+
+function plannerHomeReference(vehicle: Vehicle | undefined): MissionPlannerPoint | null {
+  if (vehicle?.telemetry?.home_set !== true) return null;
+  const home = vehicle?.telemetry?.aircraft_state?.home;
+  return validPlannerPoint(home?.latitude, home?.longitude);
 }
 
 function planningStartReference(
@@ -729,12 +737,19 @@ export function MissionsView() {
     (vehicle) => vehicle.sn === selected?.aircraft_sn,
   );
   const plannerReference = plannerStartReference(selectedVehicle);
+  const plannerHome = plannerHomeReference(selectedVehicle);
   const plannerMaxFlightHeight =
     selectedVehicle?.telemetry?.limits?.max_flight_height_m;
   const plannerMaxFlightDistance =
     selectedVehicle?.telemetry?.limits?.max_flight_distance_m;
   const plannerDistanceLimitEnabled =
     selectedVehicle?.telemetry?.limits?.distance_limit_enabled === true;
+  const plannerDistanceWarningMargin =
+    plannerDistanceLimitEnabled &&
+    typeof plannerMaxFlightDistance === "number" &&
+    plannerMaxFlightDistance > 0
+      ? Math.max(25, plannerMaxFlightDistance * 0.05)
+      : null;
   const gridPlannerActive =
     plannerPreview !== null ||
     draftPlanning?.planner === "M3_CLOUD_GRID" ||
@@ -801,6 +816,7 @@ export function MissionsView() {
         finish_action: plannerFinishAction,
         optimize_direction: plannerOptimizeDirection,
         start_reference: plannerReference,
+        home_reference: plannerHome,
       });
       setPlannerPreview(preview);
       setPlannerDirection(preview.input.direction_deg);
@@ -1430,7 +1446,10 @@ export function MissionsView() {
                     <span>Ingress <b>{plannerPreview.geometry.ingress_distance_m.toFixed(0)} m</b></span>
                     <span>Return <b>{plannerPreview.geometry.return_distance_m.toFixed(0)} m</b></span>
                     {plannerPreview.geometry.max_reference_distance_m !== null ? (
-                      <span>Max radius <b>{plannerPreview.geometry.max_reference_distance_m.toFixed(0)} m</b></span>
+                      <span>Max from start <b>{plannerPreview.geometry.max_reference_distance_m.toFixed(0)} m</b></span>
+                    ) : null}
+                    {plannerPreview.geometry.max_home_distance_m !== null ? (
+                      <span>Home radius <b>{plannerPreview.geometry.max_home_distance_m.toFixed(0)} m</b></span>
                     ) : null}
                     {plannerDistanceLimitEnabled &&
                     typeof plannerMaxFlightDistance === "number" ? (
@@ -1456,12 +1475,36 @@ export function MissionsView() {
                 {plannerPreview &&
                 plannerDistanceLimitEnabled &&
                 typeof plannerMaxFlightDistance === "number" &&
-                plannerPreview.geometry.max_reference_distance_m !== null &&
-                plannerPreview.geometry.max_reference_distance_m > plannerMaxFlightDistance ? (
+                plannerPreview.geometry.max_home_distance_m === null ? (
                   <div className="missionPlannerWarning">
-                    Grid radius {plannerPreview.geometry.max_reference_distance_m.toFixed(0)} m
+                    Active flight-radius limit cannot be validated because no confirmed DJI home
+                    point is available. Rebuild the grid after home is recorded; preflight will
+                    block handoff until then.
+                  </div>
+                ) : null}
+                {plannerPreview &&
+                plannerDistanceLimitEnabled &&
+                typeof plannerMaxFlightDistance === "number" &&
+                plannerPreview.geometry.max_home_distance_m !== null &&
+                plannerPreview.geometry.max_home_distance_m > plannerMaxFlightDistance ? (
+                  <div className="missionPlannerWarning">
+                    Home-point radius {plannerPreview.geometry.max_home_distance_m.toFixed(0)} m
                     exceeds the active max-flight-distance setting of
                     {" "}{plannerMaxFlightDistance.toFixed(0)} m. Preflight will block handoff.
+                  </div>
+                ) : null}
+                {plannerPreview &&
+                plannerDistanceLimitEnabled &&
+                typeof plannerMaxFlightDistance === "number" &&
+                plannerDistanceWarningMargin !== null &&
+                plannerPreview.geometry.max_home_distance_m !== null &&
+                plannerPreview.geometry.max_home_distance_m <= plannerMaxFlightDistance &&
+                plannerMaxFlightDistance - plannerPreview.geometry.max_home_distance_m <
+                  plannerDistanceWarningMargin ? (
+                  <div className="missionPlannerWarning">
+                    Home-point radius {plannerPreview.geometry.max_home_distance_m.toFixed(0)} m is
+                    within {plannerDistanceWarningMargin.toFixed(0)} m of the active radius limit
+                    of {plannerMaxFlightDistance.toFixed(0)} m.
                   </div>
                 ) : null}
                 {availablePlannerProfiles.find((profile) => profile.key === plannerProfile)?.note ? (
