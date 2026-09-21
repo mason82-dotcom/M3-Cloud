@@ -1,8 +1,5 @@
 name: CI
 
-permissions:
-  contents: write
-
 on:
   pull_request:
   push:
@@ -24,8 +21,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
-        with:
-          ref: ${{ github.head_ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -43,33 +38,8 @@ jobs:
       - name: Ruff lint
         run: python -m ruff check GroundStation --output-format=github
 
-      - name: Ruff format sources
-        run: python -m ruff format GroundStation
-
-      - name: Upload Ruff-formatted sources
-        uses: actions/upload-artifact@v6
-        with:
-          name: ruff-formatted-sources
-          if-no-files-found: error
-          path: |
-            lyrebird/GroundStation/Python/lyrebird_groundstation/preflight.py
-            lyrebird/GroundStation/Python/lyrebird_groundstation/ugcs_wiretap.py
-            lyrebird/GroundStation/tests/test_preflight.py
-            lyrebird/GroundStation/tests/test_ugcs_wiretap.py
-
-      - name: Commit Ruff formatting
-        env:
-          BRANCH: ${{ github.head_ref }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add             GroundStation/Python/lyrebird_groundstation/preflight.py             GroundStation/Python/lyrebird_groundstation/ugcs_wiretap.py             GroundStation/tests/test_preflight.py             GroundStation/tests/test_ugcs_wiretap.py
-          if git diff --cached --quiet; then
-            echo "Ruff formatting already committed"
-          else
-            git commit -m "Format GroundStation with Ruff"
-            git push origin "HEAD:$BRANCH"
-          fi
+      - name: Ruff format check
+        run: python -m ruff format --check GroundStation
 
       - name: Radon complexity
         run: python scripts/check_radon_complexity.py
@@ -179,6 +149,9 @@ jobs:
 
       - name: Lyrebird Detekt and Lint reports
         run: ./gradlew --no-daemon qualityLyrebird
+
+      - name: Enforce Android Lint correctness errors
+        run: python3 ../../scripts/check_android_lint_errors.py ../lyrebird-app/build/reports/lint-results-currentDebug.xml
 
       - name: Upload Android quality reports
         if: always()
