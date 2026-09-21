@@ -130,6 +130,15 @@ calibration fields, but neither `thermal_parser` nor the current M3-Cloud
 worker establishes a proven WIDE-to-THERMAL pixel transform from those values
 alone.
 
+The reference M3T sidecars also show why the DJI calibration strings must not be
+silently assigned units: EXIF reports `Focal Length = 9.1 mm`, while DJI XMP
+reports `Calibrated Focal Length = 9100.000000` and the reviewed thermal
+examples report `Calibrated Optical Center X/Y = 0.000000`. The source does
+not define the XMP calibration units or prove that those three values alone form
+a usable thermal-camera intrinsic model. M3-Cloud therefore preserves them as
+raw DJI calibration evidence and does not convert them to millimetres, pixels,
+or a camera matrix.
+
 M3-Cloud therefore keeps:
 
 - temperature TIFFs and hotspot masks in thermal sensor-pixel space;
