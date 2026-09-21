@@ -158,6 +158,24 @@ class DjiWaylineFile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class DjiMapElement(Base):
+    __tablename__ = "dji_map_elements"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[str] = mapped_column(String(64), index=True)
+    group_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    resource_type: Mapped[int] = mapped_column(Integer)
+    content: Mapped[dict[str, object]] = mapped_column(JSON)
+    user_name: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Flight(Base):
     __tablename__ = "flights"
 
