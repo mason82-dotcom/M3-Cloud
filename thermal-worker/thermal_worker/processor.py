@@ -168,7 +168,7 @@ def _hotspot_analysis(
         max_index = int(np.argmax(values))
         components.append(
             {
-                "pixel_count": int(len(pixels)),
+                "pixel_count": len(pixels),
                 "max_c": float(values[max_index]),
                 "mean_c": float(np.mean(values)),
                 "delta_max_c": float(values[max_index] - baseline_c),
