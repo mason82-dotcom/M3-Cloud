@@ -6,7 +6,7 @@ package com.lyrebird.rc.controller
  * MSDK 5.18 can emit FINISHED both for a natural completion and after stopMission(), so the
  * execute-state alone is not enough to decide whether a survey actually completed.
  */
-internal enum class NativeMissionFinishReason(
+enum class NativeMissionFinishReason(
     val completed: Boolean,
     val reportValue: String
 ) {
