@@ -67,7 +67,7 @@ def classify_media(path: PurePosixPath) -> MediaClassification:
         )
 
     suffix_patterns = (
-        (r"^(?P<base>.+)_T\.(?:JPG|JPEG|RJPEG)$", "THERMAL", "M3T"),
+        (r"^(?P<base>.+)_(?:T|R)\.(?:JPG|JPEG|RJPEG)$", "THERMAL", "M3T"),
         (r"^(?P<base>.+)_W\.(?:JPG|JPEG|DNG)$", "WIDE", hint),
         (r"^(?P<base>.+)_Z\.(?:JPG|JPEG|DNG)$", "ZOOM", hint),
     )
