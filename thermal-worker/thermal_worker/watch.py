@@ -44,6 +44,27 @@ def claim_next_thermogram(
     return None
 
 
+def import_next_completed_thermogram(
+    api: M3CloudApi,
+) -> dict[str, Any] | None:
+    # Recover the narrow crash window after result publication/COMPLETED_EXTERNAL
+    # and retry imports that the backend previously marked RESULT_IMPORT_FAILED.
+    for job in reversed(api.list_jobs()):
+        if job.get("kind") != "THERMOGRAM" or job.get("platform") != "M3T":
+            continue
+        if job.get("status") not in {"COMPLETED_EXTERNAL", "RESULT_IMPORT_FAILED"}:
+            continue
+        job_id = job.get("id")
+        if not isinstance(job_id, str) or not job_id:
+            continue
+        imported = api.import_results(job_id)
+        return {
+            "job_id": job_id,
+            "imported_result_count": len(imported),
+        }
+    return None
+
+
 def process_claimed_thermogram(
     api: M3CloudApi,
     job: Mapping[str, Any],
@@ -111,6 +132,14 @@ def watch_thermograms(
     interval = max(2.0, float(poll_seconds))
     while True:
         try:
+            recovered = import_next_completed_thermogram(api)
+            if recovered is not None:
+                logger.info(
+                    "Recovered thermal result import for job %s (%s results)",
+                    recovered["job_id"],
+                    recovered["imported_result_count"],
+                )
+                continue
             job = claim_next_thermogram(api, retry_failed=retry_failed)
         except M3CloudApiError:
             logger.exception("M3-Cloud API unavailable while polling thermal jobs")
