@@ -55,6 +55,11 @@ def test_m3e_2cm_grid_matches_camera_geometry_and_is_wire_ready():
     assert geometry["desired_line_spacing_m"] == pytest.approx(31.68, abs=0.02)
     assert preview["cadence"]["effective_speed_mps"] == 8.0
     assert preview["compatibility"]["wire_ready"] is True
+    assert preview["plan"]["planning"]["platform"] == "M3E"
+    assert preview["plan"]["planning"]["capture_profile"] == "M3E_MAPPING"
+    assert preview["plan"]["planning"]["derived"]["trigger_distance_m"] == pytest.approx(
+        15.824, abs=0.02
+    )
 
     commands = [item["command"] for item in preview["plan"]["items"]]
     assert commands[:3] == [22, 178, 1000]

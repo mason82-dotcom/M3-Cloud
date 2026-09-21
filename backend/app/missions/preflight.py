@@ -5,6 +5,7 @@ from typing import Any
 from app.missions.plans import compatibility
 from app.models import Mission
 from app.vehicles.base import VehicleSnapshot
+from app.vehicles.payloads import AircraftPlatform, platform_from_explicit_model
 
 
 def evaluate_preflight(
@@ -30,6 +31,7 @@ def evaluate_preflight(
 
     plan = mission.plan_json or {}
     compat = compatibility(plan)
+    planning = plan.get("planning") if isinstance(plan.get("planning"), dict) else None
 
     if mission.status == "ARCHIVED":
         add("mission_status", "BLOCK", "Mission is archived.")
@@ -112,6 +114,93 @@ def evaluate_preflight(
         if isinstance(positioning.get("rtk"), dict)
         else {}
     )
+
+    if planning is not None and planning.get("planner") == "M3_CLOUD_GRID":
+        planned_platform = str(planning.get("platform") or "UNKNOWN").upper()
+        planned_profile = str(planning.get("capture_profile") or "")
+        payload = (
+            telemetry.get("payload")
+            if isinstance(telemetry.get("payload"), dict)
+            else {}
+        )
+        telemetry_platform = str(payload.get("platform") or "UNKNOWN").upper()
+        model_platform = (
+            platform_from_explicit_model(vehicle.model).value
+            if vehicle is not None
+            else AircraftPlatform.UNKNOWN.value
+        )
+        actual_platform = (
+            telemetry_platform
+            if telemetry_platform != AircraftPlatform.UNKNOWN.value
+            else model_platform
+        )
+
+        if actual_platform == AircraftPlatform.UNKNOWN.value:
+            add(
+                "planner_platform",
+                "BLOCK",
+                "Grid mission has camera-specific geometry but the assigned aircraft platform "
+                "cannot be verified.",
+                {
+                    "planned_platform": planned_platform,
+                    "capture_profile": planned_profile,
+                },
+            )
+        elif actual_platform != planned_platform:
+            add(
+                "planner_platform",
+                "BLOCK",
+                f"Grid was planned for {planned_platform}, but assigned aircraft reports "
+                f"{actual_platform}.",
+                {
+                    "planned_platform": planned_platform,
+                    "actual_platform": actual_platform,
+                    "capture_profile": planned_profile,
+                },
+            )
+        else:
+            add(
+                "planner_platform",
+                "PASS",
+                f"Grid camera geometry matches assigned {actual_platform}.",
+                {
+                    "capture_profile": planned_profile,
+                    "planning_sensor": planning.get("planning_sensor"),
+                },
+            )
+
+        reported_profiles = payload.get("capture_profiles")
+        if isinstance(reported_profiles, list) and planned_profile:
+            if planned_profile not in reported_profiles:
+                add(
+                    "planner_capture_profile",
+                    "BLOCK",
+                    "Assigned aircraft does not report the capture profile used to plan this grid.",
+                    {
+                        "capture_profile": planned_profile,
+                        "reported_profiles": reported_profiles,
+                    },
+                )
+            else:
+                add(
+                    "planner_capture_profile",
+                    "PASS",
+                    f"Capture profile {planned_profile} is reported by the assigned aircraft.",
+                )
+
+        if mission.preferred_executor != "DJI_NATIVE":
+            add(
+                "planner_executor",
+                "BLOCK",
+                "Distance-triggered grid missions require the DJI_NATIVE executor.",
+                {"preferred_executor": mission.preferred_executor},
+            )
+        else:
+            add(
+                "planner_executor",
+                "PASS",
+                "DJI_NATIVE executor is selected for distance-triggered capture.",
+            )
 
     ready_to_takeoff = safety.get("ready_to_takeoff")
     if ready_to_takeoff is False:
@@ -224,7 +313,7 @@ def evaluate_preflight(
         "runtime_plan_identity": "UNVERIFIED",
         "checks": checks,
         "note": (
-            "Informational preflight only. R6.3 does not expose mission upload, start, "
-            "pause, resume, land, RTH, or abort actions."
+            "Preflight gates sealed mission handoff/upload. M3-Cloud does not expose mission "
+            "start, pause, resume, land, RTH, or abort actions."
         ),
     }
