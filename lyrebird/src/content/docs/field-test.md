@@ -207,3 +207,40 @@ float32/JSON representation.
 Only after the dry-run comparison returns `"ok": true` should `--live-flight` be considered for
 a controlled field test. `--live-flight` disables the dry-run command allowlist; it does not
 replace Lyrebird's own signing/control-authority and manual-override safety gates.
+
+
+## UgCS Phase 9: fail-closed MAVLink wiretap
+
+For an UgCS/PX4-VSM bench upload, put the wiretap between the VSM and the RC instead of pointing
+the VSM directly at UDP 14550:
+
+```powershell
+$env:LYREBIRD_RC="192.168.178.63"
+lyrebird-ugcs-wiretap --listen-port 14560
+```
+
+Point the VSM at `127.0.0.1:14560`. The proxy uses its own connected UDP socket to the RC's
+MAVLink port 14550 and pins the first structurally valid VSM peer for the lifetime of the run.
+
+The default mode is deliberately **fail closed**. It forwards mission upload/readback handshakes,
+heartbeats, parameter reads, time sync, and a short allowlist of read-only/reporting MAV_CMDs.
+It blocks the whole datagram if it contains a direct flight/payload command, a parameter write, an
+unknown message, MAVLink 1, undecoded bytes, `MISSION_CLEAR_ALL`, or a zero-item
+`MISSION_COUNT`. A camera/gimbal/ROI command inside `MISSION_ITEM_INT` is still safe to upload:
+it is stored as mission data and is not executed until mission start, which dry-run blocks.
+
+Every frame is written to JSONL with its raw bytes and decoded mission fields. After the RC returns
+an accepted `MISSION_ACK`, compare the capture with the exact mission Lyrebird stored:
+
+```powershell
+lyrebird-ugcs-wiretap --rc 192.168.178.63 --compare .\ugcs-wiretap\ugcs-wiretap-YYYYMMDD-HHMMSS.jsonl
+```
+
+A passing comparison requires the latest captured upload to be complete and acknowledged, then
+checks each mission field plus the same canonical CRC32 `planId` and SHA-256 `missionDigest`
+reported by `GET /get/mavlink/mission/latest`. The RC and Windows timestamps are included only as
+diagnostics because their wall clocks are not assumed to be synchronized.
+
+`--live-flight` disables the dry-run filter and forwards datagrams from the pinned VSM peer
+unchanged. Do not use it as the first test; first require a clean mission-frame gate and a matching
+wire-vs-RC digest.

@@ -245,6 +245,14 @@ class MavlinkMissionProtocolTest {
     }
 
     @Test
+    fun missionDigestMatchesGroundStationGoldenVector() {
+        assertEquals(
+            "bf0057504ab1f82df000c728328e34ddbdf277efcc678a3c73e33fe99bd295ea",
+            missionPlanDigest(listOf(waypoint(0)))
+        )
+    }
+
+    @Test
     fun missionDigestIsStableAndChangesWithMissionContent() {
         val plan = listOf(
             waypoint(0, lat = 49.1, lon = 8.6, alt = 70.0),
