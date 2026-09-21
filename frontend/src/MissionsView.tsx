@@ -729,6 +729,8 @@ export function MissionsView() {
     (vehicle) => vehicle.sn === selected?.aircraft_sn,
   );
   const plannerReference = plannerStartReference(selectedVehicle);
+  const plannerMaxFlightHeight =
+    selectedVehicle?.telemetry?.limits?.max_flight_height_m;
   const gridPlannerActive =
     plannerPreview !== null ||
     draftPlanning?.planner === "M3_CLOUD_GRID" ||
@@ -1409,6 +1411,9 @@ export function MissionsView() {
                 {plannerPreview ? (
                   <div className="missionPlannerStats">
                     <span>Altitude <b>{plannerPreview.geometry.altitude_m.toFixed(1)} m</b></span>
+                    {typeof plannerMaxFlightHeight === "number" ? (
+                      <span>Aircraft max <b>{plannerMaxFlightHeight.toFixed(0)} m</b></span>
+                    ) : null}
                     <span>Line spacing <b>{plannerPreview.geometry.actual_line_spacing_m.toFixed(1)} m</b></span>
                     <span>Trigger <b>{plannerPreview.geometry.trigger_distance_m.toFixed(1)} m</b></span>
                     <span>Speed <b>{plannerPreview.cadence.effective_speed_mps.toFixed(1)} m/s</b></span>
@@ -1429,6 +1434,14 @@ export function MissionsView() {
                 {plannerPreview?.warnings.map((warning) => (
                   <div className="missionPlannerWarning" key={warning}>{warning}</div>
                 ))}
+                {plannerPreview && typeof plannerMaxFlightHeight === "number" &&
+                plannerPreview.geometry.altitude_m > plannerMaxFlightHeight ? (
+                  <div className="missionPlannerWarning">
+                    Planned altitude {plannerPreview.geometry.altitude_m.toFixed(1)} m exceeds
+                    the aircraft max-flight-height setting of {plannerMaxFlightHeight.toFixed(0)} m.
+                    Saving is allowed for revision/audit, but preflight will block handoff.
+                  </div>
+                ) : null}
                 {availablePlannerProfiles.find((profile) => profile.key === plannerProfile)?.note ? (
                   <small className="missionPlannerNote">
                     {availablePlannerProfiles.find((profile) => profile.key === plannerProfile)?.note}
