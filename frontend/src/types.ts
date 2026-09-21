@@ -882,6 +882,34 @@ export interface ProcessingResult {
   created_at: string;
 }
 
+export interface ThermalCapturePointProperties {
+  capture_group: string;
+  position_source: "THERMAL" | "WIDE" | string;
+  position_scope: "CAPTURE_CENTER_ONLY" | string;
+  pixel_georeferenced: false;
+  capture_time_utc?: string | null;
+  thermal_filename?: string | null;
+  wide_filename?: string | null;
+  min_c?: number | null;
+  max_c?: number | null;
+  mean_c?: number | null;
+  hotspot_component_count?: number | null;
+  hotspot_peak_temperature_c?: number | null;
+  hotspot_peak_delta_c?: number | null;
+}
+
+export type ThermalCapturePointCollection =
+  import("geojson").FeatureCollection<
+    import("geojson").Point,
+    ThermalCapturePointProperties
+  > & {
+    metadata?: {
+      geometry_scope?: "CAPTURE_CENTER_ONLY" | string;
+      temperature_pixels_georeferenced?: boolean;
+      note?: string;
+    };
+  };
+
 export interface ProcessingSceneInfo {
   job_id: string;
   result_id: string;
