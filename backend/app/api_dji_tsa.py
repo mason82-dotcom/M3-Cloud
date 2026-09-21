@@ -39,6 +39,16 @@ def _validate_token(token: str | None) -> None:
         )
 
 
+def _websocket_token(websocket: WebSocket) -> str | None:
+    # DJI documents the WS query parameter both as x-auth-token and
+    # x-Auth-token. URL query parameter names are case-sensitive, so accept
+    # either spelling (and any equivalent case variant) explicitly.
+    for key, value in websocket.query_params.multi_items():
+        if key.lower() == "x-auth-token":
+            return value
+    return None
+
+
 @router.get("/manage/api/v1/workspaces/{workspace_id}/devices/topologies")
 async def device_topologies(
     workspace_id: str,
@@ -57,7 +67,7 @@ async def device_topologies(
 
 @router.websocket("/ws/dji-pilot")
 async def dji_pilot_websocket(websocket: WebSocket) -> None:
-    token = websocket.query_params.get("x-auth-token")
+    token = _websocket_token(websocket)
     expected = settings.dji_pilot_api_token
     if not expected or token != expected:
         await websocket.close(code=1008)
