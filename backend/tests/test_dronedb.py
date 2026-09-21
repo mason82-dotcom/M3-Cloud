@@ -124,6 +124,7 @@ def test_dronedb_upload_retry_accepts_matching_existing_object(
                     {
                         "path": "raw/DJI_0001_MS_NIR.TIF",
                         "size": 7,
+                        "hash": "8bb0cf6eb9b17d0f7d22b456f121257dc1254e1f01665370476383ea776df414",
                     }
                 ],
             )
