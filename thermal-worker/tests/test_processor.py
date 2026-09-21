@@ -87,6 +87,14 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
                         "filename": wide.name,
                         "size_bytes": wide.stat().st_size,
                         "sha256": _sha(wide),
+                        "capture_time_utc": "2026-09-21T01:02:03+00:00",
+                        "metadata": {
+                            "gps": {
+                                "latitude": 49.123456,
+                                "longitude": 8.654321,
+                                "altitude_m": 145.2,
+                            },
+                        },
                     },
                     {
                         "media_kind": "THERMAL",
@@ -177,8 +185,13 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert manifest["capture_groups"][0]["api_version"] == {"api": 8, "magic": "DIRP"}
     assert manifest["capture_groups"][0]["radiometry_integrity"]["status"] == "PASS"
     assert metadata["analysis"]["hotspots"]["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
+    assert metadata["registration"]["status"] == "NOT_REGISTERED"
     assert metadata["registration"]["wide_thermal_coregistered"] is False
     assert metadata["registration"]["georeferenced_temperature_raster"] is False
+    assert metadata["registration"]["pair_audit"]["capture_time_delta_ms"] == 0.0
+    assert metadata["registration"]["pair_audit"]["gps_separation_m"] == pytest.approx(0.0)
+    assert result["registration"]["status"] == "NOT_REGISTERED"
+    assert result["registration"]["wide_thermal_coregistered"] is False
     assert (output / "result-manifest.json").is_file()
     capture_points_path = output / manifest["capture_points_geojson"]
     capture_points = json.loads(capture_points_path.read_text(encoding="utf-8"))
@@ -202,9 +215,19 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert summary_json["aggregate"]["max_c"] == 42.5
     assert summary_json["aggregate"]["hotspot_component_count"] == 0
     assert summary_json["aggregate"]["radiometry_warning_capture_count"] == 0
+    assert summary_json["aggregate"]["registration_status"] == "NOT_REGISTERED"
+    assert summary_json["aggregate"]["pair_capture_time_evidence_count"] == 1
+    assert summary_json["aggregate"]["pair_gps_evidence_count"] == 1
+    assert summary_json["captures"][0]["registration_status"] == "NOT_REGISTERED"
+    assert summary_json["captures"][0]["pair_capture_time_delta_ms"] == 0.0
+    assert summary_json["captures"][0]["pair_gps_separation_m"] == pytest.approx(0.0)
     summary_csv = (output / manifest["summary_csv"]).read_text(encoding="utf-8")
     assert "capture_group,capture_time_utc,latitude,longitude" in summary_csv
+    assert "registration_status" in summary_csv
+    assert "pair_capture_time_delta_ms" in summary_csv
+    assert "pair_gps_separation_m" in summary_csv
     assert "M3T/site/nested/DJI_0001" in summary_csv
+    assert "NOT_REGISTERED" in summary_csv
     assert len(manifest["input_fingerprint"]) == 64
 
     retry_decoder = FakeDecoder()
