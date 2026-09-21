@@ -160,6 +160,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias="M3CLOUD_DJI_PILOT_STORAGE_ROLE_ARN",
     )
+    dji_pilot_storage_sts_mode: str = Field(
+        default="federation_token",
+        validation_alias="M3CLOUD_DJI_PILOT_STORAGE_STS_MODE",
+    )
     dji_pilot_storage_access_key: str = Field(
         default="",
         validation_alias="M3CLOUD_DJI_PILOT_STORAGE_ACCESS_KEY",
