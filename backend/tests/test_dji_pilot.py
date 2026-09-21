@@ -14,8 +14,9 @@ def test_pilot_bootstrap_fails_closed_when_required_values_are_missing():
     assert "app_id" in result["missing"]
     assert "workspace_id" in result["missing"]
     assert "mqtt_url" in result["missing"]
+    assert "ws_url" in result["missing"]
     assert result["components"]["media"] is False
-    assert result["components"]["mission"] is False
+    assert result["components"]["mission"] is True
 
 
 def test_pilot_bootstrap_uses_rc_reachable_urls_and_valid_workspace_uuid():
@@ -29,6 +30,7 @@ def test_pilot_bootstrap_uses_rc_reachable_urls_and_valid_workspace_uuid():
             "dji_pilot_mqtt_url": "tcp://192.168.178.45:1883",
             "dji_pilot_mqtt_username": "pilot2",
             "dji_pilot_mqtt_password": "secret",
+            "dji_pilot_ws_url": "ws://192.168.178.45:8080/ws/dji-pilot",
         }
     )
 
@@ -42,12 +44,19 @@ def test_pilot_bootstrap_uses_rc_reachable_urls_and_valid_workspace_uuid():
     assert result["invalid"] == []
     assert result["api"]["host"] == "http://192.168.178.45:8080"
     assert result["thing"]["host"] == "tcp://192.168.178.45:1883"
+    assert result["ws"] == {
+        "host": "ws://192.168.178.45:8080/ws/dji-pilot",
+        "token": "pilot-token",
+    }
     assert result["workspace"]["id"] == "e3dea0f5-37f2-4d79-ae58-490af3228069"
     assert result["components"]["thing"] is True
+    assert result["components"]["ws"] is True
+    assert result["components"]["tsa"] is True
+    assert result["components"]["mission"] is True
     assert result["components"]["liveshare"] is True
 
 
-def test_pilot_bootstrap_rejects_invalid_workspace_and_mqtt_scheme():
+def test_pilot_bootstrap_rejects_invalid_workspace_mqtt_and_ws_scheme():
     settings = Settings(_env_file=None).model_copy(
         update={
             "dji_pilot_app_id": "app-id",
@@ -58,6 +67,7 @@ def test_pilot_bootstrap_rejects_invalid_workspace_and_mqtt_scheme():
             "dji_pilot_mqtt_url": "http://broker",
             "dji_pilot_mqtt_username": "pilot2",
             "dji_pilot_mqtt_password": "secret",
+            "dji_pilot_ws_url": "http://not-a-websocket",
         }
     )
 
@@ -69,3 +79,4 @@ def test_pilot_bootstrap_rejects_invalid_workspace_and_mqtt_scheme():
     assert result["ready"] is False
     assert "workspace_id" in result["invalid"]
     assert "mqtt_url" in result["invalid"]
+    assert "ws_url" in result["invalid"]
