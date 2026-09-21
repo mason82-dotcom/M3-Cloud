@@ -39,6 +39,7 @@ class FakeDecoder:
             measurement_mode="sdk_native",
             measurement_error_code=None,
             sdk_label="test-sdk",
+            measurement_abi="AMBIENT_V2",
         )
 
 
@@ -120,6 +121,7 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["radiometry"]["unit"] == "degree_Celsius"
     assert metadata["radiometry"]["statistics"]["max_c"] == 42.5
+    assert metadata["radiometry"]["measurement_abi"] == "AMBIENT_V2"
     assert metadata["registration"]["wide_thermal_coregistered"] is False
     assert metadata["registration"]["georeferenced_temperature_raster"] is False
     assert (output / "result-manifest.json").is_file()
