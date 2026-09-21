@@ -239,6 +239,32 @@ class MediaAsset(Base):
     media_kind: Mapped[str] = mapped_column(String(32), default="UNKNOWN", index=True)
     capture_group: Mapped[str | None] = mapped_column(String(768), nullable=True, index=True)
 
+    dji_fingerprint: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        index=True,
+    )
+    dji_tiny_fingerprint: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        index=True,
+    )
+    dji_object_key: Mapped[str | None] = mapped_column(
+        String(1024),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    dji_source_sn: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
+    dji_file_group_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+
     storage_mode: Mapped[str] = mapped_column(String(32), default="EXTERNAL")
     external_root: Mapped[str] = mapped_column(String(128), default="media-import")
     present: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
