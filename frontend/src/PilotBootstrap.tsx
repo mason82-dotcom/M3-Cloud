@@ -172,8 +172,8 @@ export function PilotBootstrap() {
   const [attempt, setAttempt] = useState<{ token: string; id: number } | null>(null);
 
   useEffect(() => {
-    const currentAttempt = attempt;
-    if (currentAttempt === null) return;
+    if (attempt === null) return;
+    const bootstrapToken = attempt.token;
 
     let cancelled = false;
 
@@ -181,7 +181,7 @@ export function PilotBootstrap() {
       const response = await fetch("/api/v1/dji/pilot/bootstrap", {
         method: "POST",
         headers: {
-          "X-M3-Pilot-Bootstrap": currentAttempt.token,
+          "X-M3-Pilot-Bootstrap": bootstrapToken,
         },
         cache: "no-store",
       });
