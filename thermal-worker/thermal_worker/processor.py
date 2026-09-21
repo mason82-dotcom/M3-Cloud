@@ -4,12 +4,13 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 import numpy as np
-from PIL import Image
 import tifffile
+from PIL import Image
 
 from .dji_sdk import DecodeResult
 
@@ -54,7 +55,7 @@ def _source_path(root: Path, item: Mapping[str, Any]) -> Path:
         # original contract was used before path_relative_to_input existed.
         relative = item.get("filename")
     if not isinstance(relative, str):
-        raise ValueError("Thermogram file is missing path_relative_to_input/filename")
+        raise TypeError("Thermogram file is missing string path_relative_to_input/filename")
     safe = _safe_relative_path(relative)
     return root.joinpath(*safe.parts)
 
@@ -147,7 +148,7 @@ def process_handoff(
     handoff_file = Path(handoff_path)
     handoff = json.loads(handoff_file.read_text(encoding="utf-8"))
     if not isinstance(handoff, dict):
-        raise ValueError("Thermogram handoff must contain a JSON object")
+        raise TypeError("Thermogram handoff must contain a JSON object")
     if handoff.get("workflow") != "THERMOGRAM" or handoff.get("platform") != "M3T":
         raise ValueError("Handoff is not an M3T THERMOGRAM workflow")
     schema_version = handoff.get("schema_version")
@@ -170,13 +171,13 @@ def process_handoff(
     results: list[dict[str, Any]] = []
     for index, group in enumerate(groups, start=1):
         if not isinstance(group, dict):
-            raise ValueError("Invalid capture group entry")
+            raise TypeError("Invalid capture group entry")
         capture_group = group.get("capture_group")
         if not isinstance(capture_group, str) or not capture_group:
-            raise ValueError("Capture group is missing its identifier")
+            raise TypeError("Capture group is missing its string identifier")
         files = group.get("files")
         if not isinstance(files, list):
-            raise ValueError(f"Capture group {capture_group} has no files")
+            raise TypeError(f"Capture group {capture_group} has no file list")
 
         by_kind = {
             item.get("media_kind"): item
