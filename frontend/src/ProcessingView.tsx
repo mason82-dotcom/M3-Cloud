@@ -119,10 +119,17 @@ function thermalResultSummary(result: ProcessingResult): string | null {
       summary && typeof summary.max_c === "number"
         ? summary.max_c
         : null;
+    const radiometryWarnings =
+      summary && typeof summary.radiometry_warning_capture_count === "number"
+        ? summary.radiometry_warning_capture_count
+        : null;
     const parts = ["Thermal summary"];
     if (captures !== null) parts.push(`${captures} captures`);
     if (hotspots !== null) parts.push(`${hotspots} hotspot candidates`);
     if (maxC !== null) parts.push(`${maxC.toFixed(1)} °C max`);
+    if (radiometryWarnings !== null && radiometryWarnings > 0) {
+      parts.push(`${radiometryWarnings} radiometry warnings`);
+    }
     return parts.join(" · ");
   }
   if (kind === "THERMAL_SUMMARY_CSV") return "Thermal summary CSV";
