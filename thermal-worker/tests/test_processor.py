@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+import pytest
 import tifffile
+from PIL import Image
 
 from thermal_worker.dji_sdk import DecodeResult, MeasurementParams
 from thermal_worker.processor import RESULT_CONTRACT, process_handoff
@@ -162,8 +163,6 @@ def test_process_handoff_rejects_changed_frozen_input(tmp_path):
     }
     handoff_path = tmp_path / "handoff.json"
     handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
-
-    import pytest
 
     with pytest.raises(ValueError, match="SHA256 mismatch"):
         process_handoff(handoff_path, tmp_path / "out", FakeDecoder())
