@@ -98,6 +98,92 @@ def test_each_grid_segment_has_trigger_start_and_stop_so_transits_do_not_capture
         assert stop_trigger["param1"] == 0
 
 
+
+
+def test_auto_direction_reduces_travel_on_an_elongated_rectangle():
+    polygon = rectangle(width_m=300.0, height_m=100.0)
+    manual = build_grid_preview(
+        platform="M3E",
+        capture_profile="M3E_MAPPING",
+        polygon=polygon,
+        gsd_cm=2.0,
+        forward_overlap_pct=80.0,
+        side_overlap_pct=70.0,
+        direction_deg=0.0,
+        speed_mps=8.0,
+        optimize_direction=False,
+    )
+    optimized = build_grid_preview(
+        platform="M3E",
+        capture_profile="M3E_MAPPING",
+        polygon=polygon,
+        gsd_cm=2.0,
+        forward_overlap_pct=80.0,
+        side_overlap_pct=70.0,
+        direction_deg=0.0,
+        speed_mps=8.0,
+        optimize_direction=True,
+    )
+
+    assert optimized["optimization"]["enabled"] is True
+    assert optimized["optimization"]["candidate_count"] > 1
+    assert optimized["geometry"]["route_distance_m"] < manual["geometry"]["route_distance_m"]
+    assert optimized["optimization"]["selected_direction_deg"] == pytest.approx(90.0, abs=0.2)
+    assert optimized["plan"]["planning"]["parameters"]["optimize_direction"] is True
+    assert optimized["plan"]["planning"]["parameters"]["direction_deg"] == pytest.approx(
+        optimized["optimization"]["selected_direction_deg"]
+    )
+
+
+def test_reference_point_prefers_the_nearer_grid_entry_and_counts_rth_transit():
+    polygon = rectangle(width_m=300.0, height_m=180.0)
+    baseline = build_grid_preview(
+        platform="M3E",
+        capture_profile="M3E_MAPPING",
+        polygon=polygon,
+        gsd_cm=2.0,
+        forward_overlap_pct=80.0,
+        side_overlap_pct=70.0,
+        direction_deg=90.0,
+        speed_mps=8.0,
+        optimize_direction=False,
+    )
+    waypoints = [item for item in baseline["plan"]["items"] if item["command"] == 16]
+    reference = (
+        waypoints[-1]["latitude_deg"],
+        waypoints[-1]["longitude_deg"],
+    )
+
+    referenced = build_grid_preview(
+        platform="M3E",
+        capture_profile="M3E_MAPPING",
+        polygon=polygon,
+        gsd_cm=2.0,
+        forward_overlap_pct=80.0,
+        side_overlap_pct=70.0,
+        direction_deg=90.0,
+        speed_mps=8.0,
+        optimize_direction=False,
+        start_reference=reference,
+    )
+
+    referenced_waypoints = [
+        item for item in referenced["plan"]["items"] if item["command"] == 16
+    ]
+    assert referenced["optimization"]["reference_used"] is True
+    assert referenced["optimization"]["reversed_for_reference"] is True
+    assert referenced_waypoints[0]["latitude_deg"] == pytest.approx(reference[0], abs=1e-9)
+    assert referenced_waypoints[0]["longitude_deg"] == pytest.approx(reference[1], abs=1e-9)
+    assert referenced["geometry"]["ingress_distance_m"] == pytest.approx(0.0, abs=1e-6)
+    assert referenced["geometry"]["return_distance_m"] > 0.0
+    assert referenced["geometry"]["total_planned_distance_m"] == pytest.approx(
+        referenced["geometry"]["route_distance_m"]
+        + referenced["geometry"]["ingress_distance_m"]
+        + referenced["geometry"]["return_distance_m"]
+    )
+    assert referenced["geometry"]["nominal_total_time_s"] > referenced["geometry"]["nominal_route_time_s"]
+
+
 def test_grid_finish_action_can_land_or_be_explicitly_disabled():
     land = build_grid_preview(
         platform="M3E",
