@@ -190,6 +190,37 @@ def test_plan_validation_rejects_non_contiguous_sequence_and_reports_unsupported
     assert frame_info["wire_ready"] is False
     assert frame_info["lyrebird_unsupported_frames"] == [{"seq": 0, "frame": 0}]
 
+    positional_frame3 = normalize_plan(
+        [
+            {
+                "seq": 0,
+                "frame": 3,
+                "command": 16,
+                "latitude_deg": 49.0,
+                "longitude_deg": 8.0,
+                "altitude_m": 50.0,
+            }
+        ]
+    )
+    frame3_info = compatibility(positional_frame3)
+    assert frame3_info["wire_ready"] is False
+    assert frame3_info["lyrebird_unsupported_frames"] == [{"seq": 0, "frame": 3}]
+
+    nonpositional_mission_frame = normalize_plan(
+        [
+            {
+                "seq": 0,
+                "frame": 2,
+                "command": mavlink_common.MAV_CMD_DO_CHANGE_SPEED,
+                "param2": 8.0,
+                "latitude_deg": 0.0,
+                "longitude_deg": 0.0,
+                "altitude_m": 0.0,
+            }
+        ]
+    )
+    assert compatibility(nonpositional_mission_frame)["wire_ready"] is True
+
     wire_plan = normalize_plan(
         [
             {

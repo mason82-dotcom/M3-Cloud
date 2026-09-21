@@ -11,10 +11,10 @@ from pymavlink.dialects.v20 import common as mavlink_common
 
 
 MAX_MISSION_ITEMS = 1000
-MAV_FRAME_GLOBAL_RELATIVE_ALT = 3
+MAV_FRAME_MISSION = 2
 MAV_FRAME_GLOBAL_RELATIVE_ALT_INT = 6
-LYREBIRD_RELATIVE_GLOBAL_FRAMES = frozenset(
-    {MAV_FRAME_GLOBAL_RELATIVE_ALT, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT}
+LYREBIRD_NONPOSITIONAL_FRAMES = frozenset(
+    {MAV_FRAME_MISSION, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT}
 )
 
 LYREBIRD_UPLOAD_COMMANDS = frozenset(
@@ -120,6 +120,23 @@ def plan_sha256(plan: dict[str, object]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _requires_relative_position_frame(item: dict[str, object]) -> bool:
+    command = item.get("command")
+    if command in {
+        mavlink_common.MAV_CMD_NAV_WAYPOINT,
+        mavlink_common.MAV_CMD_NAV_TAKEOFF,
+        mavlink_common.MAV_CMD_NAV_LAND,
+        mavlink_common.MAV_CMD_DO_SET_ROI_LOCATION,
+    }:
+        return True
+    if command == mavlink_common.MAV_CMD_DO_SET_ROI:
+        param1 = item.get("param1")
+        # MAV_ROI_LOCATION = 3. Mirror Lyrebird's command-aware frame gate without assigning
+        # coordinate semantics to the other ROI modes.
+        return isinstance(param1, (int, float)) and not isinstance(param1, bool) and int(param1) == 3
+    return False
+
+
 def compatibility(plan: dict[str, object]) -> dict[str, object]:
     raw_items = plan.get("items")
     items = raw_items if isinstance(raw_items, list) else []
@@ -138,10 +155,16 @@ def compatibility(plan: dict[str, object]) -> dict[str, object]:
             unsupported_frames.append(
                 {"seq": seq if isinstance(seq, int) else -1, "frame": None}
             )
-        elif frame not in LYREBIRD_RELATIVE_GLOBAL_FRAMES:
-            unsupported_frames.append(
-                {"seq": seq if isinstance(seq, int) else -1, "frame": frame}
+        else:
+            frame_supported = (
+                frame == MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+                if _requires_relative_position_frame(item)
+                else frame in LYREBIRD_NONPOSITIONAL_FRAMES
             )
+            if not frame_supported:
+                unsupported_frames.append(
+                    {"seq": seq if isinstance(seq, int) else -1, "frame": frame}
+                )
 
     wire_ready = bool(items) and not unsupported and not unsupported_frames
     return {
@@ -152,7 +175,8 @@ def compatibility(plan: dict[str, object]) -> dict[str, object]:
         "lyrebird_unsupported_frames": unsupported_frames,
         "dji_native_execution_compatible": None,
         "note": (
-            "Planning/handoff only. New M3-Cloud revisions persist MAV_FRAME explicitly. "
+            "Planning/handoff only. Positional MISSION_ITEM_INT items require "
+            "MAV_FRAME_GLOBAL_RELATIVE_ALT_INT; non-positional items may use MAV_FRAME_MISSION. "
             "M3-Cloud may upload a sealed package when the server upload gate is enabled; "
             "mission execution actions remain disabled."
         ),
