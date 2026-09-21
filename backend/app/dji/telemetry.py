@@ -185,6 +185,18 @@ def normalize_telemetry(
         normalized_cameras = [item for camera in cameras if (item := _camera(camera)) is not None]
         state["cameras"] = normalized_cameras
 
+    # RC Pro / Pilot 2 gateway state is transported through the same OSD/state
+    # topics but has a different thing model. Preserve the documented gateway
+    # capabilities required by the primary DJI Cloud API control plane.
+    for key in (
+        "live_capacity",
+        "live_status",
+        "is_cloud_control_auth",
+        "cloud_control_auth_state",
+    ):
+        if key in raw:
+            state[key] = deepcopy(raw[key])
+
     return state
 
 
