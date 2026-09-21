@@ -9,6 +9,7 @@ from app.dji.devices import DJIDeviceService
 from app.dji.events import DJIEventDispatcher
 from app.dji.gateway import DJIGatewayService
 from app.dji.mqtt import DJIMqttTransport
+from app.dji.payload_control import DJIPayloadControl
 from app.dji.properties import DJIPropertyClient
 from app.dji.registry import DeviceRegistry
 from app.dji.requests import DJIRequestDispatcher
@@ -31,6 +32,7 @@ class DJIService:
     requests: DJIRequestDispatcher
     devices: DJIDeviceService
     gateways: DJIGatewayService
+    payloads: DJIPayloadControl
 
     @classmethod
     def create(
@@ -65,9 +67,11 @@ class DJIService:
             requests=requests,
             devices=devices,
             gateways=gateways,
+            payloads=payloads,
         )
         services = DJIServiceClient(transport, transactions)
         properties = DJIPropertyClient(transport, transactions)
+        payloads = DJIPayloadControl(services)
         devices = DJIDeviceService(registry, telemetry, properties)
         gateways = DJIGatewayService(registry, telemetry)
 
