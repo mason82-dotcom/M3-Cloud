@@ -21,6 +21,7 @@ from .dji_sdk import DecodeResult
 
 
 RESULT_CONTRACT = "M3T_THERMAL_RESULTS_V1"
+REGISTRATION_AUDIT_CONTRACT = "M3T_WIDE_THERMAL_REGISTRATION_AUDIT_V1"
 
 
 class ThermalDecoder(Protocol):
@@ -602,6 +603,18 @@ def _existing_manifest(
             relative,
         )
 
+    registration_audit = manifest.get("registration_audit_json")
+    if registration_audit is not None:
+        if not isinstance(registration_audit, str):
+            raise FileExistsError(
+                "Existing thermal result manifest has invalid registration_audit_json"
+            )
+        _existing_result_artifact(
+            destination,
+            resolved_destination,
+            registration_audit,
+        )
+
     groups = manifest.get("capture_groups")
     if not isinstance(groups, list) or not groups:
         raise FileExistsError(f"Existing thermal result manifest has no capture groups: {destination}")
@@ -804,6 +817,7 @@ def process_handoff(
         results: list[dict[str, Any]] = []
         capture_point_features: list[dict[str, Any]] = []
         capture_summaries: list[dict[str, Any]] = []
+        registration_audits: list[dict[str, Any]] = []
         for index, group in enumerate(groups, start=1):
             if not isinstance(group, dict):
                 raise TypeError("Invalid capture group entry")
@@ -860,6 +874,12 @@ def process_handoff(
             registration_audit = _registration_audit(
                 wide_item,
                 thermal_item,
+            )
+            registration_audits.append(
+                {
+                    "capture_group": capture_group,
+                    **registration_audit,
+                }
             )
             folder = staging / "captures" / _capture_output_name(index, capture_group)
             folder.mkdir(parents=True, exist_ok=True)
@@ -1157,6 +1177,29 @@ def process_handoff(
             writer.writeheader()
             writer.writerows(capture_summaries)
 
+        registration_audit_path = staging / "registration-audit.json"
+        registration_audit_document = {
+            "schema_version": 1,
+            "contract": REGISTRATION_AUDIT_CONTRACT,
+            "job_id": handoff.get("job_id"),
+            "status": "NOT_REGISTERED",
+            "pair_count": len(registration_audits),
+            "pairs": registration_audits,
+            "note": (
+                "This artifact contains WIDE/THERMAL pair evidence only. "
+                "It does not contain a validated pixel registration transform."
+            ),
+        }
+        registration_audit_path.write_text(
+            json.dumps(
+                registration_audit_document,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
         capture_points_path = staging / "capture-points.geojson"
         capture_points = {
             "type": "FeatureCollection",
@@ -1187,6 +1230,7 @@ def process_handoff(
             "capture_group_count": len(results),
             "georeferenced_capture_count": len(capture_point_features),
             "capture_points_geojson": "capture-points.geojson",
+            "registration_audit_json": "registration-audit.json",
             "summary_json": "thermal-summary.json",
             "summary_csv": "thermal-summary.csv",
             "summary": aggregate_summary,
