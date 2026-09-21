@@ -54,6 +54,8 @@ class FakeDecoder:
             measurement_error_code=None,
             sdk_label="test-sdk",
             measurement_abi="AMBIENT_V2",
+            sdk_library_name="libdirp.so",
+            sdk_library_sha256="c" * 64,
         )
 
 
@@ -155,6 +157,8 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert embedded["api_version"] == {"api": 8, "magic": "DIRP"}
     assert embedded["rjpeg_version"] == {"rjpeg": 3, "header": 1, "curve": 1}
     assert embedded["measurement_abi"] == "AMBIENT_V2"
+    assert embedded["sdk_library_name"] == "libdirp.so"
+    assert embedded["sdk_library_sha256"] == "c" * 64
     assert embedded["georeferenced"] is False
 
     with Image.open(preview_path) as preview:
@@ -172,6 +176,8 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert metadata["radiometry"]["unit"] == "degree_Celsius"
     assert metadata["radiometry"]["statistics"]["max_c"] == 42.5
     assert metadata["radiometry"]["measurement_abi"] == "AMBIENT_V2"
+    assert metadata["radiometry"]["sdk_library_name"] == "libdirp.so"
+    assert metadata["radiometry"]["sdk_library_sha256"] == "c" * 64
     assert metadata["radiometry"]["measurement_ranges"]["distance_m"] == {
         "min": 1.0,
         "max": 500.0,
@@ -184,6 +190,8 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert metadata["radiometry"]["integrity"]["source_image_width"] == 3
     assert metadata["radiometry"]["integrity"]["source_image_height"] == 2
     assert manifest["capture_groups"][0]["api_version"] == {"api": 8, "magic": "DIRP"}
+    assert manifest["capture_groups"][0]["sdk_library_name"] == "libdirp.so"
+    assert manifest["capture_groups"][0]["sdk_library_sha256"] == "c" * 64
     assert manifest["capture_groups"][0]["radiometry_integrity"]["status"] == "PASS"
     assert metadata["analysis"]["hotspots"]["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
     assert metadata["registration"]["status"] == "NOT_REGISTERED"
