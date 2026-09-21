@@ -517,6 +517,7 @@ def build_grid_preview(
     finish_action: str = "RTH",
     optimize_direction: bool = False,
     start_reference: tuple[float, float] | None = None,
+    home_reference: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     profile = planning_profile(platform, capture_profile)
     vertices = _normalise_polygon(polygon)
@@ -569,6 +570,18 @@ def build_grid_preview(
             raise ValueError("Start reference longitude out of range")
         reference_geo = (reference_lat, reference_lon)
         reference_xy = project(reference_lat, reference_lon)
+
+    home_reference_geo: tuple[float, float] | None = None
+    home_reference_xy: tuple[float, float] | None = None
+    if home_reference is not None:
+        home_lat = _finite(home_reference[0], "home reference latitude")
+        home_lon = _finite(home_reference[1], "home reference longitude")
+        if not -90.0 <= home_lat <= 90.0:
+            raise ValueError("Home reference latitude out of range")
+        if not -180.0 <= home_lon <= 180.0:
+            raise ValueError("Home reference longitude out of range")
+        home_reference_geo = (home_lat, home_lon)
+        home_reference_xy = project(home_lat, home_lon)
 
     horizontal_half_tan = math.tan(math.radians(profile.horizontal_fov_deg) / 2.0)
     vertical_half_tan = math.tan(math.radians(profile.vertical_fov_deg) / 2.0)
@@ -735,6 +748,11 @@ def build_grid_preview(
         if reference_xy is not None and route_xy
         else None
     )
+    max_home_distance_m = (
+        max(_distance(home_reference_xy, point) for point in route_xy)
+        if home_reference_xy is not None and route_xy
+        else None
+    )
     # DJI's native fly-to-wayline transition is configured at 10 m/s. Never assume a faster
     # ingress/RTH contribution just because the survey legs themselves can run faster.
     transit_speed_mps = min(effective_speed_mps, 10.0)
@@ -776,6 +794,12 @@ def build_grid_preview(
             "start_reference_longitude_deg": (
                 reference_geo[1] if reference_geo is not None else None
             ),
+            "home_reference_latitude_deg": (
+                home_reference_geo[0] if home_reference_geo is not None else None
+            ),
+            "home_reference_longitude_deg": (
+                home_reference_geo[1] if home_reference_geo is not None else None
+            ),
         },
         "derived": {
             "altitude_m": altitude_m,
@@ -793,6 +817,7 @@ def build_grid_preview(
             "return_distance_m": return_distance_m,
             "total_planned_distance_m": total_planned_distance_m,
             "max_reference_distance_m": max_reference_distance_m,
+            "max_home_distance_m": max_home_distance_m,
         },
     }
     plan = normalize_plan(items, planning=planning_context)
@@ -843,6 +868,14 @@ def build_grid_preview(
                 if reference_geo is not None
                 else None
             ),
+            "home_reference": (
+                {
+                    "latitude_deg": home_reference_geo[0],
+                    "longitude_deg": home_reference_geo[1],
+                }
+                if home_reference_geo is not None
+                else None
+            ),
         },
         "geometry": {
             "area_m2": area_m2,
@@ -860,6 +893,7 @@ def build_grid_preview(
             "return_distance_m": return_distance_m,
             "total_planned_distance_m": total_planned_distance_m,
             "max_reference_distance_m": max_reference_distance_m,
+            "max_home_distance_m": max_home_distance_m,
             "capture_distance_m": active_distance_m,
             "expected_photos_upper_bound": expected_photos,
             "expected_media_assets_upper_bound": expected_media_assets_upper_bound,
