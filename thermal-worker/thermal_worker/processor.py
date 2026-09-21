@@ -1059,10 +1059,19 @@ def process_handoff(
     if handoff.get("workflow") != "THERMOGRAM" or handoff.get("platform") != "M3T":
         raise ValueError("Handoff is not an M3T THERMOGRAM workflow")
     schema_version = handoff.get("schema_version")
-    if schema_version not in {2, 3}:
+    if schema_version not in {2, 3, 4}:
         raise ValueError(f"Unsupported thermogram handoff schema: {schema_version}")
-    if schema_version == 3 and handoff.get("worker_contract") != "M3T_RJPEG_V1":
+    if (
+        schema_version == 3
+        and handoff.get("worker_contract") != "M3T_RJPEG_V1"
+    ):
         raise ValueError("Unsupported M3T thermal worker contract")
+    if (
+        schema_version == 4
+        and handoff.get("worker_contract") != "M3T_RJPEG_V2"
+    ):
+        raise ValueError("Unsupported M3T thermal worker contract")
+    thermal_only_allowed = schema_version == 4
 
     external_path = handoff.get("external_path")
     if not isinstance(external_path, str) or not external_path.strip():
@@ -1125,14 +1134,20 @@ def process_handoff(
             }
             thermal_item = by_kind.get("THERMAL")
             wide_item = by_kind.get("WIDE")
-            if not isinstance(thermal_item, dict) or not isinstance(wide_item, dict):
+            if not isinstance(thermal_item, dict):
                 raise TypeError(
-                    f"Capture group {capture_group} is missing WIDE/THERMAL pair objects"
+                    f"Capture group {capture_group} is missing a THERMAL object"
                 )
+            if not isinstance(wide_item, dict):
+                if not thermal_only_allowed:
+                    raise TypeError(
+                        f"Capture group {capture_group} is missing WIDE/THERMAL pair objects"
+                    )
+                wide_item = None
     
             source_identity = _require_m3t_source_identity(
                 capture_group,
-                wide_item,
+                wide_item or {},
                 thermal_item,
             )
             source_identities.append(
@@ -1143,9 +1158,10 @@ def process_handoff(
             )
 
             thermal_path = _source_path(source_root, thermal_item)
-            wide_path = _source_path(source_root, wide_item)
             _verify_source(thermal_path, thermal_item)
-            _verify_source(wide_path, wide_item)
+            if wide_item is not None:
+                wide_path = _source_path(source_root, wide_item)
+                _verify_source(wide_path, wide_item)
     
             decoded = decoder.decode_file(
                 thermal_path,
@@ -1243,15 +1259,19 @@ def process_handoff(
                         "capture_time_utc": thermal_item.get("capture_time_utc"),
                         "metadata": thermal_item.get("metadata") or {},
                     },
-                    "wide": {
-                        "relative_path": wide_item.get("relative_path"),
-                        "path_relative_to_input": wide_item.get("path_relative_to_input"),
-                        "filename": wide_item.get("filename"),
-                        "size_bytes": wide_item.get("size_bytes"),
-                        "sha256": wide_item.get("sha256"),
-                        "capture_time_utc": wide_item.get("capture_time_utc"),
-                        "metadata": wide_item.get("metadata") or {},
-                    },
+                    "wide": (
+                        {
+                            "relative_path": wide_item.get("relative_path"),
+                            "path_relative_to_input": wide_item.get("path_relative_to_input"),
+                            "filename": wide_item.get("filename"),
+                            "size_bytes": wide_item.get("size_bytes"),
+                            "sha256": wide_item.get("sha256"),
+                            "capture_time_utc": wide_item.get("capture_time_utc"),
+                            "metadata": wide_item.get("metadata") or {},
+                        }
+                        if wide_item is not None
+                        else None
+                    ),
                 },
                 "radiometry": {
                     "decoder": "DJI_DIRP",
@@ -1297,7 +1317,7 @@ def process_handoff(
             point_feature = _capture_point_feature(
                 capture_group=capture_group,
                 thermal_item=thermal_item,
-                wide_item=wide_item,
+                wide_item=wide_item or {},
                 statistics=statistics,
                 hotspot_analysis=hotspot_analysis,
             )
@@ -1323,7 +1343,11 @@ def process_handoff(
                     "capture_group": capture_group,
                     "capture_time_utc": (
                         thermal_item.get("capture_time_utc")
-                        or wide_item.get("capture_time_utc")
+                        or (
+                            wide_item.get("capture_time_utc")
+                            if wide_item is not None
+                            else None
+                        )
                     ),
                     "latitude": point_coordinates[1],
                     "longitude": point_coordinates[0],
