@@ -176,6 +176,18 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
             "registration_status": "NOT_REGISTERED",
             "pair_capture_time_evidence_count": 1,
             "pair_gps_evidence_count": 1,
+            "registration_evidence_counts": {
+                "capture_time_pair": 1,
+                "gps_pair": 1,
+                "gimbal_attitude_pair": 0,
+                "flight_attitude_pair": 0,
+                "dji_altitude_pair": 0,
+                "gps_altitude_pair": 1,
+                "wide_image_dimensions": 0,
+                "thermal_image_dimensions": 1,
+                "wide_dji_calibration": 0,
+                "thermal_dji_calibration": 0,
+            },
         },
         "capture_groups": [
             {
@@ -254,6 +266,18 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
         "capture_count": 1,
         "pair_capture_time_evidence_count": 1,
         "pair_gps_evidence_count": 1,
+        "registration_evidence_counts": {
+            "capture_time_pair": 1,
+            "gps_pair": 1,
+            "gimbal_attitude_pair": 0,
+            "flight_attitude_pair": 0,
+            "dji_altitude_pair": 0,
+            "gps_altitude_pair": 1,
+            "wide_image_dimensions": 0,
+            "thermal_image_dimensions": 1,
+            "wide_dji_calibration": 0,
+            "thermal_dji_calibration": 0,
+        },
     }
     assert summary_json["result_kind"] == "THERMAL_SUMMARY"
     assert summary_json["decoder_provenance"]["sdk_library_sha256"] == "d" * 64
