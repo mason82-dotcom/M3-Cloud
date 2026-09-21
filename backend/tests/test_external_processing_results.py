@@ -579,3 +579,34 @@ async def test_inline_thermal_result_serves_only_classified_preview(
     assert response.headers["x-content-type-options"] == "nosniff"
     assert payload == b"pngdata"
 
+
+
+def test_native_m4t_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
+    root = tmp_path / "m4t-thermal-results"
+    root.mkdir()
+    manifest = {
+        "schema_version": 1,
+        "contract": "M4T_THERMAL_RESULTS_V1",
+        "workflow": "THERMOGRAM",
+        "platform": "M4T",
+        "job_id": "m4t-job",
+        "source_identity": {
+            "expected_platform": "M4T",
+            "confirmed_capture_count": 1,
+            "unconfirmed_capture_count": 0,
+        },
+        "capture_groups": [],
+    }
+    (root / "result-manifest.json").write_text(
+        __import__("json").dumps(manifest),
+        encoding="utf-8",
+    )
+
+    details = thermal_result_manifest_details(
+        root,
+        expected_job_id="m4t-job",
+    )
+
+    assert details["result-manifest.json"]["thermal_contract"] == "M4T_THERMAL_RESULTS_V1"
+    assert details["result-manifest.json"]["platform"] == "M4T"
+    assert details["result-manifest.json"]["result_kind"] == "THERMAL_MANIFEST"

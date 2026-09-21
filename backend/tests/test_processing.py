@@ -250,6 +250,82 @@ def test_thermogram_handoff_is_m3t_and_preserves_original_paths() -> None:
     ]
 
 
+def test_thermogram_handoff_supports_m4t_with_own_worker_contract() -> None:
+    from datetime import datetime, timezone
+    from app.models import MediaAsset, ProcessingJob
+
+    now = datetime.now(timezone.utc)
+    group = "M4T/site/DJI_0001"
+    assets = [
+        MediaAsset(
+            id=uuid.uuid4(),
+            relative_path="M4T/site/DJI_0001_W.JPG",
+            filename="DJI_0001_W.JPG",
+            extension=".jpg",
+            size_bytes=100,
+            mtime_ns=1,
+            sha256="a" * 64,
+            platform="M4T",
+            media_kind="WIDE",
+            capture_group=group,
+            storage_mode="EXTERNAL",
+            external_root="media-import",
+            present=True,
+            duplicate_of=None,
+            discovered_at=now,
+            last_seen_at=now,
+        ),
+        MediaAsset(
+            id=uuid.uuid4(),
+            relative_path="M4T/site/DJI_0001_R.JPG",
+            filename="DJI_0001_R.JPG",
+            extension=".jpg",
+            size_bytes=100,
+            mtime_ns=2,
+            sha256="b" * 64,
+            platform="M4T",
+            media_kind="THERMAL",
+            capture_group=group,
+            storage_mode="EXTERNAL",
+            external_root="media-import",
+            present=True,
+            duplicate_of=None,
+            discovered_at=now,
+            last_seen_at=now,
+        ),
+    ]
+    job = ProcessingJob(
+        id=uuid.UUID("24242424-2424-2424-2424-242424242424"),
+        kind="THERMOGRAM",
+        status="WAITING_EXTERNAL",
+        name="M4T site",
+        input_prefix="M4T/site",
+        platform="M4T",
+        flight_id=None,
+        media_kinds=["WIDE", "THERMAL"],
+        options=[],
+        image_count=2,
+        uploaded_count=0,
+        progress=0.0,
+        available_assets=[],
+        created_at=now,
+        updated_at=now,
+    )
+
+    handoff = build_thermogram_handoff(
+        job,
+        assets,
+        handoff_root="/media-import",
+    )
+
+    assert handoff["schema_version"] == 4
+    assert handoff["platform"] == "M4T"
+    assert handoff["worker_contract"] == "M4T_RJPEG_V1"
+    assert handoff["capture_group_count"] == 1
+    assert handoff["paired_capture_group_count"] == 1
+    assert handoff["external_path"] == "/media-import/M4T/site"
+
+
 def test_thermogram_v2_handoff_accepts_thermal_only_capture() -> None:
     from datetime import datetime, timezone
     from app.models import ProcessingJob

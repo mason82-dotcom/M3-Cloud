@@ -212,3 +212,82 @@ async def test_thermogram_job_freezes_required_input_metadata(tmp_path: Path) ->
     assert frozen_metadata["gps"]["longitude"] == 8.5678
     assert frozen_metadata["gimbal_attitude"]["pitch_deg"] == -90.0
     assert frozen_metadata["raw"]["xmp"]["drone-dji"]["DroneModel"] == "M3T"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_thermogram_job_infers_m4t_platform_from_dataset(tmp_path: Path) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(ProcessingResult))
+        await session.execute(delete(ProcessingJobAsset))
+        await session.execute(delete(ProcessingJob))
+        await session.execute(delete(MediaDatasetRecord))
+        await session.execute(delete(MediaAsset))
+        await session.commit()
+
+    captured = datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    group = "M4T/site/DJI_20260921120000_0001"
+    async with session_factory() as session:
+        session.add(
+            MediaAsset(
+                relative_path=f"{group}_R.JPG",
+                filename="DJI_20260921120000_0001_R.JPG",
+                extension=".jpg",
+                size_bytes=7,
+                mtime_ns=1,
+                sha256="c" * 64,
+                capture_time_utc=captured,
+                capture_time_source="XMP_DJI_UTC_AT_EXPOSURE",
+                metadata_version=2,
+                metadata_status="READY",
+                camera_make="DJI",
+                camera_model="M4T",
+                image_width=640,
+                image_height=512,
+                platform="M4T",
+                media_kind="THERMAL",
+                capture_group=group,
+                storage_mode="EXTERNAL",
+                external_root="media-import",
+                present=True,
+                duplicate_of=None,
+                discovered_at=now,
+                last_seen_at=now,
+            )
+        )
+        session.add(
+            MediaDatasetRecord(
+                prefix="M4T/site",
+                platform="M4T",
+                flight_id=None,
+                title=None,
+                capture_started_at=captured,
+                capture_ended_at=captured,
+                flight_assignment_source="AUTO",
+                flight_match_status="NO_MATCH",
+                flight_match_candidates=[],
+                present=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await session.commit()
+
+    manager = ProcessingManager(
+        session_factory,
+        media_root=str(tmp_path),
+        media_handoff_root=str(tmp_path),
+        external_result_root=str(tmp_path / "results"),
+        webodm_enabled=False,
+        webodm_url="",
+    )
+    job = await manager.create_thermogram_job(
+        name="M4T site",
+        input_prefix="M4T/site",
+    )
+
+    assert job.platform == "M4T"
+    assert {"name": "workflow", "value": "THERMOGRAM_M4T"} in job.options
+    handoff = await manager.thermogram_handoff(job.id)
+    assert handoff["platform"] == "M4T"
+    assert handoff["worker_contract"] == "M4T_RJPEG_V1"
