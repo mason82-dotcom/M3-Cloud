@@ -5,17 +5,17 @@ import dji.v5.ux.mapkit.core.models.annotations.DJICircle;
 import dji.v5.ux.mapkit.core.models.annotations.DJICircleOptions;
 import dji.v5.ux.mapkit.maplibre.map.MaplibreMapDelegate;
 import com.mapbox.geojson.Point;
-import com.mapbox.mapboxsdk.maps.MapboxMap;
-import com.mapbox.mapboxsdk.style.layers.CircleLayer;
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
-import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.style.layers.CircleLayer;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.android.style.sources.GeoJsonSource;
 
-import static com.mapbox.mapboxsdk.style.layers.Property.NONE;
-import static com.mapbox.mapboxsdk.style.layers.Property.VISIBLE;
+import static org.maplibre.android.style.layers.Property.NONE;
+import static org.maplibre.android.style.layers.Property.VISIBLE;
 
 public class MMarkerCircle implements DJICircle {
 
-    private MapboxMap mapboxMap;
+    private MapLibreMap mapboxMap;
     private CircleLayer markerCircleLayer;
     private GeoJsonSource source;
     private MaplibreMapDelegate maplibreMapDelegate;
@@ -29,7 +29,7 @@ public class MMarkerCircle implements DJICircle {
     }
 
     public MMarkerCircle(MaplibreMapDelegate maplibreMapDelegate,
-                         MapboxMap mapboxMap,
+                         MapLibreMap mapboxMap,
                          CircleLayer circleMarkerLayer,
                          GeoJsonSource source,
                          DJICircleOptions options) {
