@@ -30,7 +30,6 @@ apply plugin: 'io.gitlab.arturbosch.detekt'
 allprojects {
     dependencyLocking {
         lockMode = LockMode.STRICT
-        lockAllConfigurations()
     }
 
     repositories {
@@ -42,6 +41,12 @@ allprojects {
 }
 
 def registerLockStateResolver = { Project target, List<String> configurationNames ->
+    configurationNames.each { name ->
+        target.configurations.named(name).configure {
+            resolutionStrategy.activateDependencyLocking()
+        }
+    }
+
     target.tasks.register('resolveProductionLockState') {
         notCompatibleWithConfigurationCache('Resolves selected configurations to write dependency lock state')
         doLast {
