@@ -165,6 +165,8 @@ function vehiclePlatform(vehicle: Vehicle | undefined): "M3E" | "M3T" | "M3M" | 
 function missionCommandLabel(command: number): string {
   const names: Record<number, string> = {
     16: "WAYPOINT",
+    20: "RTL",
+    21: "LAND",
     22: "TAKEOFF",
     178: "CHANGE_SPEED",
     206: "CAM_TRIGG_DIST",
@@ -410,6 +412,8 @@ export function MissionsView() {
   const [plannerSideOverlap, setPlannerSideOverlap] = useState(70);
   const [plannerDirection, setPlannerDirection] = useState(0);
   const [plannerSpeed, setPlannerSpeed] = useState(8);
+  const [plannerFinishAction, setPlannerFinishAction] =
+    useState<"RTH" | "LAND" | "NONE">("RTH");
   const [newName, setNewName] = useState("");
   const [newSurveyId, setNewSurveyId] = useState("");
   const [newAircraftSn, setNewAircraftSn] = useState("");
@@ -561,6 +565,7 @@ export function MissionsView() {
         direction_deg: plannerDirection,
         speed_mps: plannerSpeed,
         gimbal_pitch_deg: -90,
+        finish_action: plannerFinishAction,
       });
       setPlannerPreview(preview);
       setDraftItems(preview.plan.items);
@@ -1089,6 +1094,21 @@ export function MissionsView() {
                       onChange={(event) => setPlannerSpeed(Number(event.target.value))}
                     />
                   </label>
+                  <label>
+                    End action
+                    <select
+                      value={plannerFinishAction}
+                      onChange={(event) =>
+                        setPlannerFinishAction(
+                          event.target.value as "RTH" | "LAND" | "NONE",
+                        )
+                      }
+                    >
+                      <option value="RTH">Return to home</option>
+                      <option value="LAND">Land at mission end</option>
+                      <option value="NONE">No terminal action</option>
+                    </select>
+                  </label>
                 </div>
 
                 <div className="missionPlannerActions">
@@ -1151,6 +1171,7 @@ export function MissionsView() {
                     <span>Exposures ≤ <b>{plannerPreview.geometry.expected_photos_upper_bound}</b></span>
                     <span>Files ≤ <b>{plannerPreview.geometry.expected_media_assets_upper_bound}</b></span>
                     <span>Nominal time <b>{Math.ceil(plannerPreview.geometry.nominal_route_time_s / 60)} min</b></span>
+                    <span>End action <b>{plannerPreview.input.finish_action}</b></span>
                     <span>Items <b>{plannerPreview.mission_item_count}</b></span>
                     <span>Area <b>{(plannerPreview.geometry.area_m2 / 10_000).toFixed(2)} ha</b></span>
                   </div>
