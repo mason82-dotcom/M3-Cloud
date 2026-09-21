@@ -78,8 +78,7 @@ class Settings(BaseSettings):
         validation_alias="M3CLOUD_DJI_STATE_CACHE_TTL_SECONDS",
     )
 
-    # Compatibility with the authenticated /pilot2 bootstrap introduced on main.
-    # These aliases are kept during the branch merge and consolidated in a follow-up.
+    # Authenticated Pilot 2 bootstrap gate.
     dji_pilot_enabled: bool = Field(
         default=False,
         validation_alias="M3CLOUD_DJI_PILOT_ENABLED",
@@ -87,34 +86,6 @@ class Settings(BaseSettings):
     dji_pilot_bootstrap_token: str = Field(
         default="",
         validation_alias="M3CLOUD_DJI_PILOT_BOOTSTRAP_TOKEN",
-    )
-    dji_cloud_app_id: str = Field(
-        default="",
-        validation_alias="M3CLOUD_DJI_CLOUD_APP_ID",
-    )
-    dji_cloud_app_key: str = Field(
-        default="",
-        validation_alias="M3CLOUD_DJI_CLOUD_APP_KEY",
-    )
-    dji_cloud_app_license: str = Field(
-        default="",
-        validation_alias="M3CLOUD_DJI_CLOUD_APP_LICENSE",
-    )
-    dji_workspace_id: str = Field(
-        default="",
-        validation_alias="M3CLOUD_DJI_WORKSPACE_ID",
-    )
-    dji_platform_name: str = Field(
-        default="M3-Cloud",
-        validation_alias="M3CLOUD_DJI_PLATFORM_NAME",
-    )
-    dji_workspace_name: str = Field(
-        default="M3-Cloud",
-        validation_alias="M3CLOUD_DJI_WORKSPACE_NAME",
-    )
-    dji_workspace_description: str = Field(
-        default="M3-Cloud DJI Pilot 2 workspace",
-        validation_alias="M3CLOUD_DJI_WORKSPACE_DESCRIPTION",
     )
 
     # DJI Pilot 2 DRC relay settings. The address must be reachable from the
@@ -166,31 +137,31 @@ class Settings(BaseSettings):
     # the RC Pro Enterprise; Docker-internal hostnames such as "emqx" are not.
     dji_pilot_app_id: str = Field(
         default="",
-        validation_alias="M3CLOUD_DJI_PILOT_APP_ID",
+        validation_alias=AliasChoices("M3CLOUD_DJI_PILOT_APP_ID", "M3CLOUD_DJI_CLOUD_APP_ID"),
     )
     dji_pilot_app_key: str = Field(
         default="",
-        validation_alias="M3CLOUD_DJI_PILOT_APP_KEY",
+        validation_alias=AliasChoices("M3CLOUD_DJI_PILOT_APP_KEY", "M3CLOUD_DJI_CLOUD_APP_KEY"),
     )
     dji_pilot_license: str = Field(
         default="",
-        validation_alias="M3CLOUD_DJI_PILOT_LICENSE",
+        validation_alias=AliasChoices("M3CLOUD_DJI_PILOT_LICENSE", "M3CLOUD_DJI_CLOUD_APP_LICENSE"),
     )
     dji_pilot_workspace_id: str = Field(
         default="",
-        validation_alias="M3CLOUD_DJI_PILOT_WORKSPACE_ID",
+        validation_alias=AliasChoices("M3CLOUD_DJI_PILOT_WORKSPACE_ID", "M3CLOUD_DJI_WORKSPACE_ID"),
     )
     dji_pilot_platform_name: str = Field(
         default="M3-Cloud",
-        validation_alias="M3CLOUD_DJI_PILOT_PLATFORM_NAME",
+        validation_alias=AliasChoices("M3CLOUD_DJI_PILOT_PLATFORM_NAME", "M3CLOUD_DJI_PLATFORM_NAME"),
     )
     dji_pilot_workspace_name: str = Field(
         default="M3-Cloud",
-        validation_alias="M3CLOUD_DJI_PILOT_WORKSPACE_NAME",
+        validation_alias=AliasChoices("M3CLOUD_DJI_PILOT_WORKSPACE_NAME", "M3CLOUD_DJI_WORKSPACE_NAME"),
     )
     dji_pilot_workspace_desc: str = Field(
         default="Self-hosted DJI Enterprise operations",
-        validation_alias="M3CLOUD_DJI_PILOT_WORKSPACE_DESC",
+        validation_alias=AliasChoices("M3CLOUD_DJI_PILOT_WORKSPACE_DESC", "M3CLOUD_DJI_WORKSPACE_DESCRIPTION"),
     )
     dji_pilot_map_user_name: str = Field(
         default="M3-Cloud",

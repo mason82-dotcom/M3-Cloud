@@ -165,15 +165,23 @@ async function waitForBackendDji(): Promise<void> {
 }
 
 export function PilotBootstrap() {
-  const [status, setStatus] = useState("Loading M3-Cloud configuration…");
+  const [status, setStatus] = useState("Enter the M3-Cloud bootstrap token");
   const [detail, setDetail] = useState("");
   const [connected, setConnected] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [attempt, setAttempt] = useState<{ token: string; id: number } | null>(null);
 
   useEffect(() => {
+    if (attempt === null) return;
+
     let cancelled = false;
 
     async function run() {
       const response = await fetch("/api/v1/dji/pilot/bootstrap", {
+        method: "POST",
+        headers: {
+          "X-M3-Pilot-Bootstrap": attempt.token,
+        },
         cache: "no-store",
       });
       if (!response.ok) {
@@ -321,7 +329,21 @@ export function PilotBootstrap() {
       delete window.m3CloudWsConnectCallback;
       delete window.m3CloudLiveStatusCallback;
     };
-  }, []);
+  }, [attempt]);
+
+  const connect = () => {
+    const token = tokenInput.trim();
+    if (!token) {
+      setConnected(false);
+      setStatus("Bootstrap token required");
+      setDetail("Enter M3CLOUD_DJI_PILOT_BOOTSTRAP_TOKEN.");
+      return;
+    }
+    setConnected(false);
+    setStatus("Loading M3-Cloud configuration…");
+    setDetail("");
+    setAttempt({ token, id: Date.now() });
+  };
 
   return (
     <main
@@ -348,6 +370,41 @@ export function PilotBootstrap() {
         <h1 style={{ margin: "8px 0 12px" }}>M3-Cloud</h1>
         <p style={{ fontSize: "18px", margin: "0 0 12px" }}>{status}</p>
         <p style={{ opacity: 0.75, overflowWrap: "anywhere" }}>{detail || " "}</p>
+        {!connected && (
+          <div style={{ display: "grid", gap: "10px", margin: "18px 0" }}>
+            <input
+              type="password"
+              value={tokenInput}
+              onChange={(event) => setTokenInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") connect();
+              }}
+              placeholder="M3CLOUD_DJI_PILOT_BOOTSTRAP_TOKEN"
+              autoComplete="off"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "11px 12px",
+                borderRadius: "8px",
+                border: "1px solid #30363d",
+                background: "#0d1117",
+                color: "#e6edf3",
+              }}
+            />
+            <button
+              type="button"
+              onClick={connect}
+              style={{
+                padding: "11px 14px",
+                borderRadius: "8px",
+                border: "1px solid #30363d",
+                cursor: "pointer",
+              }}
+            >
+              Connect Pilot 2
+            </button>
+          </div>
+        )}
         <div
           style={{
             marginTop: "18px",

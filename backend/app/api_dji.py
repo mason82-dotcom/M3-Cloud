@@ -14,7 +14,6 @@ from app.dji.cloud_control import (
 )
 from app.dji.gateway import DJIGatewayNotFound, DJIUnsupportedGateway
 from app.dji.liveview import DJILiveView
-from app.dji.pilot import build_pilot_bootstrap
 from app.dji.services import DJIServiceResultError
 from app.dji.transactions import DJITransactionTimeout
 
@@ -54,14 +53,6 @@ class CloudControlAuthorizationBody(BaseModel):
 
 
 
-
-
-@router.get("/pilot/bootstrap")
-async def pilot_bootstrap(request: Request) -> dict[str, Any]:
-    """Configuration consumed by the H5 page embedded in DJI Pilot 2."""
-
-    public_base_url = settings.dji_pilot_api_url.strip() or str(request.base_url).rstrip("/")
-    return build_pilot_bootstrap(settings, public_base_url=public_base_url)
 
 
 def _dji(request: Request):
