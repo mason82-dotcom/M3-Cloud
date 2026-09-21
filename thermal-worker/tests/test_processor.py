@@ -1073,3 +1073,71 @@ def test_m3t_source_identity_rejects_conflicting_dji_xmp_drone_model():
             {"metadata": {}},
         )
 
+
+
+def test_process_handoff_supports_m4t_contract_and_identity(tmp_path):
+    source = tmp_path / "m4t-input"
+    source.mkdir()
+    thermal = source / "DJI_0001_R.JPG"
+    thermal.write_bytes(b"m4t-rjpeg")
+    handoff = {
+        "schema_version": 4,
+        "worker_contract": "M4T_RJPEG_V1",
+        "workflow": "THERMOGRAM",
+        "platform": "M4T",
+        "job_id": "m4t-job",
+        "input_prefix": "M4T/site",
+        "external_path": str(source),
+        "capture_groups": [
+            {
+                "capture_group": "M4T/site/DJI_0001",
+                "files": [
+                    {
+                        "media_kind": "THERMAL",
+                        "path_relative_to_input": thermal.name,
+                        "filename": thermal.name,
+                        "size_bytes": thermal.stat().st_size,
+                        "sha256": _sha(thermal),
+                        "metadata": {
+                            "camera": {"model": "M4T"},
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    handoff_path = tmp_path / "m4t-handoff.json"
+    handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+
+    output = tmp_path / "m4t-results"
+    manifest = process_handoff(
+        handoff_path,
+        output,
+        FakeDecoder(),
+    )
+
+    assert manifest["contract"] == "M4T_THERMAL_RESULTS_V1"
+    assert manifest["platform"] == "M4T"
+    assert manifest["source_identity"]["expected_platform"] == "M4T"
+    assert manifest["source_identity"]["confirmed_capture_count"] == 1
+    assert manifest["summary"]["source_identity_confirmed_count"] == 1
+    assert manifest["summary"]["m4t_identity_confirmed_count"] == 1
+    capture = manifest["capture_groups"][0]
+    assert capture["source_identity"]["status"] == "CONFIRMED"
+    assert capture["source_identity"]["thermal"]["m4t_confirmed"] is True
+    registration = json.loads(
+        (output / manifest["registration_audit_json"]).read_text(encoding="utf-8")
+    )
+    assert registration["contract"] == "M4T_WIDE_THERMAL_REGISTRATION_AUDIT_V1"
+
+
+def test_m4t_source_identity_rejects_m3t_metadata():
+    from thermal_worker.processor import _require_platform_source_identity
+
+    with pytest.raises(ValueError, match="conflicts with M4T-only"):
+        _require_platform_source_identity(
+            "M4T",
+            "M4T/site/DJI_0001",
+            {},
+            {"metadata": {"camera": {"model": "M3T"}}},
+        )

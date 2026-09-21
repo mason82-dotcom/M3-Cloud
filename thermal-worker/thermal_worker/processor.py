@@ -22,6 +22,19 @@ from .dji_sdk import DecodeResult
 
 RESULT_CONTRACT = "M3T_THERMAL_RESULTS_V1"
 REGISTRATION_AUDIT_CONTRACT = "M3T_WIDE_THERMAL_REGISTRATION_AUDIT_V2"
+RESULT_CONTRACTS = {
+    "M3T": RESULT_CONTRACT,
+    "M4T": "M4T_THERMAL_RESULTS_V1",
+}
+REGISTRATION_AUDIT_CONTRACTS = {
+    "M3T": REGISTRATION_AUDIT_CONTRACT,
+    "M4T": "M4T_WIDE_THERMAL_REGISTRATION_AUDIT_V1",
+}
+WORKER_CONTRACTS = {
+    ("M3T", 3): "M3T_RJPEG_V1",
+    ("M3T", 4): "M3T_RJPEG_V2",
+    ("M4T", 4): "M4T_RJPEG_V1",
+}
 
 
 class ThermalDecoder(Protocol):
@@ -215,9 +228,48 @@ def _normalize_model(value: str) -> str:
     )
 
 
-def _camera_model_evidence(
+_PLATFORM_MODEL_ALIASES = {
+    "M3T": {
+        "m3t",
+        "mavic3t",
+        "mavic3thermal",
+        "djimavic3thermal",
+    },
+    "M4T": {
+        "m4t",
+        "matrice4t",
+        "djimatrice4t",
+    },
+}
+
+_KNOWN_OTHER_DJI_MODELS = {
+    "m3e",
+    "mavic3enterprise",
+    "djimavic3enterprise",
+    "m3m",
+    "mavic3multispectral",
+    "djimavic3multispectral",
+    "m3td",
+    "mavic3td",
+    "m4e",
+    "matrice4e",
+    "djimatrice4e",
+    "m4d",
+    "matrice4d",
+    "m4td",
+    "matrice4td",
+    "m30t",
+    "matrice30t",
+    "h20t",
+    "zenmuseh20t",
+    "h30t",
+    "zenmuseh30t",
+}
+
+
+def _camera_model_values(
     item: Mapping[str, Any],
-) -> dict[str, Any]:
+) -> list[str]:
     metadata = _metadata_mapping(item)
     camera = metadata.get("camera")
     values: list[str] = []
@@ -252,39 +304,27 @@ def _camera_model_evidence(
         if value not in seen:
             deduped.append(value)
             seen.add(value)
+    return deduped
 
-    m3t_aliases = {
-        "m3t",
-        "mavic3t",
-        "mavic3thermal",
-        "djimavic3thermal",
-    }
-    known_other_models = {
-        "m3e",
-        "mavic3enterprise",
-        "djimavic3enterprise",
-        "m3m",
-        "mavic3multispectral",
-        "djimavic3multispectral",
-        "m3td",
-        "mavic3td",
-        "m30t",
-        "matrice30t",
-        "h30t",
-        "zenmuseh30t",
-        "m4t",
-        "matrice4t",
-    }
+
+def _camera_model_evidence(
+    item: Mapping[str, Any],
+    *,
+    expected_platform: str = "M3T",
+) -> dict[str, Any]:
+    if expected_platform not in _PLATFORM_MODEL_ALIASES:
+        raise ValueError(f"Unsupported thermal platform identity: {expected_platform}")
 
     classifications: list[dict[str, str]] = []
-    for value in deduped:
+    for value in _camera_model_values(item):
         normalized = _normalize_model(value)
-        if normalized in m3t_aliases:
-            classification = "M3T"
-        elif normalized in known_other_models:
+        classification = "UNKNOWN"
+        for platform, aliases in _PLATFORM_MODEL_ALIASES.items():
+            if normalized in aliases:
+                classification = platform
+                break
+        if classification == "UNKNOWN" and normalized in _KNOWN_OTHER_DJI_MODELS:
             classification = "OTHER_DJI_MODEL"
-        else:
-            classification = "UNKNOWN"
         classifications.append(
             {
                 "value": value,
@@ -292,27 +332,48 @@ def _camera_model_evidence(
                 "classification": classification,
             }
         )
+
+    confirmed = any(
+        entry["classification"] == expected_platform
+        for entry in classifications
+    )
+    known_conflict = any(
+        entry["classification"] not in {"UNKNOWN", expected_platform}
+        for entry in classifications
+    )
     return {
         "models": classifications,
+        "expected_platform": expected_platform,
+        "platform_confirmed": confirmed,
         "m3t_confirmed": any(
             entry["classification"] == "M3T"
             for entry in classifications
         ),
-        "known_conflict": any(
-            entry["classification"] == "OTHER_DJI_MODEL"
+        "m4t_confirmed": any(
+            entry["classification"] == "M4T"
             for entry in classifications
         ),
+        "known_conflict": known_conflict,
     }
 
 
-def _m3t_source_identity(
+def _platform_source_identity(
+    platform: str,
     wide_item: Mapping[str, Any],
     thermal_item: Mapping[str, Any],
 ) -> dict[str, Any]:
-    wide = _camera_model_evidence(wide_item)
-    thermal = _camera_model_evidence(thermal_item)
+    wide = _camera_model_evidence(
+        wide_item,
+        expected_platform=platform,
+    )
+    thermal = _camera_model_evidence(
+        thermal_item,
+        expected_platform=platform,
+    )
     conflict = bool(wide["known_conflict"] or thermal["known_conflict"])
-    confirmed = bool(wide["m3t_confirmed"] or thermal["m3t_confirmed"])
+    confirmed = bool(
+        wide["platform_confirmed"] or thermal["platform_confirmed"]
+    )
     status = (
         "CONFLICT"
         if conflict
@@ -322,16 +383,37 @@ def _m3t_source_identity(
     )
     return {
         "status": status,
-        "expected_platform": "M3T",
+        "expected_platform": platform,
         "wide": wide,
         "thermal": thermal,
         "note": (
             "Known conflicting DJI camera/drone model metadata blocks the "
-            "M3T-only thermal workflow. Missing or unrecognized model strings "
+            f"{platform}-only thermal workflow. Missing or unrecognized model strings "
             "remain UNCONFIRMED rather than being guessed from filenames or "
             "image dimensions."
         ),
     }
+
+
+def _require_platform_source_identity(
+    platform: str,
+    capture_group: str,
+    wide_item: Mapping[str, Any],
+    thermal_item: Mapping[str, Any],
+) -> dict[str, Any]:
+    identity = _platform_source_identity(platform, wide_item, thermal_item)
+    if identity["status"] == "CONFLICT":
+        raise ValueError(
+            f"Capture group {capture_group} conflicts with {platform}-only thermal workflow"
+        )
+    return identity
+
+
+def _m3t_source_identity(
+    wide_item: Mapping[str, Any],
+    thermal_item: Mapping[str, Any],
+) -> dict[str, Any]:
+    return _platform_source_identity("M3T", wide_item, thermal_item)
 
 
 def _require_m3t_source_identity(
@@ -339,13 +421,12 @@ def _require_m3t_source_identity(
     wide_item: Mapping[str, Any],
     thermal_item: Mapping[str, Any],
 ) -> dict[str, Any]:
-    identity = _m3t_source_identity(wide_item, thermal_item)
-    if identity["status"] == "CONFLICT":
-        raise ValueError(
-            f"Capture group {capture_group} conflicts with M3T-only thermal workflow"
-        )
-    return identity
-
+    return _require_platform_source_identity(
+        "M3T",
+        capture_group,
+        wide_item,
+        thermal_item,
+    )
 
 def _metadata_number(
     item: Mapping[str, Any],
@@ -838,6 +919,7 @@ def _existing_manifest(
     *,
     expected_job_id: Any,
     expected_fingerprint: str,
+    expected_contract: str = RESULT_CONTRACT,
 ) -> dict[str, Any] | None:
     if not destination.exists():
         return None
@@ -862,7 +944,7 @@ def _existing_manifest(
     if not isinstance(manifest, dict):
         raise FileExistsError(f"Thermal result manifest is not an object: {manifest_path}")
     if (
-        manifest.get("contract") != RESULT_CONTRACT
+        manifest.get("contract") != expected_contract
         or manifest.get("job_id") != expected_job_id
         or manifest.get("input_fingerprint") != expected_fingerprint
     ):
@@ -1056,22 +1138,29 @@ def process_handoff(
     handoff = json.loads(handoff_file.read_text(encoding="utf-8"))
     if not isinstance(handoff, dict):
         raise TypeError("Thermogram handoff must contain a JSON object")
-    if handoff.get("workflow") != "THERMOGRAM" or handoff.get("platform") != "M3T":
-        raise ValueError("Handoff is not an M3T THERMOGRAM workflow")
+    if handoff.get("workflow") != "THERMOGRAM":
+        raise ValueError("Handoff is not a THERMOGRAM workflow")
+    platform = handoff.get("platform")
+    if not isinstance(platform, str) or platform not in RESULT_CONTRACTS:
+        raise ValueError(f"Unsupported thermogram platform: {platform!r}")
     schema_version = handoff.get("schema_version")
-    if schema_version not in {2, 3, 4}:
-        raise ValueError(f"Unsupported thermogram handoff schema: {schema_version}")
-    if (
-        schema_version == 3
-        and handoff.get("worker_contract") != "M3T_RJPEG_V1"
-    ):
-        raise ValueError("Unsupported M3T thermal worker contract")
-    if (
-        schema_version == 4
-        and handoff.get("worker_contract") != "M3T_RJPEG_V2"
-    ):
-        raise ValueError("Unsupported M3T thermal worker contract")
+    if platform == "M3T" and schema_version == 2:
+        pass
+    else:
+        expected_worker_contract = WORKER_CONTRACTS.get(
+            (platform, schema_version)
+        )
+        if expected_worker_contract is None:
+            raise ValueError(
+                f"Unsupported {platform} thermogram handoff schema: {schema_version}"
+            )
+        if handoff.get("worker_contract") != expected_worker_contract:
+            raise ValueError(
+                f"Unsupported {platform} thermal worker contract"
+            )
     thermal_only_allowed = schema_version == 4
+    result_contract = RESULT_CONTRACTS[platform]
+    registration_audit_contract = REGISTRATION_AUDIT_CONTRACTS[platform]
 
     external_path = handoff.get("external_path")
     if not isinstance(external_path, str) or not external_path.strip():
@@ -1095,6 +1184,7 @@ def process_handoff(
         destination,
         expected_job_id=handoff.get("job_id"),
         expected_fingerprint=input_fingerprint,
+        expected_contract=result_contract,
     )
     if existing is not None:
         return existing
@@ -1145,7 +1235,8 @@ def process_handoff(
                     )
                 wide_item = None
     
-            source_identity = _require_m3t_source_identity(
+            source_identity = _require_platform_source_identity(
+                platform,
                 capture_group,
                 wide_item or {},
                 thermal_item,
@@ -1247,7 +1338,7 @@ def process_handoff(
     
             thermal_metadata: dict[str, Any] = {
                 "schema_version": 1,
-                "contract": RESULT_CONTRACT,
+                "contract": result_contract,
                 "capture_group": capture_group,
                 "source": {
                     "thermal": {
@@ -1479,12 +1570,22 @@ def process_handoff(
                 for item in capture_summaries
                 if item["radiometry_integrity_status"] == "WARN"
             ),
-            "m3t_identity_confirmed_count": sum(
+            "source_identity_confirmed_count": sum(
                 1
                 for item in capture_summaries
                 if item["source_identity_status"] == "CONFIRMED"
             ),
-            "m3t_identity_unconfirmed_count": sum(
+            "source_identity_unconfirmed_count": sum(
+                1
+                for item in capture_summaries
+                if item["source_identity_status"] == "UNCONFIRMED"
+            ),
+            f"{platform.lower()}_identity_confirmed_count": sum(
+                1
+                for item in capture_summaries
+                if item["source_identity_status"] == "CONFIRMED"
+            ),
+            f"{platform.lower()}_identity_unconfirmed_count": sum(
                 1
                 for item in capture_summaries
                 if item["source_identity_status"] == "UNCONFIRMED"
@@ -1506,9 +1607,9 @@ def process_handoff(
             json.dumps(
                 {
                     "schema_version": 1,
-                    "contract": RESULT_CONTRACT,
+                    "contract": result_contract,
                     "workflow": "THERMOGRAM",
-                    "platform": "M3T",
+                    "platform": platform,
                     "job_id": handoff.get("job_id"),
                     "decoder_provenance": decoder_provenance,
                     "aggregate": aggregate_summary,
@@ -1556,7 +1657,7 @@ def process_handoff(
         registration_audit_path = staging / "registration-audit.json"
         registration_audit_document = {
             "schema_version": 1,
-            "contract": REGISTRATION_AUDIT_CONTRACT,
+            "contract": registration_audit_contract,
             "job_id": handoff.get("job_id"),
             "status": "NOT_REGISTERED",
             "pair_count": len(registration_audits),
@@ -1597,16 +1698,16 @@ def process_handoff(
 
         manifest = {
             "schema_version": 1,
-            "contract": RESULT_CONTRACT,
+            "contract": result_contract,
             "workflow": "THERMOGRAM",
-            "platform": "M3T",
+            "platform": platform,
             "job_id": handoff.get("job_id"),
             "source_handoff_schema": schema_version,
             "input_fingerprint": input_fingerprint,
             "processing_options": processing_options,
             "decoder_provenance": decoder_provenance,
             "source_identity": {
-                "expected_platform": "M3T",
+                "expected_platform": platform,
                 "confirmed_capture_count": sum(
                     1
                     for item in source_identities

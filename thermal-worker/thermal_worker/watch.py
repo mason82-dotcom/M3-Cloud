@@ -14,6 +14,8 @@ from .processor import ThermalDecoder, process_handoff
 
 logger = logging.getLogger(__name__)
 
+THERMOGRAM_PLATFORMS = frozenset({"M3T", "M4T"})
+
 
 def claim_next_thermogram(
     api: M3CloudApi,
@@ -26,7 +28,7 @@ def claim_next_thermogram(
 
     # The backend returns newest first. Reverse it for FIFO processing.
     for job in reversed(api.list_jobs()):
-        if job.get("kind") != "THERMOGRAM" or job.get("platform") != "M3T":
+        if job.get("kind") != "THERMOGRAM" or job.get("platform") not in THERMOGRAM_PLATFORMS:
             continue
         if job.get("status") not in claimable:
             continue
@@ -50,7 +52,7 @@ def import_next_completed_thermogram(
     # Recover the narrow crash window after result publication/COMPLETED_EXTERNAL
     # and retry imports that the backend previously marked RESULT_IMPORT_FAILED.
     for job in reversed(api.list_jobs()):
-        if job.get("kind") != "THERMOGRAM" or job.get("platform") != "M3T":
+        if job.get("kind") != "THERMOGRAM" or job.get("platform") not in THERMOGRAM_PLATFORMS:
             continue
         if job.get("status") not in {"COMPLETED_EXTERNAL", "RESULT_IMPORT_FAILED"}:
             continue
