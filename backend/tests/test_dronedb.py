@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 
+from app.models import ProcessingJob, ProcessingJobAsset
 from app.processing.dronedb import DroneDBClient
+from app.processing.service import M3M_DRONEDB_KINDS, build_dronedb_handoff
 
 
 def test_dronedb_client_creates_private_dataset_and_uploads_file(
@@ -147,3 +151,87 @@ def test_dronedb_upload_retry_accepts_matching_existing_object(
 
     assert upload_attempts == 1
     assert result["path"] == "raw/DJI_0001_MS_NIR.TIF"
+
+
+
+def test_m3m_handoff_uses_frozen_metadata_and_dataset_relative_paths() -> None:
+    now = datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc)
+    job_id = uuid.uuid4()
+    job = ProcessingJob(
+        id=job_id,
+        kind="DRONEDB",
+        status="QUEUED",
+        name="M3M field",
+        input_prefix="M3M/field",
+        platform="M3M",
+        flight_id=None,
+        survey_id=None,
+        media_kinds=list(M3M_DRONEDB_KINDS),
+        options=[
+            {"name": "dronedb_org", "value": "m3cloud"},
+            {"name": "dronedb_dataset", "value": "m3m-test"},
+            {
+                "name": "dronedb_dataset_url",
+                "value": "http://localhost:5000/orgs/m3cloud/ds/m3m-test",
+            },
+        ],
+        image_count=10,
+        uploaded_count=0,
+        progress=0.0,
+        available_assets=[],
+        created_at=now,
+        updated_at=now,
+    )
+
+    suffixes = {
+        "RGB": "_D.JPG",
+        "MS_GREEN": "_MS_G.TIF",
+        "MS_RED": "_MS_R.TIF",
+        "MS_RED_EDGE": "_MS_RE.TIF",
+        "MS_NIR": "_MS_NIR.TIF",
+    }
+    frozen: list[ProcessingJobAsset] = []
+    ordinal = 0
+    for capture in (1, 2):
+        group = f"M3M/field/DJI_{capture:04d}"
+        for kind in M3M_DRONEDB_KINDS:
+            frozen.append(
+                ProcessingJobAsset(
+                    job_id=job_id,
+                    media_asset_id=uuid.uuid4(),
+                    ordinal=ordinal,
+                    relative_path=f"{group}{suffixes[kind]}",
+                    size_bytes=100 + ordinal,
+                    sha256=f"{ordinal:064x}",
+                    media_kind=kind,
+                    capture_group=group,
+                    capture_time_utc=now,
+                    metadata_snapshot={
+                        "camera": {"model": "M3M"},
+                        "snapshot_ordinal": ordinal,
+                    },
+                )
+            )
+            ordinal += 1
+
+    handoff = build_dronedb_handoff(job, frozen)
+
+    assert handoff["schema_version"] == 1
+    assert handoff["kind"] == "M3CLOUD_M3M_DRONEDB_HANDOFF"
+    assert handoff["workflow"] == "DRONEDB"
+    assert handoff["platform"] == "M3M"
+    assert handoff["source_policy"] == "IMMUTABLE_FROZEN_ORIGINALS"
+    assert handoff["capture_group_count"] == 2
+    assert handoff["asset_count"] == 10
+    assert handoff["required_media_kinds"] == list(M3M_DRONEDB_KINDS)
+    assert handoff["remote"] == {
+        "organization": "m3cloud",
+        "dataset": "m3m-test",
+        "url": "http://localhost:5000/orgs/m3cloud/ds/m3m-test",
+    }
+
+    assets = handoff["assets"]
+    assert isinstance(assets, list)
+    assert assets[0]["remote_path"] == "raw/DJI_0001_D.JPG"
+    assert assets[-1]["remote_path"] == "raw/DJI_0002_MS_NIR.TIF"
+    assert assets[0]["metadata"]["camera"]["model"] == "M3M"
