@@ -36,6 +36,8 @@ const ACTIVE_STATUSES = new Set([
   "RUNNING",
   "WAITING_EXTERNAL",
   "RUNNING_EXTERNAL",
+  "COMPLETED_EXTERNAL",
+  "RESULT_IMPORT_FAILED",
   "IMPORTING_RESULTS",
 ]);
 
@@ -73,6 +75,20 @@ function thermalResultSummary(result: ProcessingResult): string | null {
   }
   if (kind === "THERMAL_PREVIEW") return "Thermal preview";
   if (kind === "THERMAL_METADATA") return "Thermal metadata";
+  if (kind === "HOTSPOT_MASK") return "Hotspot candidate mask";
+  if (kind === "HOTSPOT_ANALYSIS") {
+    const hotspots =
+      details.hotspots && typeof details.hotspots === "object"
+        ? details.hotspots as Record<string, unknown>
+        : null;
+    const count =
+      hotspots && typeof hotspots.component_count === "number"
+        ? hotspots.component_count
+        : null;
+    return count === null
+      ? "Hotspot candidate analysis"
+      : `Hotspot candidates · ${count}`;
+  }
   if (kind === "THERMAL_MANIFEST") return "Thermal result manifest";
   return kind;
 }
