@@ -30,11 +30,16 @@ For each complete M3T WIDE/THERMAL capture pair the worker writes:
 - `hotspots.json` — median-ΔT candidate components and sensor-pixel coordinates.
 - `thermal.json` — source hashes, DIRP/R-JPEG provenance, dimensions,
   measurement-parameter mode, SDK ranges, temperature statistics and hotspot analysis.
+- `capture-points.geojson` — source-image GPS capture centers with per-capture
+  temperature/hotspot summaries; no pixel georeferencing is implied.
+- `thermal-summary.json` — job-level aggregate plus one summary record per capture.
+- `thermal-summary.csv` — tabular export of the same per-capture summary fields.
 - `result-manifest.json` — job-level `M3T_THERMAL_RESULTS_V1` manifest.
 
 The temperature TIFF is intentionally **not** labelled as a GeoTIFF. It remains
-in thermal-sensor pixel space. WIDE/THERMAL coregistration and map
-georeferencing are separate processing stages.
+in thermal-sensor pixel space. `capture-points.geojson` contains only the
+source image position (`CAPTURE_CENTER_ONLY`). WIDE/THERMAL coregistration and
+pixel-level map georeferencing are separate processing stages.
 
 ## Install
 
@@ -180,4 +185,7 @@ Linux x86-64 TSDK for the container.
 - The R-JPEG buffer remains alive until the DIRP handle is destroyed.
 - DIRP handles are destroyed in `finally`.
 - Temperature products preserve the source SHA256 and SDK/R-JPEG provenance.
-- No RGB/thermal pixel alignment is assumed.
+- Job summaries and capture-center GeoJSON are derived only from frozen inputs and
+  are covered by the same immutable processing fingerprint.
+- No RGB/thermal pixel alignment is assumed; capture GPS never promotes a sensor-space
+  temperature plane or hotspot mask to a georeferenced raster.
