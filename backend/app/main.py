@@ -69,6 +69,13 @@ async def lifespan(app: FastAPI):
         webodm_username=settings.webodm_username,
         webodm_password=settings.webodm_password,
         webodm_timeout_seconds=settings.webodm_timeout_seconds,
+        dronedb_enabled=settings.dronedb_enabled,
+        dronedb_url=settings.dronedb_url,
+        dronedb_public_url=settings.dronedb_public_url,
+        dronedb_username=settings.dronedb_username,
+        dronedb_password=settings.dronedb_password,
+        dronedb_org=settings.dronedb_org,
+        dronedb_timeout_seconds=settings.dronedb_timeout_seconds,
         poll_interval_seconds=settings.processing_poll_interval_seconds,
     )
     app.state.processing_manager = processing_manager
