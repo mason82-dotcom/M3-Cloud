@@ -278,3 +278,134 @@ def test_decode_calls_legacy_global_api_version_without_handle():
     assert result.api_version == {"api": 4, "magic": "DIRP"}
     assert destroyed == [0x1234]
 
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        (
+            """
+            float distance;
+            float humidity;
+            float emissivity;
+            float reflection;
+            """,
+            "LEGACY_V1",
+        ),
+        (
+            """
+            float distance;
+            float humidity;
+            float emissivity;
+            float reflection;
+            float ambient_temp;
+            """,
+            "AMBIENT_V2",
+        ),
+    ],
+)
+def test_detects_measurement_abi_from_struct_fields(
+    tmp_path,
+    fields,
+    expected,
+):
+    sdk = _abi_probe(
+        tmp_path,
+        f"""
+        /* ambient_temp may be documented elsewhere in the header. */
+        typedef struct {{
+            {fields}
+        }} dirp_measurement_params_t;
+        """,
+    )
+
+    assert sdk._detect_measurement_abi() == expected
+
+
+def test_conflicting_api_version_headers_fail_closed(tmp_path):
+    sdk_root = tmp_path / "sdk"
+    own_header = sdk_root / "tsdk-core" / "api" / "dirp_api.h"
+    own_header.parent.mkdir(parents=True)
+    own_header.write_text(
+        """
+        typedef struct { unsigned int api; char magic[8]; } dirp_api_version_t;
+        int dirp_get_api_version(dirp_api_version_t *version);
+        """,
+        encoding="utf-8",
+    )
+    parent_header = tmp_path / "tsdk-core" / "api" / "dirp_api.h"
+    parent_header.parent.mkdir(parents=True)
+    parent_header.write_text(
+        """
+        typedef void *DIRP_HANDLE;
+        typedef struct { unsigned int api; char magic[8]; } dirp_api_version_t;
+        int dirp_get_api_version(
+            DIRP_HANDLE h,
+            dirp_api_version_t *version
+        );
+        """,
+        encoding="utf-8",
+    )
+    sdk = object.__new__(DjiThermalSdk)
+    sdk.sdk_dir = sdk_root
+
+    assert sdk._detect_api_version_abi() == "UNKNOWN"
+
+
+def test_conflicting_measurement_headers_fail_closed(tmp_path):
+    sdk_root = tmp_path / "sdk"
+    own_header = sdk_root / "tsdk-core" / "api" / "dirp_api.h"
+    own_header.parent.mkdir(parents=True)
+    own_header.write_text(
+        """
+        typedef struct {
+            float distance;
+            float humidity;
+            float emissivity;
+            float reflection;
+        } dirp_measurement_params_t;
+        """,
+        encoding="utf-8",
+    )
+    parent_header = tmp_path / "tsdk-core" / "api" / "dirp_api.h"
+    parent_header.parent.mkdir(parents=True)
+    parent_header.write_text(
+        """
+        typedef struct {
+            float distance;
+            float humidity;
+            float emissivity;
+            float reflection;
+            float ambient_temp;
+        } dirp_measurement_params_t;
+        """,
+        encoding="utf-8",
+    )
+    sdk = object.__new__(DjiThermalSdk)
+    sdk.sdk_dir = sdk_root
+
+    assert sdk._detect_measurement_abi() == "UNKNOWN"
+
+
+def test_multiple_sdk_releases_require_exact_release_path(
+    tmp_path,
+    monkeypatch,
+):
+    import thermal_worker.dji_sdk as dji
+
+    monkeypatch.setattr(dji.platform, "system", lambda: "Linux")
+    releases = []
+    for version in ("v1", "v2"):
+        release = tmp_path / version / "linux" / "release_x64"
+        release.mkdir(parents=True)
+        (release / "libdirp.so").write_bytes(b"placeholder")
+        releases.append(release.resolve())
+
+    with pytest.raises(
+        ValueError,
+        match="Multiple DJI Thermal SDK x64 releases",
+    ):
+        DjiThermalSdk._resolve_release_dir(tmp_path)
+
+    assert DjiThermalSdk._resolve_release_dir(
+        tmp_path / "v1"
+    ) == releases[0]
+
