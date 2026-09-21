@@ -224,7 +224,8 @@ dependencies {
     implementation 'io.getstream:stream-webrtc-android:1.1.1'
 
     // On-device edge inference for exported YOLO/TFLite models
-    implementation 'org.tensorflow:tensorflow-lite:2.16.1'
+    implementation 'com.google.ai.edge.litert:litert-api:1.4.1'
+    runtimeOnly 'com.google.ai.edge.litert:litert:1.4.1'
 
     testImplementation rootProject.deps.junit4
     testImplementation rootProject.deps.json
