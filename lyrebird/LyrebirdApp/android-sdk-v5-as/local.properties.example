@@ -11,3 +11,10 @@ AIRCRAFT_API_KEY_DEMO_BIOMASS=Your_DJI_Demo_Biomass_App_Key
 
 # Optional for OpenFreeMap/MapLibre rendering in this project; dummy is enough for SDK init.
 MAPLIBRE_TOKEN=dummy
+
+# Optional release signing. Prefer environment variables in CI.
+# STORE_FILE may be absolute or relative to android-sdk-v5-as; never commit the keystore itself.
+# STORE_FILE=/absolute/path/to/release-keystore.jks
+# STORE_PASSWORD=change-me
+# KEY_ALIAS=release-key
+# KEY_PASSWORD=change-me
