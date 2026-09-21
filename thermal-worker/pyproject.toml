@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "m3cloud-thermal-worker"
+version = "0.1.0"
+description = "M3-Cloud x86-64 DJI radiometric R-JPEG processing worker"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.0,<3",
+  "Pillow>=11,<14",
+  "tifffile>=2025.5,<2027",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<10",
+]
+
+[project.scripts]
+m3-thermal-worker = "thermal_worker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
