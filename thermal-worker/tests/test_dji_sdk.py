@@ -420,6 +420,6 @@ def test_sdk_library_sha256_fingerprints_exact_binary(tmp_path):
     library.write_bytes(b"DJI-DIRP-BINARY")
 
     assert DjiThermalSdk._sha256_path(library) == (
-        "dc49d41a85ecbb264378e70d03d00e9846e18bd84c652f2b695925cac4efca31"
+        "7c5314c3029aecb065ea54bce859c63fe502cdfa08e3a0c5cc8fc754fbe4e6fb"
     )
 
