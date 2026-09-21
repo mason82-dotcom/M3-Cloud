@@ -21,7 +21,7 @@ from .dji_sdk import DecodeResult
 
 
 RESULT_CONTRACT = "M3T_THERMAL_RESULTS_V1"
-REGISTRATION_AUDIT_CONTRACT = "M3T_WIDE_THERMAL_REGISTRATION_AUDIT_V1"
+REGISTRATION_AUDIT_CONTRACT = "M3T_WIDE_THERMAL_REGISTRATION_AUDIT_V2"
 
 
 class ThermalDecoder(Protocol):
@@ -538,10 +538,12 @@ def _dji_calibration_hints(
 
 
 def _registration_audit(
-    wide_item: Mapping[str, Any],
+    wide_item: Mapping[str, Any] | None,
     thermal_item: Mapping[str, Any],
 ) -> dict[str, Any]:
-    wide_time = _capture_time(wide_item)
+    wide_available = wide_item is not None
+    wide_source: Mapping[str, Any] = wide_item or {}
+    wide_time = _capture_time(wide_source)
     thermal_time = _capture_time(thermal_item)
     capture_time_delta_ms = (
         abs((thermal_time - wide_time).total_seconds()) * 1000.0
@@ -549,18 +551,18 @@ def _registration_audit(
         else None
     )
     gps_separation_m = _gps_separation_m(
-        wide_item,
+        wide_source,
         thermal_item,
     )
-    gimbal_delta_deg = _gimbal_delta(wide_item, thermal_item)
+    gimbal_delta_deg = _gimbal_delta(wide_source, thermal_item)
     flight_attitude_delta_deg = _flight_attitude_delta(
-        wide_item,
+        wide_source,
         thermal_item,
     )
-    altitude_delta_m = _altitude_delta(wide_item, thermal_item)
-    wide_calibration = _dji_calibration_hints(wide_item)
+    altitude_delta_m = _altitude_delta(wide_source, thermal_item)
+    wide_calibration = _dji_calibration_hints(wide_source)
     thermal_calibration = _dji_calibration_hints(thermal_item)
-    wide_image = _image_geometry_evidence(wide_item)
+    wide_image = _image_geometry_evidence(wide_source)
     thermal_image = _image_geometry_evidence(thermal_item)
 
     evidence = {
@@ -598,6 +600,8 @@ def _registration_audit(
 
     return {
         "status": "NOT_REGISTERED",
+        "wide_available": wide_available,
+        "reason": None if wide_available else "WIDE_SOURCE_MISSING",
         "wide_thermal_coregistered": False,
         "georeferenced_temperature_raster": False,
         "pair_audit": {
@@ -613,11 +617,19 @@ def _registration_audit(
             "evidence": evidence,
         },
         "note": (
-            "Pair audit compares frozen source metadata only. Evidence "
-            "presence is descriptive and does not establish registration. "
-            "No validated WIDE-to-THERMAL intrinsic/extrinsic transform is "
-            "available, so thermal pixels and hotspot masks remain in "
-            "sensor-pixel space."
+            (
+                "Pair audit compares frozen source metadata only. Evidence "
+                "presence is descriptive and does not establish registration. "
+                "No validated WIDE-to-THERMAL intrinsic/extrinsic transform is "
+                "available, so thermal pixels and hotspot masks remain in "
+                "sensor-pixel space."
+            )
+            if wide_available
+            else (
+                "No WIDE companion was frozen for this thermal capture. "
+                "Radiometry remains valid in thermal sensor-pixel space, but "
+                "WIDE-to-THERMAL registration cannot be attempted."
+            )
         ),
     }
 
