@@ -1375,6 +1375,30 @@ def process_handoff(
             if isinstance(item.get("hotspot_peak_delta_c"), (int, float))
             and not isinstance(item.get("hotspot_peak_delta_c"), bool)
         ]
+        registration_evidence_keys = (
+            "capture_time_pair",
+            "gps_pair",
+            "gimbal_attitude_pair",
+            "flight_attitude_pair",
+            "dji_altitude_pair",
+            "wide_image_dimensions",
+            "thermal_image_dimensions",
+            "wide_dji_calibration",
+            "thermal_dji_calibration",
+        )
+        registration_evidence_counts = {
+            key: sum(
+                1
+                for audit in registration_audits
+                if bool(
+                    audit.get("pair_audit", {})
+                    .get("evidence", {})
+                    .get(key)
+                )
+            )
+            for key in registration_evidence_keys
+        }
+
         aggregate_summary = {
             "capture_count": len(capture_summaries),
             "georeferenced_capture_count": len(capture_point_features),
@@ -1411,16 +1435,13 @@ def process_handoff(
                 if item["source_identity_status"] == "UNCONFIRMED"
             ),
             "registration_status": "NOT_REGISTERED",
-            "pair_capture_time_evidence_count": sum(
-                1
-                for item in capture_summaries
-                if item["pair_capture_time_delta_ms"] is not None
-            ),
-            "pair_gps_evidence_count": sum(
-                1
-                for item in capture_summaries
-                if item["pair_gps_separation_m"] is not None
-            ),
+            "registration_evidence_counts": registration_evidence_counts,
+            "pair_capture_time_evidence_count": registration_evidence_counts[
+                "capture_time_pair"
+            ],
+            "pair_gps_evidence_count": registration_evidence_counts[
+                "gps_pair"
+            ],
             "max_hotspot_peak_delta_c": max(peak_deltas) if peak_deltas else None,
             "diagnostic_scope": "HOTSPOT_CANDIDATES_ONLY",
         }
@@ -1484,6 +1505,7 @@ def process_handoff(
             "job_id": handoff.get("job_id"),
             "status": "NOT_REGISTERED",
             "pair_count": len(registration_audits),
+            "evidence_counts": registration_evidence_counts,
             "pairs": registration_audits,
             "note": (
                 "This artifact contains WIDE/THERMAL pair evidence only. "
