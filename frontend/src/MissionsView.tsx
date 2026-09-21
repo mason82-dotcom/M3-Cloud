@@ -162,6 +162,29 @@ function vehiclePlatform(vehicle: Vehicle | undefined): "M3E" | "M3T" | "M3M" | 
   return null;
 }
 
+function plannerStartReference(vehicle: Vehicle | undefined): MissionPlannerPoint | null {
+  const validPoint = (
+    latitude: number | null | undefined,
+    longitude: number | null | undefined,
+  ): MissionPlannerPoint | null =>
+    typeof latitude === "number" &&
+    Number.isFinite(latitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    typeof longitude === "number" &&
+    Number.isFinite(longitude) &&
+    longitude >= -180 &&
+    longitude <= 180
+      ? { latitude_deg: latitude, longitude_deg: longitude }
+      : null;
+
+  const home = vehicle?.telemetry?.aircraft_state?.home;
+  return (
+    validPoint(home?.latitude, home?.longitude) ??
+    validPoint(vehicle?.telemetry?.latitude, vehicle?.telemetry?.longitude)
+  );
+}
+
 function missionCommandLabel(command: number): string {
   const names: Record<number, string> = {
     16: "WAYPOINT",
@@ -411,6 +434,7 @@ export function MissionsView() {
   const [plannerForwardOverlap, setPlannerForwardOverlap] = useState(80);
   const [plannerSideOverlap, setPlannerSideOverlap] = useState(70);
   const [plannerDirection, setPlannerDirection] = useState(0);
+  const [plannerOptimizeDirection, setPlannerOptimizeDirection] = useState(true);
   const [plannerSpeed, setPlannerSpeed] = useState(8);
   const [plannerFinishAction, setPlannerFinishAction] =
     useState<"RTH" | "LAND" | "NONE">("RTH");
@@ -508,6 +532,7 @@ export function MissionsView() {
       setPlannerForwardOverlap(numberParameter("forward_overlap_pct", 80));
       setPlannerSideOverlap(numberParameter("side_overlap_pct", 70));
       setPlannerDirection(numberParameter("direction_deg", 0));
+      setPlannerOptimizeDirection(parameters.optimize_direction === true);
       setPlannerSpeed(numberParameter("requested_speed_mps", 8));
       const finishAction = parameters.finish_action;
       setPlannerFinishAction(
@@ -519,6 +544,7 @@ export function MissionsView() {
       setPlannerForwardOverlap(80);
       setPlannerSideOverlap(70);
       setPlannerDirection(0);
+      setPlannerOptimizeDirection(true);
       setPlannerSpeed(8);
       setPlannerFinishAction("RTH");
     }
@@ -568,6 +594,7 @@ export function MissionsView() {
   const selectedVehicle = vehicles.find(
     (vehicle) => vehicle.sn === selected?.aircraft_sn,
   );
+  const plannerReference = plannerStartReference(selectedVehicle);
 
   const availablePlannerProfiles = useMemo(
     () => plannerProfiles.filter((profile) => profile.platform === plannerPlatform),
@@ -614,8 +641,11 @@ export function MissionsView() {
         speed_mps: plannerSpeed,
         gimbal_pitch_deg: -90,
         finish_action: plannerFinishAction,
+        optimize_direction: plannerOptimizeDirection,
+        start_reference: plannerReference,
       });
       setPlannerPreview(preview);
+      setPlannerDirection(preview.input.direction_deg);
       setDraftItems(preview.plan.items);
       setDraftPlanning(preview.plan.planning);
       setPlannerDrawing(false);
@@ -1123,12 +1153,24 @@ export function MissionsView() {
                   <label>
                     Grid heading °
                     <input
+                      disabled={plannerOptimizeDirection}
                       min="0"
                       max="359.9"
                       step="1"
                       type="number"
                       value={plannerDirection}
                       onChange={(event) => setPlannerDirection(Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Auto grid direction
+                    <input
+                      checked={plannerOptimizeDirection}
+                      type="checkbox"
+                      onChange={(event) => {
+                        setPlannerOptimizeDirection(event.target.checked);
+                        setPlannerPreview(null);
+                      }}
                     />
                   </label>
                   <label>
@@ -1205,8 +1247,9 @@ export function MissionsView() {
                 <small className="missionPlannerHint">
                   Enable drawing, click at least three polygon vertices on the map, then generate.
                   The preview replaces the editable draft only; Save plan creates the immutable
-                  revision. Camera-specific planner context is stored with that revision and
-                  preflight blocks a later M3E/M3T/M3M mismatch.
+                  revision. Auto direction minimizes planned travel and, when aircraft/home
+                  telemetry is available, chooses the nearer grid entry. Camera-specific planner
+                  context is stored with that revision and preflight blocks a later M3E/M3T/M3M mismatch.
                 </small>
 
                 {plannerPreview ? (
@@ -1218,7 +1261,11 @@ export function MissionsView() {
                     <span>Segments <b>{plannerPreview.geometry.capture_segment_count}</b></span>
                     <span>Exposures ≤ <b>{plannerPreview.geometry.expected_photos_upper_bound}</b></span>
                     <span>Files ≤ <b>{plannerPreview.geometry.expected_media_assets_upper_bound}</b></span>
-                    <span>Nominal time <b>{Math.ceil(plannerPreview.geometry.nominal_route_time_s / 60)} min</b></span>
+                    <span>Grid heading <b>{plannerPreview.optimization.selected_direction_deg.toFixed(1)}°</b></span>
+                    <span>Grid time <b>{Math.ceil(plannerPreview.geometry.nominal_route_time_s / 60)} min</b></span>
+                    <span>Total est. <b>{Math.ceil(plannerPreview.geometry.nominal_total_time_s / 60)} min</b></span>
+                    <span>Ingress <b>{plannerPreview.geometry.ingress_distance_m.toFixed(0)} m</b></span>
+                    <span>Return <b>{plannerPreview.geometry.return_distance_m.toFixed(0)} m</b></span>
                     <span>End action <b>{plannerPreview.input.finish_action}</b></span>
                     <span>Items <b>{plannerPreview.mission_item_count}</b></span>
                     <span>Area <b>{(plannerPreview.geometry.area_m2 / 10_000).toFixed(2)} ha</b></span>
