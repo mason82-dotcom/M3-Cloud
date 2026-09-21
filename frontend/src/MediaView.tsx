@@ -38,7 +38,7 @@ function bytes(value: number): string {
 
 function platformClass(platform: string): string {
   const value = platform.toLowerCase();
-  return ["m3e", "m3t", "m3m"].includes(value) ? value : "unknown";
+  return ["m3e", "m3t", "m3m", "m4t"].includes(value) ? value : "unknown";
 }
 
 export function MediaView() {
@@ -123,7 +123,7 @@ export function MediaView() {
   const totalBytes = assets.reduce((sum, asset) => sum + asset.size_bytes, 0);
   const duplicateCount = assets.filter((asset) => asset.duplicate_of).length;
   const platformCounts = Object.fromEntries(
-    ["M3E", "M3T", "M3M", "UNKNOWN"].map((name) => [
+    ["M3E", "M3T", "M3M", "M4T", "UNKNOWN"].map((name) => [
       name,
       assets.filter((asset) => asset.platform === name).length,
     ]),
@@ -161,7 +161,7 @@ export function MediaView() {
       </section>
 
       <div className="mediaSummary">
-        {["M3E", "M3T", "M3M", "UNKNOWN"].map((name) => (
+        {["M3E", "M3T", "M3M", "M4T", "UNKNOWN"].map((name) => (
           <button
             className={platform === name ? `mediaPlatform active ${platformClass(name)}` : `mediaPlatform ${platformClass(name)}`}
             key={name}

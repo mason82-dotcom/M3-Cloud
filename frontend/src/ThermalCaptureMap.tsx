@@ -71,7 +71,7 @@ function summary(properties: Record<string, unknown>): string {
   const capture =
     typeof properties.capture_group === "string"
       ? properties.capture_group.split("/").pop()
-      : "M3T capture";
+      : "DJI thermal capture";
   const max =
     typeof properties.max_c === "number"
       ? `${properties.max_c.toFixed(1)} °C max`

@@ -372,7 +372,7 @@ async def download_processing_handoff(
         content=payload,
         media_type="application/json",
         headers={
-            "Content-Disposition": 'attachment; filename="m3t-thermogram-handoff.json"',
+            "Content-Disposition": 'attachment; filename="dji-thermogram-handoff.json"',
             "Content-Length": str(len(payload)),
         },
     )

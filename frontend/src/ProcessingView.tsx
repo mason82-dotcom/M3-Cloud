@@ -115,14 +115,20 @@ function thermalSourceIdentityParts(
     identity && typeof identity.status === "string"
       ? identity.status
       : null;
+  const expected =
+    identity && typeof identity.expected_platform === "string"
+      ? identity.expected_platform
+      : typeof details.platform === "string"
+        ? details.platform
+        : "DJI";
   if (status === "CONFIRMED") {
-    return ["M3T model metadata confirmed"];
+    return [`${expected} model metadata confirmed`];
   }
   if (status === "UNCONFIRMED") {
-    return ["M3T model metadata unconfirmed"];
+    return [`${expected} model metadata unconfirmed`];
   }
   if (status) {
-    return [`M3T model metadata ${status}`];
+    return [`${expected} model metadata ${status}`];
   }
   return [];
 }
@@ -172,7 +178,12 @@ function withThermalContext(
 
 function thermalResultSummary(result: ProcessingResult): string | null {
   const details = result.details;
-  if (!details || details.thermal_contract !== "M3T_THERMAL_RESULTS_V1") return null;
+  if (
+    !details ||
+    !["M3T_THERMAL_RESULTS_V1", "M4T_THERMAL_RESULTS_V1"].includes(
+      String(details.thermal_contract ?? ""),
+    )
+  ) return null;
 
   const kind = typeof details.result_kind === "string" ? details.result_kind : "THERMAL";
   const stats =
@@ -304,13 +315,17 @@ function thermalResultSummary(result: ProcessingResult): string | null {
         ? summary.registration_status
         : null;
     const identityConfirmed =
-      summary && typeof summary.m3t_identity_confirmed_count === "number"
-        ? summary.m3t_identity_confirmed_count
-        : null;
+      summary && typeof summary.source_identity_confirmed_count === "number"
+        ? summary.source_identity_confirmed_count
+        : summary && typeof summary.m3t_identity_confirmed_count === "number"
+          ? summary.m3t_identity_confirmed_count
+          : null;
     const identityUnconfirmed =
-      summary && typeof summary.m3t_identity_unconfirmed_count === "number"
-        ? summary.m3t_identity_unconfirmed_count
-        : null;
+      summary && typeof summary.source_identity_unconfirmed_count === "number"
+        ? summary.source_identity_unconfirmed_count
+        : summary && typeof summary.m3t_identity_unconfirmed_count === "number"
+          ? summary.m3t_identity_unconfirmed_count
+          : null;
     const parts = ["Thermal summary"];
     if (captures !== null) parts.push(`${captures} captures`);
     if (hotspots !== null) parts.push(`${hotspots} hotspot candidates`);
@@ -321,8 +336,10 @@ function thermalResultSummary(result: ProcessingResult): string | null {
     if (identityConfirmed !== null || identityUnconfirmed !== null) {
       const confirmed = identityConfirmed ?? 0;
       const unconfirmed = identityUnconfirmed ?? 0;
+      const platform =
+        typeof details.platform === "string" ? details.platform : "DJI";
       parts.push(
-        `M3T model metadata ${confirmed} confirmed / ${unconfirmed} unconfirmed`,
+        `${platform} model metadata ${confirmed} confirmed / ${unconfirmed} unconfirmed`,
       );
     }
     if (registrationStatus === "NOT_REGISTERED") {
@@ -537,7 +554,7 @@ export function ProcessingView() {
   const thermogramDatasets = useMemo(
     () =>
       datasets.filter((dataset) =>
-        dataset.platform === "M3T" &&
+        ["M3T", "M4T"].includes(dataset.platform) &&
         dataset.workflows.some(
           (workflow) => workflow.key === "THERMOGRAM" && workflow.ready,
         ),
@@ -620,7 +637,7 @@ export function ProcessingView() {
       const job = await createThermogramJob({
         name:
           thermogramName.trim() ||
-          `${thermogramPrefix.split("/").pop() ?? "M3T"} Thermogram`,
+          `${thermogramPrefix.split("/").pop() ?? "DJI"} Thermogram`,
         input_prefix: thermogramPrefix,
       });
       const handoff = await fetchThermogramHandoff(job.id);
@@ -751,21 +768,21 @@ export function ProcessingView() {
       <section className="panel thermogramCreate">
         <div className="panelHead">
           <div>
-            <h2>M3T Thermogram</h2>
-            <small>M3T radiometric R-JPEG processing · originals stay read-only</small>
+            <h2>DJI Thermogram</h2>
+            <small>M3T / Matrice 4T radiometric R-JPEG processing · originals stay read-only</small>
           </div>
-          <span>{thermogramDatasets.length} M3T datasets</span>
+          <span>{thermogramDatasets.length} thermal datasets</span>
         </div>
 
         <div className="processingForm thermogramForm">
           <label>
-            M3T dataset
+            Thermal dataset
             <select
               value={thermogramPrefix}
               onChange={(event) => setThermogramPrefix(event.target.value)}
             >
               {thermogramDatasets.length === 0 ? (
-                <option value="">No complete M3T Wide/Thermal dataset</option>
+                <option value="">No ready M3T/M4T thermal dataset</option>
               ) : thermogramDatasets.map((item) => (
                 <option key={item.prefix} value={item.prefix}>
                   {item.prefix} · {item.asset_count} originals
@@ -788,23 +805,23 @@ export function ProcessingView() {
             onClick={() => void submitThermogram()}
             type="button"
           >
-            {thermogramSubmitting ? "Creating…" : "Create M3T thermal job"}
+            {thermogramSubmitting ? "Creating…" : "Create thermal job"}
           </button>
         </div>
 
         {selectedThermogramDataset ? (
           <div className="processingDataset">
-            <span>Platform<b>M3T</b></span>
-            <span>Complete pairs<b>{selectedThermogramWorkflow?.complete_groups ?? 0}</b></span>
+            <span>Platform<b>{selectedThermogramDataset.platform}</b></span>
+            <span>Thermal captures<b>{selectedThermogramWorkflow?.complete_groups ?? 0}</b></span>
             <span>Frozen files<b>{selectedThermogramWorkflow?.eligible_assets ?? 0}</b></span>
             <span>Media<b>WIDE / THERMAL</b></span>
           </div>
         ) : null}
 
         <div className="processingProfile thermogramProfile">
-          <strong>M3T radiometric worker handoff</strong>
+          <strong>M3T / M4T radiometric worker handoff</strong>
           <span>
-            M3-Cloud freezes complete M3T Wide/Thermal pairs and SHA-256 hashes.
+            M3-Cloud freezes thermal captures, optional Wide companions and SHA-256 hashes.
             The x86-64 thermal worker decodes the original DJI R-JPEG with DJI TSDK,
             writes Float32 °C TIFF + preview + provenance, and leaves all source
             images unchanged. The external/manual handoff remains usable as fallback.
@@ -944,12 +961,16 @@ export function ProcessingView() {
 
               {handoffs[job.id] ? (
                 <div className="thermogramPath">
-                  <span>M3T worker input</span>
+                  <span>{handoffs[job.id].platform} worker input</span>
                   <code>{handoffs[job.id].external_path}</code>
                   <small>
                     {handoffs[job.id].worker_contract} · {
                       handoffs[job.id].capture_group_count
-                    } complete pairs · {handoffs[job.id].asset_count} frozen originals
+                    } thermal captures · {
+                      handoffs[job.id].paired_capture_group_count ?? 0
+                    } with Wide · {
+                      handoffs[job.id].thermal_only_capture_group_count ?? 0
+                    } thermal-only · {handoffs[job.id].asset_count} frozen originals
                   </small>
                   <span>Result drop</span>
                   <code>{handoffs[job.id].result_drop_path}</code>

@@ -846,16 +846,19 @@ export interface ThermogramHandoffGroup {
 
 export interface ThermogramHandoff {
   schema_version: number;
-  worker_contract: "M3T_RJPEG_V1" | string;
+  worker_contract: "M3T_RJPEG_V1" | "M3T_RJPEG_V2" | "M4T_RJPEG_V1" | string;
   workflow: "THERMOGRAM";
-  platform: "M3T";
+  platform: "M3T" | "M4T";
   job_id: string;
   flight_id?: string | null;
   input_prefix: string;
   external_path: string;
   result_drop_path: string;
   required_media_kinds: string[];
+  optional_media_kinds?: string[];
   capture_group_count: number;
+  paired_capture_group_count?: number;
+  thermal_only_capture_group_count?: number;
   asset_count: number;
   capture_groups: ThermogramHandoffGroup[];
 }
