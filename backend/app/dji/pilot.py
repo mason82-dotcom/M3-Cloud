@@ -43,6 +43,8 @@ def build_pilot_bootstrap(
 
     workspace_id = settings.dji_pilot_workspace_id.strip()
     invalid: list[str] = []
+    if not settings.dji_mqtt_enabled:
+        invalid.append("dji_mqtt_enabled")
     if workspace_id and not _valid_workspace_id(workspace_id):
         invalid.append("workspace_id")
 

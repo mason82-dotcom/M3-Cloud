@@ -31,6 +31,7 @@ def test_pilot_bootstrap_uses_rc_reachable_urls_and_valid_workspace_uuid():
             "dji_pilot_mqtt_username": "pilot2",
             "dji_pilot_mqtt_password": "secret",
             "dji_pilot_ws_url": "ws://192.168.178.45:8080/ws/dji-pilot",
+            "dji_mqtt_enabled": True,
         }
     )
 
@@ -85,3 +86,28 @@ def test_pilot_bootstrap_rejects_invalid_workspace_mqtt_and_ws_scheme():
     assert "workspace_id" in result["invalid"]
     assert "mqtt_url" in result["invalid"]
     assert "ws_url" in result["invalid"]
+
+
+def test_pilot_bootstrap_requires_server_side_dji_mqtt_core():
+    value = Settings(_env_file=None).model_copy(
+        update={
+            "dji_pilot_app_id": "app-id",
+            "dji_pilot_app_key": "app-key",
+            "dji_pilot_license": "license",
+            "dji_pilot_workspace_id": "e3dea0f5-37f2-4d79-ae58-490af3228069",
+            "dji_pilot_api_token": "pilot-token",
+            "dji_pilot_mqtt_url": "tcp://192.168.178.45:1883",
+            "dji_pilot_mqtt_username": "pilot2",
+            "dji_pilot_mqtt_password": "secret",
+            "dji_pilot_ws_url": "ws://192.168.178.45:8080/ws/dji-pilot",
+            "dji_mqtt_enabled": False,
+        }
+    )
+
+    result = build_pilot_bootstrap(
+        value,
+        public_base_url="http://192.168.178.45:8080",
+    )
+
+    assert result["ready"] is False
+    assert "dji_mqtt_enabled" in result["invalid"]
