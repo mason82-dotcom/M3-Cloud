@@ -63,8 +63,11 @@ def test_m3e_2cm_grid_matches_camera_geometry_and_is_wire_ready():
 
     commands = [item["command"] for item in preview["plan"]["items"]]
     assert commands[:3] == [22, 178, 1000]
+    assert commands[-1] == 20
     assert commands.count(206) == geometry["capture_segment_count"] * 2
-    assert preview["mission_item_count"] == 3 + geometry["capture_segment_count"] * 4
+    assert preview["mission_item_count"] == 4 + geometry["capture_segment_count"] * 4
+    assert preview["input"]["finish_action"] == "RTH"
+    assert preview["plan"]["planning"]["parameters"]["finish_action"] == "RTH"
     assert geometry["expected_photos_upper_bound"] >= 1
     assert geometry["expected_media_assets_upper_bound"] == geometry["expected_photos_upper_bound"]
     assert geometry["nominal_route_time_s"] > geometry["nominal_capture_time_s"]
@@ -81,7 +84,8 @@ def test_each_grid_segment_has_trigger_start_and_stop_so_transits_do_not_capture
         direction_deg=90.0,
         speed_mps=8.0,
     )
-    items = preview["plan"]["items"][3:]
+    assert preview["plan"]["items"][-1]["command"] == 20
+    items = preview["plan"]["items"][3:-1]
     assert len(items) % 4 == 0
     for offset in range(0, len(items), 4):
         start_wp, start_trigger, end_wp, stop_trigger = items[offset:offset + 4]
@@ -91,6 +95,52 @@ def test_each_grid_segment_has_trigger_start_and_stop_so_transits_do_not_capture
         assert end_wp["command"] == 16
         assert stop_trigger["command"] == 206
         assert stop_trigger["param1"] == 0
+
+
+def test_grid_finish_action_can_land_or_be_explicitly_disabled():
+    land = build_grid_preview(
+        platform="M3E",
+        capture_profile="M3E_MAPPING",
+        polygon=rectangle(),
+        gsd_cm=2.0,
+        forward_overlap_pct=80.0,
+        side_overlap_pct=70.0,
+        direction_deg=0.0,
+        speed_mps=8.0,
+        finish_action="LAND",
+    )
+    assert land["plan"]["items"][-1]["command"] == 21
+    assert land["input"]["finish_action"] == "LAND"
+    assert land["warnings"] == []
+
+    no_action = build_grid_preview(
+        platform="M3E",
+        capture_profile="M3E_MAPPING",
+        polygon=rectangle(),
+        gsd_cm=2.0,
+        forward_overlap_pct=80.0,
+        side_overlap_pct=70.0,
+        direction_deg=0.0,
+        speed_mps=8.0,
+        finish_action="NONE",
+    )
+    assert no_action["plan"]["items"][-1]["command"] == 206
+    assert no_action["plan"]["items"][-1]["param1"] == 0
+    assert no_action["input"]["finish_action"] == "NONE"
+    assert any("No terminal RTL/LAND" in warning for warning in no_action["warnings"])
+
+    with pytest.raises(ValueError, match="Finish action"):
+        build_grid_preview(
+            platform="M3E",
+            capture_profile="M3E_MAPPING",
+            polygon=rectangle(),
+            gsd_cm=2.0,
+            forward_overlap_pct=80.0,
+            side_overlap_pct=70.0,
+            direction_deg=0.0,
+            speed_mps=8.0,
+            finish_action="HOVER",
+        )
 
 
 def test_m3m_multispectral_uses_narrower_ms_footprint_and_two_second_cadence():
