@@ -7,6 +7,7 @@ from app.dji.protocol import (
     make_message,
     make_property_reply,
     make_reply,
+    parse_drc_message,
     parse_envelope,
     parse_property_message,
 )
@@ -133,3 +134,37 @@ def test_property_reply_keeps_correlation_ids() -> None:
         "timestamp": 2,
         "data": {"result": 0},
     }
+
+
+
+def test_drc_message_parser_keeps_drc_sequence_separate_from_service_envelope():
+    message = parse_drc_message(
+        {
+            "method": "drc_drone_state_push",
+            "seq": 42,
+            "timestamp": 1700000000000,
+            "data": {
+                "mode_code": 17,
+                "night_lights_state": 1,
+            },
+        }
+    )
+
+    assert message.method == "drc_drone_state_push"
+    assert message.seq == 42
+    assert message.timestamp == 1700000000000
+    assert message.data["mode_code"] == 17
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"method": "", "data": {}},
+        {"method": "heart_beat", "data": []},
+        {"method": "heart_beat", "data": {}, "seq": True},
+        {"method": "heart_beat", "data": {}, "timestamp": "bad"},
+    ],
+)
+def test_drc_message_parser_fails_closed_on_invalid_envelope(payload):
+    with pytest.raises(ProtocolError):
+        parse_drc_message(payload)

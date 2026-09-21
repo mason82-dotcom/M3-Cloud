@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
+from app.dji.drc import DJIDRCStateStore
 from app.dji.events import DJIEventDispatcher
 from app.dji.protocol import (
     ProtocolError,
@@ -10,6 +11,7 @@ from app.dji.protocol import (
     make_property_reply,
     make_reply,
     parse_correlated_message,
+    parse_drc_message,
     parse_envelope,
     parse_property_message,
 )
@@ -52,6 +54,7 @@ class DJIMessageRouter:
         transactions: DJITransactionManager | None = None,
         events: DJIEventDispatcher | None = None,
         requests: DJIRequestDispatcher | None = None,
+        drc_state: DJIDRCStateStore | None = None,
     ):
         self.registry = registry
         self.publisher = publisher
@@ -59,6 +62,7 @@ class DJIMessageRouter:
         self.transactions = transactions
         self.events = events
         self.requests = requests
+        self.drc_state = drc_state
 
     async def handle(
         self,
@@ -98,7 +102,7 @@ class DJIMessageRouter:
             return
 
         if parsed.kind is TopicKind.DRC_UP:
-            logger.debug("DJI DRC uplink received from %s", parsed.device_sn)
+            await self._handle_drc_up(parsed.device_sn, payload)
             return
 
         logger.debug("Ignoring unsupported DJI topic %s", topic)
@@ -285,3 +289,36 @@ class DJIMessageRouter:
             qos=0,
             retain=False,
         )
+
+
+    async def _handle_drc_up(
+        self,
+        gateway_sn: str,
+        payload: bytes,
+    ) -> None:
+        try:
+            message = parse_drc_message(payload)
+        except ProtocolError:
+            logger.warning(
+                "Ignoring invalid DJI DRC uplink from %s",
+                gateway_sn,
+                exc_info=True,
+            )
+            return
+
+        if self.drc_state is None:
+            logger.debug(
+                "No DJI DRC state store configured for %s/%s",
+                gateway_sn,
+                message.method,
+            )
+            return
+
+        try:
+            await self.drc_state.update(gateway_sn, message)
+        except Exception:
+            logger.exception(
+                "Failed to store DJI DRC uplink %s from %s",
+                message.method,
+                gateway_sn,
+            )

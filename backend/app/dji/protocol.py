@@ -219,3 +219,47 @@ def make_property_reply(
     if message.gateway is not None:
         reply["gateway"] = message.gateway
     return reply
+
+
+
+@dataclass(frozen=True)
+class DRCMessage:
+    """DJI DRC uplink/downlink envelope.
+
+    DRC traffic is intentionally separate from the normal TID/BID service
+    envelope. DJI documents method/data plus optional sequence/timestamp fields.
+    """
+
+    method: str
+    data: dict[str, Any]
+    seq: int | None = None
+    timestamp: int | None = None
+
+
+def parse_drc_message(
+    payload: bytes | str | Mapping[str, Any],
+) -> DRCMessage:
+    decoded = _decode_object(payload)
+    method = _required_text(decoded, "method")
+    data = decoded.get("data")
+    if not isinstance(data, dict):
+        raise ProtocolError("DRC data must be an object")
+
+    seq = decoded.get("seq")
+    if seq is not None and (
+        not isinstance(seq, int) or isinstance(seq, bool)
+    ):
+        raise ProtocolError("DRC seq must be an integer")
+
+    timestamp = decoded.get("timestamp")
+    if timestamp is not None and (
+        not isinstance(timestamp, int) or isinstance(timestamp, bool)
+    ):
+        raise ProtocolError("DRC timestamp must be an integer")
+
+    return DRCMessage(
+        method=method,
+        data=dict(data),
+        seq=seq,
+        timestamp=timestamp,
+    )

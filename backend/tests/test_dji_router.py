@@ -267,3 +267,46 @@ async def test_event_handler_failure_still_returns_error_ack() -> None:
     assert topic == "thing/product/RC123/events_reply"
     reply = parse_envelope(raw)
     assert reply.data["result"] == 1
+
+
+
+class FakeDRCState:
+    def __init__(self):
+        self.calls = []
+
+    async def update(self, gateway_sn, message):
+        self.calls.append((gateway_sn, message))
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_drc_uplink_is_parsed_and_persisted_instead_of_dropped():
+    drc_state = FakeDRCState()
+    router = DJIMessageRouter(
+        FakeRegistry(),
+        FakePublisher(),
+        FakeTelemetry(),
+        drc_state=drc_state,
+    )
+
+    await router.handle(
+        "thing/product/RC123/drc/up",
+        json.dumps(
+            {
+                "method": "drc_drone_state_push",
+                "seq": 11,
+                "data": {
+                    "mode_code": 17,
+                    "night_lights_state": 1,
+                    "stealth_state": 0,
+                },
+            }
+        ).encode(),
+    )
+
+    assert len(drc_state.calls) == 1
+    gateway_sn, message = drc_state.calls[0]
+    assert gateway_sn == "RC123"
+    assert message.method == "drc_drone_state_push"
+    assert message.seq == 11
+    assert message.data["mode_code"] == 17
