@@ -229,3 +229,41 @@ async def test_unknown_device_request_fails_closed() -> None:
     assert topic == "thing/product/RC123/requests_reply"
     reply = parse_envelope(raw)
     assert reply.data["result"] != 0
+
+
+
+class RaisingEvents:
+    async def handle(self, gateway_sn, envelope):
+        del gateway_sn, envelope
+        raise RuntimeError("redis unavailable")
+
+
+@pytest.mark.asyncio
+async def test_event_handler_failure_still_returns_error_ack() -> None:
+    publisher = FakePublisher()
+    router = DJIMessageRouter(
+        FakeRegistry(),
+        publisher,
+        FakeTelemetry(),
+        events=RaisingEvents(),
+    )
+
+    await router.handle(
+        "thing/product/RC123/events",
+        json.dumps(
+            {
+                "tid": "t-event-fail",
+                "bid": "b-event-fail",
+                "timestamp": 601,
+                "method": "drc_status_notify",
+                "need_reply": 1,
+                "data": {"result": 0, "drc_state": 2},
+            }
+        ).encode(),
+    )
+
+    assert len(publisher.messages) == 1
+    topic, raw, _, _ = publisher.messages[0]
+    assert topic == "thing/product/RC123/events_reply"
+    reply = parse_envelope(raw)
+    assert reply.data["result"] == 1
