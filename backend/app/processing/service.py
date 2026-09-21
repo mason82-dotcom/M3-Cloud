@@ -293,6 +293,22 @@ def thermal_result_manifest_details(
             "result_kind": "THERMAL_MANIFEST",
         }
     }
+    capture_points = manifest.get("capture_points_geojson")
+    if isinstance(capture_points, str) and capture_points:
+        try:
+            relative = _external_relative_path(capture_points)
+        except ValueError:
+            relative = ""
+        if relative:
+            details[relative] = {
+                **manifest_common,
+                "result_kind": "THERMAL_CAPTURE_POINTS",
+                "georeferenced": True,
+                "geometry_scope": "CAPTURE_CENTER_ONLY",
+                "temperature_pixels_georeferenced": False,
+                "feature_count": manifest.get("georeferenced_capture_count"),
+            }
+
     groups = manifest.get("capture_groups")
     if not isinstance(groups, list):
         return details
