@@ -79,6 +79,7 @@ class GridPlannerPreviewRequest(BaseModel):
     speed_mps: float = Field(default=8.0, gt=0.0, le=25.0)
     gimbal_pitch_deg: float = Field(default=-90.0, ge=-90.0, le=35.0)
     overshoot_m: float | None = Field(default=None, ge=0.0, le=500.0)
+    finish_action: Literal["RTH", "LAND", "NONE"] = "RTH"
 
 
 def _base_payload(mission: Mission) -> dict[str, Any]:
@@ -227,6 +228,7 @@ async def mission_grid_preview(body: GridPlannerPreviewRequest) -> dict[str, Any
             speed_mps=body.speed_mps,
             gimbal_pitch_deg=body.gimbal_pitch_deg,
             overshoot_m=body.overshoot_m,
+            finish_action=body.finish_action,
         )
     except ValueError as exc:
         raise HTTPException(
