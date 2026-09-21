@@ -124,6 +124,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias="M3CLOUD_DJI_PILOT_MQTT_PASSWORD",
     )
+    dji_pilot_ws_url: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_WS_URL",
+    )
     dji_pilot_live_publish_type: str = Field(
         default="video-on-demand",
         validation_alias="M3CLOUD_DJI_PILOT_LIVE_PUBLISH_TYPE",
