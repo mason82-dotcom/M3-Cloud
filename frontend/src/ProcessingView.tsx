@@ -57,6 +57,26 @@ function statusClass(status: string): string {
   return "warn";
 }
 
+function thermalResultSummary(result: ProcessingResult): string | null {
+  const details = result.details;
+  if (!details || details.thermal_contract !== "M3T_THERMAL_RESULTS_V1") return null;
+
+  const kind = typeof details.result_kind === "string" ? details.result_kind : "THERMAL";
+  const stats =
+    details.statistics && typeof details.statistics === "object"
+      ? details.statistics as Record<string, unknown>
+      : null;
+  const min = stats && typeof stats.min_c === "number" ? stats.min_c : null;
+  const max = stats && typeof stats.max_c === "number" ? stats.max_c : null;
+  if (kind === "TEMPERATURE_RASTER" && min !== null && max !== null) {
+    return `Temperature raster · ${min.toFixed(1)}–${max.toFixed(1)} °C`;
+  }
+  if (kind === "THERMAL_PREVIEW") return "Thermal preview";
+  if (kind === "THERMAL_METADATA") return "Thermal metadata";
+  if (kind === "THERMAL_MANIFEST") return "Thermal result manifest";
+  return kind;
+}
+
 function bytes(value: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = value;
@@ -632,7 +652,9 @@ export function ProcessingView() {
                       href={processingResultDownloadUrl(job.id, result.id)}
                       key={result.id}
                     >
-                      {result.asset_name}
+                      {thermalResultSummary(result)
+                        ? `${thermalResultSummary(result)} · ${result.asset_name}`
+                        : result.asset_name}
                     </a>
                   ))}
                 </div>
