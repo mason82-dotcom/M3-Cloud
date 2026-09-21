@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
@@ -41,8 +42,8 @@ class WaylineUploadMetadata(BaseModel):
 
 class WaylineUploadCallback(BaseModel):
     object_key: str = Field(min_length=1, max_length=1024)
-    name: str = Field(min_length=1, max_length=255)
-    metadata: WaylineUploadMetadata
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    metadata: WaylineUploadMetadata | None = None
 
 
 def _response(
@@ -335,14 +336,19 @@ async def wayline_upload_callback(
             bucket=bucket,
             object_key=body.object_key,
         )
-        validate_native_wayline_metadata(
-            inspection,
-            drone_model_key=body.metadata.drone_model_key,
-            payload_model_keys=body.metadata.payload_model_keys,
-            template_types=body.metadata.template_types,
-        )
+        if body.metadata is not None:
+            validate_native_wayline_metadata(
+                inspection,
+                drone_model_key=body.metadata.drone_model_key,
+                payload_model_keys=body.metadata.payload_model_keys,
+                template_types=body.metadata.template_types,
+            )
     except Exception as exc:
         return _failure(f"DJI wayline validation failed: {exc}")
+
+    raw_name = PurePosixPath(body.object_key).name
+    fallback_name = PurePosixPath(raw_name).stem or "DJI Wayline"
+    resolved_name = (body.name or fallback_name).strip()[:255] or "DJI Wayline"
 
     now = datetime.now(timezone.utc)
     async with session_factory() as session:
@@ -355,7 +361,7 @@ async def wayline_upload_callback(
         if value is None:
             value = DjiWaylineFile(
                 workspace_id=workspace_id,
-                name=body.name,
+                name=resolved_name,
                 object_key=body.object_key,
                 bucket=bucket,
                 drone_model_key=inspection.drone_model_key,
@@ -370,7 +376,7 @@ async def wayline_upload_callback(
             )
             session.add(value)
         else:
-            value.name = body.name
+            value.name = resolved_name
             value.bucket = bucket
             value.drone_model_key = inspection.drone_model_key
             value.payload_model_keys = inspection.payload_model_keys
