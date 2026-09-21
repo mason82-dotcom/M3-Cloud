@@ -41,25 +41,25 @@ import dji.v5.ux.mapkit.maplibre.annotations.MMarkerCircle;
 import dji.v5.ux.mapkit.maplibre.annotations.MPolygon;
 import dji.v5.ux.mapkit.maplibre.annotations.MSymbolLayerMarker;
 import dji.v5.ux.mapkit.maplibre.utils.MaplibreUtils;
-import com.mapbox.mapboxsdk.annotations.Icon;
-import com.mapbox.mapboxsdk.annotations.IconFactory;
-import com.mapbox.mapboxsdk.annotations.Marker;
-import com.mapbox.mapboxsdk.annotations.MarkerOptions;
-import com.mapbox.mapboxsdk.annotations.Polygon;
-import com.mapbox.mapboxsdk.camera.CameraPosition;
-import com.mapbox.mapboxsdk.camera.CameraUpdate;
-import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.maps.MapView;
-import com.mapbox.mapboxsdk.maps.MapboxMap;
-import com.mapbox.mapboxsdk.maps.Projection;
-import com.mapbox.mapboxsdk.maps.Style;
-import com.mapbox.mapboxsdk.style.layers.CircleLayer;
-import com.mapbox.mapboxsdk.style.layers.FillLayer;
-import com.mapbox.mapboxsdk.style.layers.Layer;
-import com.mapbox.mapboxsdk.style.layers.LineLayer;
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
-import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
-import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
+import org.maplibre.android.annotations.Icon;
+import org.maplibre.android.annotations.IconFactory;
+import org.maplibre.android.annotations.Marker;
+import org.maplibre.android.annotations.MarkerOptions;
+import org.maplibre.android.annotations.Polygon;
+import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.camera.CameraUpdate;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.maps.MapView;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.Projection;
+import org.maplibre.android.maps.Style;
+import org.maplibre.android.style.layers.CircleLayer;
+import org.maplibre.android.style.layers.FillLayer;
+import org.maplibre.android.style.layers.Layer;
+import org.maplibre.android.style.layers.LineLayer;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.android.style.layers.SymbolLayer;
+import org.maplibre.android.style.sources.GeoJsonSource;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -69,16 +69,16 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * MapboxMap的代理类
+ * MapLibreMap的代理类
  * Created by joeyang on 10/15/17.
  */
 public class MaplibreMapDelegate extends DJIBaseMap implements DJIMap,
-        MapboxMap.OnMarkerClickListener,
-        MapboxMap.OnMapClickListener,
-        MapboxMap.OnInfoWindowClickListener,
+        MapLibreMap.OnMarkerClickListener,
+        MapLibreMap.OnMapClickListener,
+        MapLibreMap.OnInfoWindowClickListener,
         Style.OnStyleLoaded,
-        MapboxMap.OnCameraMoveListener,
-        MapboxMap.OnMapLongClickListener,
+        MapLibreMap.OnCameraMoveListener,
+        MapLibreMap.OnMapLongClickListener,
         View.OnTouchListener {
 
 
@@ -166,9 +166,9 @@ public class MaplibreMapDelegate extends DJIBaseMap implements DJIMap,
     private Context context;
 
     /**
-     * 真正的 MapboxMap 实例
+     * 真正的 MapLibreMap 实例
      */
-    private MapboxMap mapboxMap;
+    private MapLibreMap mapboxMap;
 
     /**
      * 影子marker和真正marker的map
@@ -292,7 +292,7 @@ public class MaplibreMapDelegate extends DJIBaseMap implements DJIMap,
      */
    // private LinkedList<Pair<Integer, ? extends Layer>> markerZIndexLayerList = new LinkedList<>();
 
-    public MaplibreMapDelegate(MapboxMap mapboxMap, Context context, MapView view, Style style) {
+    public MaplibreMapDelegate(MapLibreMap mapboxMap, Context context, MapView view, Style style) {
         this.context = context;
         this.mapboxMap = mapboxMap;
         // this.mapView = view;
