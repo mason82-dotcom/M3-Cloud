@@ -104,7 +104,6 @@ object Payload {
         )
     }
 
-    init { enableLaser() }
 
     // ==================== Thermal sensor "sun protection" ====================
 
