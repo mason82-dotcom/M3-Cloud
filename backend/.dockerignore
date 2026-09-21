@@ -1,0 +1,9 @@
+# The backend image only needs its locked runtime dependencies, application, and migrations.
+*
+!Dockerfile
+!requirements.lock
+!app/
+!app/**
+!alembic.ini
+!alembic/
+!alembic/**
