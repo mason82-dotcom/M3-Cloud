@@ -61,23 +61,19 @@ class DJIService:
             username=settings.dji_mqtt_username or None,
             password=settings.dji_mqtt_password or None,
         )
+        services = DJIServiceClient(transport, transactions)
+        properties = DJIPropertyClient(transport, transactions)
+        payloads = DJIPayloadControl(services)
+        devices = DJIDeviceService(registry, telemetry, properties)
+        gateways = DJIGatewayService(registry, telemetry)
         router = DJIMessageRouter(
             registry,
             transport,
             telemetry,
             transactions=transactions,
             events=events,
-            event_state=event_state,
             requests=requests,
-            devices=devices,
-            gateways=gateways,
-            payloads=payloads,
         )
-        services = DJIServiceClient(transport, transactions)
-        properties = DJIPropertyClient(transport, transactions)
-        payloads = DJIPayloadControl(services)
-        devices = DJIDeviceService(registry, telemetry, properties)
-        gateways = DJIGatewayService(registry, telemetry)
 
         return cls(
             registry=registry,
@@ -88,5 +84,9 @@ class DJIService:
             services=services,
             properties=properties,
             events=events,
+            event_state=event_state,
             requests=requests,
+            devices=devices,
+            gateways=gateways,
+            payloads=payloads,
         )
