@@ -209,6 +209,8 @@ dependencies {
     /** <----------------- Sample dependencies ------------------> **/
     implementation project(':uxsdk')
     implementation rootProject.deps.appcompat
+    implementation rootProject.deps.annotation
+    implementation rootProject.deps.collection
     implementation rootProject.deps.constraintLayout
     implementation rootProject.deps.aacCommon
     implementation rootProject.deps.aacRuntime
@@ -218,6 +220,7 @@ dependencies {
     implementation rootProject.deps.ktxNavigation
     implementation rootProject.deps.ktxNavigationUi
     implementation rootProject.deps.recyclerview
+    implementation rootProject.deps.cardview
     implementation rootProject.deps.legacySupport
     implementation rootProject.deps.lifecycleViewModel
     implementation rootProject.deps.lifecycleLiveData
@@ -226,6 +229,11 @@ dependencies {
     implementation rootProject.deps.dynamicanimation
     implementation rootProject.deps.expandedit
     implementation rootProject.deps.rx3Kt
+    // App sources directly import these APIs; do not rely on hidden/transitive UXSDK or DJI versions.
+    implementation rootProject.deps.rx3Android
+    implementation rootProject.deps.rx3Java
+    implementation rootProject.deps.material
+    implementation rootProject.deps.wpmzSdk
     implementation rootProject.deps.dom
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
     implementation rootProject.deps.lynx

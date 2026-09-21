@@ -2,6 +2,14 @@
 apply from: rootProject.file('dependencies.gradle')
 
 buildscript {
+    dependencyLocking {
+        lockMode = LockMode.STRICT
+    }
+
+    configurations.classpath {
+        resolutionStrategy.activateDependencyLocking()
+    }
+
     repositories {
         google()
         mavenCentral()
@@ -20,6 +28,11 @@ apply plugin: 'io.gitlab.arturbosch.detekt'
 
 
 allprojects {
+    dependencyLocking {
+        lockMode = LockMode.STRICT
+        lockAllConfigurations()
+    }
+
     repositories {
         google()
         mavenCentral()
@@ -27,6 +40,52 @@ allprojects {
     }
 
 }
+
+def registerLockStateResolver = { Project target, List<String> configurationNames ->
+    target.tasks.register('resolveProductionLockState') {
+        notCompatibleWithConfigurationCache('Resolves selected configurations to write dependency lock state')
+        doLast {
+            if (!gradle.startParameter.writeDependencyLocks) {
+                throw new GradleException("$path must be run with --write-locks")
+            }
+            configurationNames.each { name ->
+                def configuration = target.configurations.getByName(name)
+                if (!configuration.canBeResolved) {
+                    throw new GradleException("${target.path}:${name} is not resolvable")
+                }
+                configuration.resolve()
+            }
+        }
+    }
+}
+
+registerLockStateResolver(project(':app'), [
+        'currentDebugCompileClasspath',
+        'currentDebugRuntimeClasspath',
+        'currentReleaseCompileClasspath',
+        'currentReleaseRuntimeClasspath',
+        'demoBiomassDebugCompileClasspath',
+        'demoBiomassDebugRuntimeClasspath',
+        'demoBiomassReleaseCompileClasspath',
+        'demoBiomassReleaseRuntimeClasspath',
+        'currentDebugUnitTestCompileClasspath',
+        'currentDebugUnitTestRuntimeClasspath',
+        'currentDebugLintChecksClasspath',
+        'androidLintTool',
+        'kotlinBuildToolsApiClasspath',
+])
+
+registerLockStateResolver(project(':uxsdk'), [
+        'debugCompileClasspath',
+        'debugRuntimeClasspath',
+        'releaseCompileClasspath',
+        'releaseRuntimeClasspath',
+        'debugUnitTestCompileClasspath',
+        'debugUnitTestRuntimeClasspath',
+        'debugLintChecksClasspath',
+        'androidLintTool',
+        'kotlinBuildToolsApiClasspath',
+])
 
 def sampleJavaSource = file('../lyrebird-app/src/main/java')
 def uxsdkJavaSource = file('../android-sdk-v5-uxsdk/src/main/java')
