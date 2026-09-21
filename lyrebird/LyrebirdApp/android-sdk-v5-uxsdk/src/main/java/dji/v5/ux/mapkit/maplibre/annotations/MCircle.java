@@ -12,18 +12,18 @@ import dji.v5.ux.mapkit.maplibre.utils.MaplibreUtils;
 
 import com.mapbox.geojson.Point;
 import com.mapbox.geojson.Polygon;
-import com.mapbox.mapboxsdk.annotations.Polyline;
-import com.mapbox.mapboxsdk.annotations.PolylineOptions;
-import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.maps.MapboxMap;
-import com.mapbox.mapboxsdk.style.layers.FillLayer;
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
-import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
+import org.maplibre.android.annotations.Polyline;
+import org.maplibre.android.annotations.PolylineOptions;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.style.layers.FillLayer;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.android.style.sources.GeoJsonSource;
 
 import java.util.ArrayList;
 
-import static com.mapbox.mapboxsdk.style.layers.Property.NONE;
-import static com.mapbox.mapboxsdk.style.layers.Property.VISIBLE;
+import static org.maplibre.android.style.layers.Property.NONE;
+import static org.maplibre.android.style.layers.Property.VISIBLE;
 
 /**
  * Created by joeyang on 11/3/17.
@@ -32,7 +32,7 @@ public class MCircle implements DJICircle {
 
     private static final float NO_ALPHA = 0.0F;
 
-    private MapboxMap mapboxMap;
+    private MapLibreMap mapboxMap;
     private FillLayer singleCircleLayer;
     private GeoJsonSource source;
     private MaplibreMapDelegate maplibreMapDelegate;
@@ -45,7 +45,7 @@ public class MCircle implements DJICircle {
 
 
     public MCircle(MaplibreMapDelegate maplibreMapDelegate,
-                   MapboxMap mapboxMap,
+                   MapLibreMap mapboxMap,
                    FillLayer singleCircleLayer,
                    GeoJsonSource source,
                    DJICircleOptions options) {
@@ -98,7 +98,7 @@ public class MCircle implements DJICircle {
 
         source.setGeoJson(polygon);
 
-        //Mapbox不能设置边线宽度，太窄了，所以这里通过自己添加边的方式实现
+        //MapLibre不能设置边线宽度，太窄了，所以这里通过自己添加边的方式实现
         ArrayList<LatLng> pointsList = new ArrayList<>();
         for (int i = 0; i < 64; i++) {
             LatLng latLng = new LatLng();
