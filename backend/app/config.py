@@ -73,6 +73,61 @@ class Settings(BaseSettings):
         default=86400,
         validation_alias="M3CLOUD_DJI_STATE_CACHE_TTL_SECONDS",
     )
+
+    # DJI Pilot 2 H5 / JSBridge bootstrap. These URLs must be reachable from
+    # the RC Pro Enterprise; Docker-internal hostnames such as "emqx" are not.
+    dji_pilot_app_id: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_APP_ID",
+    )
+    dji_pilot_app_key: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_APP_KEY",
+    )
+    dji_pilot_license: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_LICENSE",
+    )
+    dji_pilot_workspace_id: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_WORKSPACE_ID",
+    )
+    dji_pilot_platform_name: str = Field(
+        default="M3-Cloud",
+        validation_alias="M3CLOUD_DJI_PILOT_PLATFORM_NAME",
+    )
+    dji_pilot_workspace_name: str = Field(
+        default="M3-Cloud",
+        validation_alias="M3CLOUD_DJI_PILOT_WORKSPACE_NAME",
+    )
+    dji_pilot_workspace_desc: str = Field(
+        default="Self-hosted DJI Enterprise operations",
+        validation_alias="M3CLOUD_DJI_PILOT_WORKSPACE_DESC",
+    )
+    dji_pilot_api_url: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_API_URL",
+    )
+    dji_pilot_api_token: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_API_TOKEN",
+    )
+    dji_pilot_mqtt_url: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_MQTT_URL",
+    )
+    dji_pilot_mqtt_username: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_MQTT_USERNAME",
+    )
+    dji_pilot_mqtt_password: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_MQTT_PASSWORD",
+    )
+    dji_pilot_live_publish_type: str = Field(
+        default="video-on-demand",
+        validation_alias="M3CLOUD_DJI_PILOT_LIVE_PUBLISH_TYPE",
+    )
     live_redis_channel: str = Field(
         default="m3:live",
         validation_alias="M3CLOUD_LIVE_REDIS_CHANNEL",

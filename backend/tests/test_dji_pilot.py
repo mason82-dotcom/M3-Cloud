@@ -1,0 +1,71 @@
+from app.config import Settings
+from app.dji.pilot import build_pilot_bootstrap
+
+
+def test_pilot_bootstrap_fails_closed_when_required_values_are_missing():
+    settings = Settings(_env_file=None)
+
+    result = build_pilot_bootstrap(
+        settings,
+        public_base_url="http://m3-cloud.local",
+    )
+
+    assert result["ready"] is False
+    assert "app_id" in result["missing"]
+    assert "workspace_id" in result["missing"]
+    assert "mqtt_url" in result["missing"]
+    assert result["components"]["media"] is False
+    assert result["components"]["mission"] is False
+
+
+def test_pilot_bootstrap_uses_rc_reachable_urls_and_valid_workspace_uuid():
+    settings = Settings(_env_file=None).model_copy(
+        update={
+            "dji_pilot_app_id": "app-id",
+            "dji_pilot_app_key": "app-key",
+            "dji_pilot_license": "license",
+            "dji_pilot_workspace_id": "e3dea0f5-37f2-4d79-ae58-490af3228069",
+            "dji_pilot_api_token": "pilot-token",
+            "dji_pilot_mqtt_url": "tcp://192.168.178.45:1883",
+            "dji_pilot_mqtt_username": "pilot2",
+            "dji_pilot_mqtt_password": "secret",
+        }
+    )
+
+    result = build_pilot_bootstrap(
+        settings,
+        public_base_url="http://192.168.178.45:8080",
+    )
+
+    assert result["ready"] is True
+    assert result["missing"] == []
+    assert result["invalid"] == []
+    assert result["api"]["host"] == "http://192.168.178.45:8080"
+    assert result["thing"]["host"] == "tcp://192.168.178.45:1883"
+    assert result["workspace"]["id"] == "e3dea0f5-37f2-4d79-ae58-490af3228069"
+    assert result["components"]["thing"] is True
+    assert result["components"]["liveshare"] is True
+
+
+def test_pilot_bootstrap_rejects_invalid_workspace_and_mqtt_scheme():
+    settings = Settings(_env_file=None).model_copy(
+        update={
+            "dji_pilot_app_id": "app-id",
+            "dji_pilot_app_key": "app-key",
+            "dji_pilot_license": "license",
+            "dji_pilot_workspace_id": "not-a-uuid",
+            "dji_pilot_api_token": "pilot-token",
+            "dji_pilot_mqtt_url": "http://broker",
+            "dji_pilot_mqtt_username": "pilot2",
+            "dji_pilot_mqtt_password": "secret",
+        }
+    )
+
+    result = build_pilot_bootstrap(
+        settings,
+        public_base_url="http://m3-cloud.local",
+    )
+
+    assert result["ready"] is False
+    assert "workspace_id" in result["invalid"]
+    assert "mqtt_url" in result["invalid"]

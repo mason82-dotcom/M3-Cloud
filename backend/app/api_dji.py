@@ -5,7 +5,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.dji.liveview import DJILiveView
+from app.dji.pilot import build_pilot_bootstrap
 from app.dji.services import DJIServiceResultError
 from app.dji.transactions import DJITransactionTimeout
 
@@ -32,6 +34,17 @@ class LiveQualityBody(BaseModel):
 class LiveLensBody(BaseModel):
     video_id: str = Field(min_length=1, max_length=255)
     video_type: Literal["normal", "thermal", "wide", "zoom"]
+
+
+
+
+
+@router.get("/pilot/bootstrap")
+async def pilot_bootstrap(request: Request) -> dict[str, Any]:
+    """Configuration consumed by the H5 page embedded in DJI Pilot 2."""
+
+    public_base_url = settings.dji_pilot_api_url.strip() or str(request.base_url).rstrip("/")
+    return build_pilot_bootstrap(settings, public_base_url=public_base_url)
 
 
 def _dji(request: Request):
