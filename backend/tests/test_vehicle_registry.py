@@ -14,7 +14,7 @@ class Provider:
 
 
 @pytest.mark.asyncio
-async def test_registry_fuses_dji_and_lyrebird_for_same_physical_serial():
+async def test_registry_uses_dji_cloud_as_primary_and_keeps_lyrebird_rtk_fact():
     dji = VehicleSnapshot(
         id="vehicle:A",
         sn="A",
@@ -30,7 +30,17 @@ async def test_registry_fuses_dji_and_lyrebird_for_same_physical_serial():
             "battery": {"capacity_percent": 80, "remain_flight_time_s": 600},
             "aircraft_state": {
                 "source": "dji_cloud",
-                "positioning": {"convergence": "CONVERGED"},
+                "positioning": {
+                    "convergence": "CONVERGED",
+                    "quality": 5,
+                    "fix": "UNKNOWN",
+                    "position_source": "DJI_CLOUD",
+                    "rtk": {
+                        "fix": "UNKNOWN",
+                        "convergence": "CONVERGED",
+                        "quality": 5,
+                    },
+                },
             },
         },
     )
@@ -47,7 +57,16 @@ async def test_registry_fuses_dji_and_lyrebird_for_same_physical_serial():
             "battery": {"capacity_percent": 79},
             "aircraft_state": {
                 "source": "lyrebird",
-                "positioning": {"fix": "FIXED", "position_source": "RTK_FUSED"},
+                "positioning": {
+                    "fix": "FIXED",
+                    "position_source": "RTK_FUSED",
+                    "rtk_fixed": True,
+                    "rtk": {
+                        "fix": "FIXED",
+                        "connected": True,
+                        "healthy": True,
+                    },
+                },
             },
         },
     )
@@ -62,15 +81,26 @@ async def test_registry_fuses_dji_and_lyrebird_for_same_physical_serial():
     vehicle = vehicles[0]
     assert vehicle.id == "vehicle:A"
     assert vehicle.sn == "A"
-    assert vehicle.source == "lyrebird"
-    assert vehicle.sources == ("lyrebird", "dji_cloud")
-    assert vehicle.name == "field-drone"
-    assert vehicle.model == "M3E"
+    assert vehicle.source == "dji_cloud"
+    assert vehicle.sources == ("dji_cloud", "lyrebird")
+    assert vehicle.name == "DJI_MAVIC_3E"
+    assert vehicle.model == "DJI_MAVIC_3E"
     assert vehicle.gateway_sn == "RC-A"
+
+    # DJI Cloud remains authoritative where it has a value.
     assert vehicle.telemetry["home_latitude"] == 49.0
     assert vehicle.telemetry["battery"] == {
-        "capacity_percent": 79,
+        "capacity_percent": 80,
         "remain_flight_time_s": 600,
     }
-    assert vehicle.telemetry["aircraft_state"]["positioning"]["fix"] == "FIXED"
-    assert vehicle.telemetry["aircraft_state"]["positioning"]["convergence"] == "CONVERGED"
+    positioning = vehicle.telemetry["aircraft_state"]["positioning"]
+    assert vehicle.telemetry["aircraft_state"]["source"] == "dji_cloud"
+    assert positioning["convergence"] == "CONVERGED"
+    assert positioning["quality"] == 5
+
+    # MSDK/RTK supplements a fact that Pilot-to-Cloud does not expose.
+    assert positioning["fix"] == "FIXED"
+    assert positioning["position_source"] == "RTK_FUSED"
+    assert positioning["rtk_fixed"] is True
+    assert positioning["rtk"]["fix"] == "FIXED"
+    assert positioning["rtk"]["connected"] is True
