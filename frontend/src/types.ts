@@ -264,6 +264,7 @@ export interface MissionGridPreview {
     ingress_distance_m: number;
     return_distance_m: number;
     total_planned_distance_m: number;
+    max_reference_distance_m: number | null;
     capture_distance_m: number;
     expected_photos_upper_bound: number;
     expected_media_assets_upper_bound: number;
