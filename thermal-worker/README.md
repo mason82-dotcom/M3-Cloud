@@ -17,6 +17,10 @@ The recommended runtime is DJI Thermal SDK 1.8. Point the worker at a locally
 installed/extracted SDK with `DJI_TSDK_DIR`. The adapter also works with a
 release directory containing `libdirp.dll` or `libdirp.so` directly.
 
+If a supplied directory contains more than one x86-64 DJI TSDK release, the
+worker rejects it and requires the exact release directory. This avoids
+silently pairing one `libdirp` binary with another release's headers.
+
 Review and comply with the DJI Thermal SDK license/EULA for the SDK version you
 install. No DJI binary is committed to this repository.
 
@@ -32,6 +36,9 @@ For each complete M3T WIDE/THERMAL capture pair the worker writes:
   measurement-parameter mode, SDK ranges, temperature statistics and hotspot analysis.
 - `capture-points.geojson` — source-image GPS capture centers with per-capture
   temperature/hotspot summaries; no pixel georeferencing is implied.
+- `registration-audit.json` — WIDE/THERMAL pair evidence (capture-time,
+  GPS, gimbal and raw DJI calibration hints) with status fixed to
+  `NOT_REGISTERED`; it contains no pixel transform.
 - `thermal-summary.json` — job-level aggregate plus one summary record per capture.
 - `thermal-summary.csv` — tabular export of the same per-capture summary fields.
 - `result-manifest.json` — job-level `M3T_THERMAL_RESULTS_V1` manifest.
@@ -112,6 +119,13 @@ If only a bare `libdirp` binary is supplied with no confirming header, the
 worker still decodes the R-JPEG but skips this provenance-only API-version
 query rather than guessing an unsafe C function arity. The result is marked
 with `API_VERSION_ABI_UNCONFIRMED`.
+
+For every run, the worker records the actual loaded DIRP library filename and
+SHA-256 digest in the per-capture metadata, TIFF description, job manifest and
+summary. All captures in one job must report the same decoder provenance;
+otherwise processing fails closed. The configured `DJI_TSDK_VERSION` label is
+therefore descriptive only—the binary hash is the authoritative decoder
+identity.
 
 
 
@@ -194,7 +208,8 @@ Linux x86-64 TSDK for the container.
 - The SDK-reported R-JPEG width/height are authoritative.
 - The R-JPEG buffer remains alive until the DIRP handle is destroyed.
 - DIRP handles are destroyed in `finally`.
-- Temperature products preserve the source SHA256 and SDK/R-JPEG provenance.
+- Temperature products preserve the source SHA256, SDK/R-JPEG provenance and
+  the exact loaded `libdirp` SHA-256 identity.
 - Job summaries and capture-center GeoJSON are derived only from frozen inputs and
   are covered by the same immutable processing fingerprint.
 - No RGB/thermal pixel alignment is assumed; capture GPS never promotes a sensor-space
