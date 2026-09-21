@@ -82,21 +82,6 @@ jobs:
             echo "MAPLIBRE_TOKEN=dummy"
           } > local.properties
 
-      - name: Generate Gradle dependency lockfiles
-        run: |
-          ./gradlew --no-daemon --no-configuration-cache --write-locks \
-            :app:resolveProductionLockState \
-            :uxsdk:resolveProductionLockState
-
-      - name: Upload Gradle dependency lockfiles
-        uses: actions/upload-artifact@v6
-        with:
-          name: android-gradle-lockfiles
-          if-no-files-found: error
-          path: |
-            lyrebird/LyrebirdApp/**/gradle.lockfile
-            lyrebird/LyrebirdApp/**/buildscript-gradle.lockfile
-
       - name: Spotless, compile, and unit tests
         run: ./gradlew --no-daemon :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
 
