@@ -251,6 +251,30 @@ function thermalResultSummary(result: ProcessingResult): string | null {
     if (gpsEvidence !== null && captures !== null) {
       parts.push(`GPS evidence ${gpsEvidence}/${captures}`);
     }
+    const evidence =
+      summary &&
+      summary.registration_evidence_counts &&
+      typeof summary.registration_evidence_counts === "object"
+        ? summary.registration_evidence_counts as Record<string, unknown>
+        : null;
+    if (evidence && captures !== null) {
+      const evidenceLabels: Array<[string, string]> = [
+        ["gimbal_attitude_pair", "gimbal"],
+        ["flight_attitude_pair", "flight attitude"],
+        ["dji_altitude_pair", "DJI altitude"],
+        ["gps_altitude_pair", "GPS altitude"],
+        ["wide_image_dimensions", "WIDE dimensions"],
+        ["thermal_image_dimensions", "thermal dimensions"],
+        ["wide_dji_calibration", "WIDE calibration"],
+        ["thermal_dji_calibration", "thermal calibration"],
+      ];
+      for (const [key, label] of evidenceLabels) {
+        const value = evidence[key];
+        if (typeof value === "number") {
+          parts.push(`${label} ${value}/${captures}`);
+        }
+      }
+    }
     parts.push(...thermalDecoderProvenanceParts(details));
     return parts.join(" · ");
   }
