@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from thermal_worker.api_client import M3CloudApiError
-from thermal_worker.watch import claim_next_thermogram, process_claimed_thermogram
+from thermal_worker.watch import (
+    claim_next_thermogram,
+    import_next_completed_thermogram,
+    process_claimed_thermogram,
+)
 
 
 class FakeApi:
@@ -110,6 +114,48 @@ def test_failed_job_requires_explicit_retry_flag():
     claimed = claim_next_thermogram(api, retry_failed=True)
 
     assert claimed["id"] == "failed"
+
+
+
+
+def test_completed_external_import_is_recovered_without_redecode():
+    api = FakeApi(
+        [
+            {
+                "id": "done",
+                "kind": "THERMOGRAM",
+                "platform": "M3T",
+                "status": "COMPLETED_EXTERNAL",
+            }
+        ]
+    )
+
+    recovered = import_next_completed_thermogram(api)
+
+    assert recovered == {
+        "job_id": "done",
+        "imported_result_count": 1,
+    }
+    assert api.imported == ["done"]
+    assert api.transitions == []
+
+
+def test_result_import_failed_is_retried():
+    api = FakeApi(
+        [
+            {
+                "id": "retry-import",
+                "kind": "THERMOGRAM",
+                "platform": "M3T",
+                "status": "RESULT_IMPORT_FAILED",
+            }
+        ]
+    )
+
+    recovered = import_next_completed_thermogram(api)
+
+    assert recovered["job_id"] == "retry-import"
+    assert api.imported == ["retry-import"]
 
 
 def test_process_claimed_job_completes_and_imports(tmp_path, monkeypatch):
