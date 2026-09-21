@@ -275,6 +275,22 @@ jobs:
           printf 'm3m-ci-original\n' > "$RUNNER_TEMP/DJI_0001_D.JPG"
           curl -fsS -X POST             -H "Authorization: Bearer $TOKEN"             -F "path=raw/DJI_0001_D.JPG"             -F "file=@$RUNNER_TEMP/DJI_0001_D.JPG;type=image/jpeg"             http://127.0.0.1:5000/orgs/m3cloud-ci/ds/m3m-ci/obj >/dev/null
 
+          LOCAL_SHA="$(sha256sum "$RUNNER_TEMP/DJI_0001_D.JPG" | awk '{print $1}')"
+          DUPLICATE_STATUS="$(curl -sS -o "$RUNNER_TEMP/dronedb-duplicate.json" -w '%{http_code}' -X POST             -H "Authorization: Bearer $TOKEN"             -F "path=raw/DJI_0001_D.JPG"             -F "file=@$RUNNER_TEMP/DJI_0001_D.JPG;type=image/jpeg"             http://127.0.0.1:5000/orgs/m3cloud-ci/ds/m3m-ci/obj)"
+          test "$DUPLICATE_STATUS" = "409"
+
+          OBJECTS="$(curl -fsS -G             -H "Authorization: Bearer $TOKEN"             --data-urlencode "path=raw/DJI_0001_D.JPG"             http://127.0.0.1:5000/orgs/m3cloud-ci/ds/m3m-ci/obj/list)"
+          python3 - "$LOCAL_SHA" <<'PY' <<<"$OBJECTS"
+          import json
+          import sys
+
+          expected = sys.argv[1].lower()
+          entries = json.load(sys.stdin)
+          match = next(item for item in entries if item.get("path") == "raw/DJI_0001_D.JPG")
+          assert match.get("hash", "").lower() == expected, match
+          assert int(match.get("size", -1)) > 0, match
+          PY
+
       - name: Show DroneDB logs on failure
         if: failure()
         run: docker compose logs --no-color dronedb dronedb-node dronedb-db
