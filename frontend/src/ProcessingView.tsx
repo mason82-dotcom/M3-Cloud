@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createThermogramJob,
@@ -143,6 +143,7 @@ export function ProcessingView() {
   const [scenes, setScenes] = useState<Awaited<ReturnType<typeof fetchProcessingScenes>>>([]);
   const [scene, setScene] = useState<Awaited<ReturnType<typeof fetchProcessingScenes>>[number] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const thermalResultLoadAttempts = useRef(new Set<string>());
 
   const loadResults = useCallback(async (jobId: string) => {
     try {
@@ -227,6 +228,27 @@ export function ProcessingView() {
     }, 3000);
     return () => window.clearInterval(timer);
   }, [jobs]);
+
+  useEffect(() => {
+    for (const job of jobs) {
+      if (
+        job.kind !== "THERMOGRAM" ||
+        job.status !== "COMPLETED" ||
+        results[job.id] !== undefined ||
+        thermalResultLoadAttempts.current.has(job.id)
+      ) {
+        continue;
+      }
+      thermalResultLoadAttempts.current.add(job.id);
+      void fetchProcessingResults(job.id)
+        .then((values) => {
+          setResults((current) => ({ ...current, [job.id]: values }));
+        })
+        .catch(() => {
+          thermalResultLoadAttempts.current.delete(job.id);
+        });
+    }
+  }, [jobs, results]);
 
   const availableDatasets = useMemo(
     () =>
