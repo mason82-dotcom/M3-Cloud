@@ -1330,10 +1330,10 @@ class ProcessingManager:
                     ProcessingJob.status == "UPLOADING",
                 )
                 .values(
-                    status="INTERRUPTED",
-                    error="Backend restarted during DroneDB handoff",
+                    status="QUEUED",
+                    error="Resuming DroneDB handoff after backend restart",
                     updated_at=now,
-                    finished_at=now,
+                    finished_at=None,
                 )
             )
             # Older builds used QUEUED for both local queue state and WebODM status 10.
