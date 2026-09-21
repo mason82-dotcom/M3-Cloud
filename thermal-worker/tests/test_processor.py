@@ -164,7 +164,10 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
         "max": 500.0,
     }
     assert metadata["radiometry"]["api_version"] == {"api": 8, "magic": "DIRP"}
+    assert metadata["radiometry"]["integrity"]["status"] == "PASS"
+    assert metadata["radiometry"]["integrity"]["flags"] == []
     assert manifest["capture_groups"][0]["api_version"] == {"api": 8, "magic": "DIRP"}
+    assert manifest["capture_groups"][0]["radiometry_integrity"]["status"] == "PASS"
     assert metadata["analysis"]["hotspots"]["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
     assert metadata["registration"]["wide_thermal_coregistered"] is False
     assert metadata["registration"]["georeferenced_temperature_raster"] is False
@@ -190,6 +193,7 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert summary_json["aggregate"]["georeferenced_capture_count"] == 1
     assert summary_json["aggregate"]["max_c"] == 42.5
     assert summary_json["aggregate"]["hotspot_component_count"] == 0
+    assert summary_json["aggregate"]["radiometry_warning_capture_count"] == 0
     summary_csv = (output / manifest["summary_csv"]).read_text(encoding="utf-8")
     assert "capture_group,capture_time_utc,latitude,longitude" in summary_csv
     assert "M3T/site/nested/DJI_0001" in summary_csv
@@ -499,4 +503,38 @@ def test_existing_manifest_rejects_root_artifact_parent_symlink_escape(tmp_path)
             expected_job_id="job-root",
             expected_fingerprint="e" * 64,
         )
+
+def test_radiometry_integrity_warns_only_on_structural_decode_provenance_issues():
+    from thermal_worker.processor import _radiometry_integrity
+
+    decoded = DecodeResult(
+        temperature_c=np.array([[20.0, np.nan]], dtype=np.float32),
+        width=2,
+        height=1,
+        api_version={"api": 8, "magic": "DIRP"},
+        rjpeg_version={"rjpeg": 3, "header": 1, "curve": 1},
+        measurement_params=None,
+        measurement_ranges=None,
+        measurement_mode="sdk_native_unreadable",
+        measurement_error_code=-3,
+        sdk_label="test-sdk",
+        measurement_abi="UNKNOWN",
+    )
+    quality = _radiometry_integrity(
+        decoded,
+        {
+            "finite_pixels": 1,
+            "invalid_pixels": 1,
+        },
+    )
+
+    assert quality["status"] == "WARN"
+    assert quality["finite_fraction"] == 0.5
+    assert quality["invalid_fraction"] == 0.5
+    assert quality["flags"] == [
+        "INVALID_TEMPERATURE_PIXELS",
+        "MEASUREMENT_PARAMS_UNREADABLE",
+        "MEASUREMENT_ABI_UNCONFIRMED",
+    ]
+    assert "defect assessment" in quality["note"]
 
