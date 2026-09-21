@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+import pytest
 
 from app.models import ProcessingJob, ProcessingJobAsset
 from app.processing.dronedb import DroneDBClient
@@ -153,6 +154,57 @@ def test_dronedb_upload_retry_accepts_matching_existing_object(
     assert upload_attempts == 1
     assert result["path"] == "raw/DJI_0001_MS_NIR.TIF"
 
+
+def test_dronedb_upload_retry_rejects_same_size_different_hash(
+    tmp_path: Path,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/users/authenticate":
+            return httpx.Response(200, json={"token": "test-token"})
+        if (
+            request.url.path == "/orgs/m3cloud/ds/m3m-test/obj"
+            and request.method == "POST"
+        ):
+            return httpx.Response(409, json={"message": "already exists"})
+        if (
+            request.url.path == "/orgs/m3cloud/ds/m3m-test/obj/list"
+            and request.method == "GET"
+        ):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "path": "raw/DJI_0001_MS_NIR.TIF",
+                        "size": 7,
+                        "hash": "0" * 64,
+                    }
+                ],
+            )
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    source = tmp_path / "DJI_0001_MS_NIR.TIF"
+    source.write_bytes(b"1234567")
+
+    client = DroneDBClient(
+        "http://dronedb:5000",
+        username="admin",
+        password="secret",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            client.upload_file(
+                "m3cloud",
+                "m3m-test",
+                source=source,
+                remote_path="raw/DJI_0001_MS_NIR.TIF",
+                expected_sha256=(
+                    "8bb0cf6eb9b17d0f7d22b456f121257d"
+                    "c1254e1f01665370476383ea776df414"
+                ),
+            )
+    finally:
+        client.close()
 
 
 def test_m3m_handoff_uses_frozen_metadata_and_dataset_relative_paths() -> None:
