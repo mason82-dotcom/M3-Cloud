@@ -184,6 +184,15 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
                 "measurement_ranges": {
                     "distance_m": {"min": 1.0, "max": 500.0},
                 },
+                "registration": {
+                    "status": "NOT_REGISTERED",
+                    "wide_thermal_coregistered": False,
+                    "georeferenced_temperature_raster": False,
+                    "pair_audit": {
+                        "capture_time_delta_ms": 25.0,
+                        "gps_separation_m": 0.03,
+                    },
+                },
             }
         ],
     }
@@ -224,6 +233,12 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert temperature["sdk_label"] == "1.8_20251211"
     assert temperature["api_version"] == {"api": 8, "magic": "DIRP"}
     assert temperature["measurement_ranges"]["distance_m"]["max"] == 500.0
+    assert temperature["registration"]["status"] == "NOT_REGISTERED"
+    assert temperature["registration"]["wide_thermal_coregistered"] is False
+    assert temperature["registration"]["pair_audit"]["capture_time_delta_ms"] == 25.0
+    assert temperature["registration"]["pair_audit"]["gps_separation_m"] == 0.03
+    assert metadata["registration"]["status"] == "NOT_REGISTERED"
+    assert hotspots["registration"]["status"] == "NOT_REGISTERED"
     assert temperature["input_fingerprint"] == "a" * 64
     assert preview["result_kind"] == "THERMAL_PREVIEW"
     assert metadata["result_kind"] == "THERMAL_METADATA"
