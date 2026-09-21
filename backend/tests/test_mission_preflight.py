@@ -38,7 +38,14 @@ def mission(**overrides):
     return SimpleNamespace(**values)
 
 
-def vehicle(*, mission_runtime=None, ready=True, fix="FIXED", failsafe=False):
+def vehicle(
+    *,
+    mission_runtime=None,
+    ready=True,
+    fix="FIXED",
+    failsafe=False,
+    platform="M3E",
+):
     telemetry = {
         "aircraft_state": {
             "failsafe": failsafe,
@@ -53,6 +60,14 @@ def vehicle(*, mission_runtime=None, ready=True, fix="FIXED", failsafe=False):
         },
         "battery": {
             "capacity_percent": 75,
+        },
+        "payload": {
+            "platform": platform,
+            "capture_profiles": {
+                "M3E": ["M3E_MAPPING"],
+                "M3T": ["M3T_WIDE", "M3T_THERMAL"],
+                "M3M": ["M3M_RGB", "M3M_RGB_MULTISPECTRAL"],
+            }.get(platform, []),
         },
     }
     if mission_runtime is not None:
@@ -115,4 +130,46 @@ def test_preflight_warns_on_float_without_inventing_failure():
     assert any(
         item["code"] == "positioning" and item["level"] == "WARN"
         for item in result["checks"]
+    )
+
+
+def test_grid_preflight_blocks_camera_platform_or_executor_mismatch():
+    planned = mission(
+        preferred_executor="DJI_NATIVE",
+        plan_json={
+            **mission().plan_json,
+            "planning": {
+                "schema_version": 1,
+                "planner": "M3_CLOUD_GRID",
+                "platform": "M3M",
+                "capture_profile": "M3M_RGB_MULTISPECTRAL",
+                "planning_sensor": "MULTISPECTRAL_5MP_LIMITING_FOOTPRINT",
+            },
+        },
+    )
+
+    mismatch = evaluate_preflight(planned, vehicle(platform="M3E"))
+    assert mismatch["checks_passed"] is False
+    platform_check = next(
+        item for item in mismatch["checks"]
+        if item["code"] == "planner_platform"
+    )
+    assert platform_check["level"] == "BLOCK"
+
+    matching = evaluate_preflight(planned, vehicle(platform="M3M"))
+    assert matching["checks_passed"] is True
+    assert any(
+        item["code"] == "planner_capture_profile" and item["level"] == "PASS"
+        for item in matching["checks"]
+    )
+
+    onboard = mission(
+        preferred_executor="ONBOARD",
+        plan_json=planned.plan_json,
+    )
+    wrong_executor = evaluate_preflight(onboard, vehicle(platform="M3M"))
+    assert wrong_executor["checks_passed"] is False
+    assert any(
+        item["code"] == "planner_executor" and item["level"] == "BLOCK"
+        for item in wrong_executor["checks"]
     )
