@@ -138,6 +138,8 @@ def _hotspot_analysis(
     visited = np.zeros(candidate_mask.shape, dtype=np.bool_)
     height, width = candidate_mask.shape
     components: list[dict[str, Any]] = []
+    kept_mask = np.zeros(candidate_mask.shape, dtype=np.uint8)
+    retained_pixels = 0
 
     for y0, x0 in np.argwhere(candidate_mask):
         y0 = int(y0)
@@ -164,6 +166,8 @@ def _hotspot_analysis(
             continue
         ys = np.fromiter((point[0] for point in pixels), dtype=np.int32)
         xs = np.fromiter((point[1] for point in pixels), dtype=np.int32)
+        kept_mask[ys, xs] = 255
+        retained_pixels += len(pixels)
         values = temperature[ys, xs]
         max_index = int(np.argmax(values))
         components.append(
@@ -186,13 +190,6 @@ def _hotspot_analysis(
         )
 
     components.sort(key=lambda item: float(item["max_c"]), reverse=True)
-    kept_mask = np.zeros(candidate_mask.shape, dtype=np.uint8)
-    for component in components:
-        bbox = component["bbox"]
-        y_slice = slice(int(bbox["y_min"]), int(bbox["y_max"]) + 1)
-        x_slice = slice(int(bbox["x_min"]), int(bbox["x_max"]) + 1)
-        window = candidate_mask[y_slice, x_slice]
-        kept_mask[y_slice, x_slice][window] = 255
 
     candidate_pixels = int(np.count_nonzero(candidate_mask))
     return (
@@ -205,6 +202,9 @@ def _hotspot_analysis(
             "min_component_pixels": int(min_pixels),
             "candidate_pixels": candidate_pixels,
             "candidate_fraction": float(candidate_pixels / finite.size),
+            "retained_pixels": int(retained_pixels),
+            "retained_fraction": float(retained_pixels / finite.size),
+            "filtered_pixels": int(candidate_pixels - retained_pixels),
             "component_count": len(components),
             "components": components[:100],
             "components_truncated": len(components) > 100,
