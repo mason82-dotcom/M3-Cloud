@@ -28,6 +28,7 @@ class FakeDecoder:
             ),
             width=3,
             height=2,
+            api_version={"api": 8, "magic": "DIRP"},
             rjpeg_version={"rjpeg": 3, "header": 1, "curve": 1},
             measurement_params=MeasurementParams(
                 distance_m=5.0,
@@ -122,6 +123,8 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert metadata["radiometry"]["unit"] == "degree_Celsius"
     assert metadata["radiometry"]["statistics"]["max_c"] == 42.5
     assert metadata["radiometry"]["measurement_abi"] == "AMBIENT_V2"
+    assert metadata["radiometry"]["api_version"] == {"api": 8, "magic": "DIRP"}
+    assert manifest["capture_groups"][0]["api_version"] == {"api": 8, "magic": "DIRP"}
     assert metadata["registration"]["wide_thermal_coregistered"] is False
     assert metadata["registration"]["georeferenced_temperature_raster"] is False
     assert (output / "result-manifest.json").is_file()
