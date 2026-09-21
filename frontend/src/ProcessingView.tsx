@@ -14,6 +14,7 @@ import {
   fetchThermogramHandoff,
   importExternalResults,
   processingResultDownloadUrl,
+  processingResultInlineUrl,
   thermogramHandoffDownloadUrl,
   updateExternalProcessingJob,
 } from "./api";
@@ -91,6 +92,25 @@ function thermalResultSummary(result: ProcessingResult): string | null {
   }
   if (kind === "THERMAL_MANIFEST") return "Thermal result manifest";
   return kind;
+}
+
+function thermalVisualResults(values: ProcessingResult[]): ProcessingResult[] {
+  return values
+    .filter((result) => {
+      const kind = result.details?.result_kind;
+      return kind === "THERMAL_PREVIEW" || kind === "HOTSPOT_MASK";
+    })
+    .slice(0, 12);
+}
+
+function thermalVisualCaption(result: ProcessingResult): string {
+  const kind = result.details?.result_kind;
+  const captureGroup =
+    typeof result.details?.capture_group === "string"
+      ? result.details.capture_group.split("/").pop()
+      : null;
+  const label = kind === "HOTSPOT_MASK" ? "Hotspot mask" : "Thermal preview";
+  return captureGroup ? `${captureGroup} · ${label}` : label;
 }
 
 function bytes(value: number): string {
@@ -673,6 +693,28 @@ export function ProcessingView() {
                         : result.asset_name}
                     </a>
                   ))}
+                  {thermalVisualResults(results[job.id] ?? []).length > 0 ? (
+                    <div className="thermalPreviewGrid">
+                      {thermalVisualResults(results[job.id] ?? []).map((result) => (
+                        <figure key={result.id}>
+                          <a
+                            href={processingResultDownloadUrl(job.id, result.id)}
+                            title="Download original result"
+                          >
+                            <img
+                              alt={thermalVisualCaption(result)}
+                              loading="lazy"
+                              src={processingResultInlineUrl(job.id, result.id)}
+                            />
+                          </a>
+                          <figcaption>
+                            <strong>{thermalVisualCaption(result)}</strong>
+                            <span>{thermalResultSummary(result)}</span>
+                          </figcaption>
+                        </figure>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
