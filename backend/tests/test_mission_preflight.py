@@ -49,6 +49,7 @@ def vehicle(
     remain_flight_time_s=None,
     return_home_power_percent=None,
     landing_power_percent=None,
+    max_flight_height_m=None,
 ):
     telemetry = {
         "aircraft_state": {
@@ -67,6 +68,12 @@ def vehicle(
             "remain_flight_time_s": remain_flight_time_s,
             "return_home_power_percent": return_home_power_percent,
             "landing_power_percent": landing_power_percent,
+        },
+        "limits": {
+            "max_flight_height_m": max_flight_height_m,
+            "rth_altitude_m": 100 if max_flight_height_m is not None else None,
+            "rth_altitude_effective_m": 100 if max_flight_height_m is not None else None,
+            "rth_altitude_status": "confirmed" if max_flight_height_m is not None else None,
         },
         "payload": {
             "platform": platform,
@@ -305,4 +312,57 @@ def test_grid_preflight_prefers_total_time_when_reference_transit_is_planned():
     assert check["level"] == "BLOCK"
     assert check["details"]["scope"] == "GRID_PLUS_REFERENCE_TRANSIT"
     assert check["details"]["required_time_s"] == 700.0
+
+def test_grid_preflight_blocks_altitude_above_aircraft_limit_and_warns_near_limit():
+    def planned(altitude_m):
+        return mission(
+            preferred_executor="DJI_NATIVE",
+            plan_json={
+                **mission().plan_json,
+                "planning": {
+                    "schema_version": 1,
+                    "planner": "M3_CLOUD_GRID",
+                    "platform": "M3E",
+                    "capture_profile": "M3E_MAPPING",
+                    "planning_sensor": "RGB_WIDE_20MP",
+                    "derived": {
+                        "altitude_m": altitude_m,
+                    },
+                },
+            },
+        )
+
+    blocked = evaluate_preflight(
+        planned(121.0),
+        vehicle(max_flight_height_m=120),
+    )
+    check = next(
+        item for item in blocked["checks"]
+        if item["code"] == "planner_altitude_limit"
+    )
+    assert blocked["checks_passed"] is False
+    assert check["level"] == "BLOCK"
+    assert check["details"]["margin_m"] == -1.0
+
+    near = evaluate_preflight(
+        planned(117.0),
+        vehicle(max_flight_height_m=120),
+    )
+    check = next(
+        item for item in near["checks"]
+        if item["code"] == "planner_altitude_limit"
+    )
+    assert near["checks_passed"] is True
+    assert check["level"] == "WARN"
+
+    comfortable = evaluate_preflight(
+        planned(100.0),
+        vehicle(max_flight_height_m=120),
+    )
+    check = next(
+        item for item in comfortable["checks"]
+        if item["code"] == "planner_altitude_limit"
+    )
+    assert comfortable["checks_passed"] is True
+    assert check["level"] == "PASS"
 
