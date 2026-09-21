@@ -254,6 +254,7 @@ def process_handoff(
             "radiometry": {
                 "decoder": "DJI_DIRP",
                 "sdk_label": decoded.sdk_label,
+                "api_version": decoded.api_version,
                 "rjpeg_version": decoded.rjpeg_version,
                 "width": decoded.width,
                 "height": decoded.height,
@@ -298,6 +299,7 @@ def process_handoff(
                 "width": decoded.width,
                 "height": decoded.height,
                 "sdk_label": decoded.sdk_label,
+                "api_version": decoded.api_version,
                 "measurement_mode": decoded.measurement_mode,
                 "measurement_abi": decoded.measurement_abi,
             }
