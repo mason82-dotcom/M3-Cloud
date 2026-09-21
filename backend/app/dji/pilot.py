@@ -15,6 +15,7 @@ _REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
     ("mqtt_url", "dji_pilot_mqtt_url"),
     ("mqtt_username", "dji_pilot_mqtt_username"),
     ("mqtt_password", "dji_pilot_mqtt_password"),
+    ("ws_url", "dji_pilot_ws_url"),
 )
 
 
@@ -52,6 +53,10 @@ def build_pilot_bootstrap(
     if not api_host.startswith(("http://", "https://")):
         invalid.append("api_url")
 
+    ws_url = settings.dji_pilot_ws_url.strip()
+    if ws_url and not ws_url.startswith(("ws://", "wss://")):
+        invalid.append("ws_url")
+
     ready = not missing and not invalid
     return {
         "ready": ready,
@@ -77,19 +82,21 @@ def build_pilot_bootstrap(
             "username": settings.dji_pilot_mqtt_username,
             "password": settings.dji_pilot_mqtt_password,
         },
+        "ws": {
+            "host": ws_url,
+            "token": settings.dji_pilot_api_token,
+        },
         "liveshare": {
             "video_publish_type": settings.dji_pilot_live_publish_type,
         },
-        # Only advertise modules whose server-side protocol surface exists.
-        # These flags become true in the Media/Wayline/TSA implementation commits.
         "components": {
             "api": True,
             "thing": True,
             "liveshare": True,
-            "ws": False,
+            "ws": True,
             "map": False,
-            "tsa": False,
+            "tsa": True,
             "media": False,
-            "mission": False,
+            "mission": True,
         },
     }
