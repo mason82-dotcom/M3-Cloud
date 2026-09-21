@@ -229,6 +229,7 @@ dependencies {
     implementation rootProject.deps.rx3Kt
     // App sources directly import these APIs; do not rely on hidden/transitive UXSDK or DJI versions.
     implementation rootProject.deps.rx3Android
+    implementation rootProject.deps.rx3Java
     implementation rootProject.deps.material
     implementation rootProject.deps.wpmzSdk
     implementation rootProject.deps.dom
