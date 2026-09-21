@@ -230,6 +230,18 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert registration_audit["contract"] == REGISTRATION_AUDIT_CONTRACT
     assert registration_audit["status"] == "NOT_REGISTERED"
     assert registration_audit["pair_count"] == 1
+    assert registration_audit["evidence_counts"] == {
+        "capture_time_pair": 1,
+        "gps_pair": 1,
+        "gimbal_attitude_pair": 0,
+        "flight_attitude_pair": 0,
+        "dji_altitude_pair": 0,
+        "gps_altitude_pair": 1,
+        "wide_image_dimensions": 0,
+        "thermal_image_dimensions": 1,
+        "wide_dji_calibration": 0,
+        "thermal_dji_calibration": 0,
+    }
     assert registration_audit["pairs"][0]["capture_group"] == (
         "M3T/site/nested/DJI_0001"
     )
@@ -269,6 +281,9 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert summary_json["aggregate"]["m3t_identity_unconfirmed_count"] == 0
     assert summary_json["captures"][0]["source_identity_status"] == "CONFIRMED"
     assert summary_json["aggregate"]["registration_status"] == "NOT_REGISTERED"
+    assert summary_json["aggregate"]["registration_evidence_counts"] == (
+        registration_audit["evidence_counts"]
+    )
     assert summary_json["aggregate"]["pair_capture_time_evidence_count"] == 1
     assert summary_json["aggregate"]["pair_gps_evidence_count"] == 1
     assert summary_json["captures"][0]["registration_status"] == "NOT_REGISTERED"
@@ -834,6 +849,7 @@ def test_registration_audit_compares_pair_metadata_without_registering_pixels():
         "gimbal_attitude_pair": True,
         "flight_attitude_pair": True,
         "dji_altitude_pair": True,
+        "gps_altitude_pair": True,
         "wide_image_dimensions": True,
         "thermal_image_dimensions": True,
         "wide_dji_calibration": True,
