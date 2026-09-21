@@ -359,13 +359,20 @@ def _candidate_headings(
     headings = {float(value) for value in range(0, 180, 5)}
     headings.add(round(requested_direction_deg % 180.0, 6))
     closed = polygon_xy + [polygon_xy[0]]
+    edge_candidates: list[tuple[float, float]] = []
     for current, following in zip(closed, closed[1:]):
         dx = following[0] - current[0]
         dy = following[1] - current[1]
-        if math.hypot(dx, dy) < MIN_SEGMENT_M:
+        length = math.hypot(dx, dy)
+        if length < MIN_SEGMENT_M:
             continue
         heading = math.degrees(math.atan2(dx, dy)) % 180.0
-        headings.add(round(heading, 6))
+        edge_candidates.append((length, round(heading, 6)))
+
+    # Noisy imported boundaries may contain hundreds of tiny edge bearings. The 5-degree
+    # sweep already gives global coverage; exact alignment is only useful for dominant edges.
+    for _, heading in sorted(edge_candidates, reverse=True)[:24]:
+        headings.add(heading)
     return sorted(headings)
 
 
@@ -713,8 +720,14 @@ def build_grid_preview(
     total_planned_distance_m = (
         route_distance_m + ingress_distance_m + return_distance_m
     )
+    # DJI's native fly-to-wayline transition is configured at 10 m/s. Never assume a faster
+    # ingress/RTH contribution just because the survey legs themselves can run faster.
+    transit_speed_mps = min(effective_speed_mps, 10.0)
     nominal_route_time_s = route_distance_m / effective_speed_mps
-    nominal_total_time_s = total_planned_distance_m / effective_speed_mps
+    nominal_transit_time_s = (
+        ingress_distance_m + return_distance_m
+    ) / transit_speed_mps
+    nominal_total_time_s = nominal_route_time_s + nominal_transit_time_s
     nominal_capture_time_s = active_distance_m / effective_speed_mps
     expected_media_assets_upper_bound = (
         expected_photos * profile.stored_assets_per_exposure
@@ -758,7 +771,9 @@ def build_grid_preview(
             "expected_photos_upper_bound": expected_photos,
             "expected_media_assets_upper_bound": expected_media_assets_upper_bound,
             "nominal_route_time_s": nominal_route_time_s,
+            "nominal_transit_time_s": nominal_transit_time_s,
             "nominal_total_time_s": nominal_total_time_s,
+            "transit_speed_mps": transit_speed_mps,
             "ingress_distance_m": ingress_distance_m,
             "return_distance_m": return_distance_m,
             "total_planned_distance_m": total_planned_distance_m,
@@ -833,7 +848,9 @@ def build_grid_preview(
             "expected_media_assets_upper_bound": expected_media_assets_upper_bound,
             "stored_assets_per_exposure": profile.stored_assets_per_exposure,
             "nominal_route_time_s": nominal_route_time_s,
+            "nominal_transit_time_s": nominal_transit_time_s,
             "nominal_total_time_s": nominal_total_time_s,
+            "transit_speed_mps": transit_speed_mps,
             "nominal_capture_time_s": nominal_capture_time_s,
         },
         "optimization": {
