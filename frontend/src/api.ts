@@ -26,6 +26,7 @@ import type {
   Project,
   Survey,
   SurveyLineage,
+  ThermalCapturePointCollection,
   ThermogramHandoff,
   SystemHealth,
   Vehicle,
@@ -692,6 +693,30 @@ export async function fetchProcessingScenes(
     throw new Error(`Processing scenes request failed: ${response.status}`);
   }
   return response.json() as Promise<ProcessingSceneInfo[]>;
+}
+
+export async function fetchThermalCapturePoints(
+  jobId: string,
+  resultId: string,
+): Promise<ThermalCapturePointCollection> {
+  const response = await fetch(
+    `/api/v1/processing/jobs/${encodeURIComponent(jobId)}/results/${encodeURIComponent(resultId)}/download`,
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Thermal capture points request failed: ${response.status}`,
+    );
+  }
+  const value: unknown = await response.json();
+  if (
+    !value ||
+    typeof value !== "object" ||
+    (value as { type?: unknown }).type !== "FeatureCollection" ||
+    !Array.isArray((value as { features?: unknown }).features)
+  ) {
+    throw new Error("Thermal capture points response is not a GeoJSON FeatureCollection");
+  }
+  return value as ThermalCapturePointCollection;
 }
 
 export function processingResultDownloadUrl(
