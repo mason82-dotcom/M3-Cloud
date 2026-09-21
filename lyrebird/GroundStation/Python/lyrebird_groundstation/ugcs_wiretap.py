@@ -20,6 +20,7 @@ import struct
 import threading
 import time
 import zlib
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -161,17 +162,30 @@ SAFE_GCS_MESSAGE_IDS = {
 # vehicle, actuate the payload or change mission execution. Every other COMMAND_LONG/COMMAND_INT is
 # blocked in dry-run mode.
 SAFE_DRY_RUN_COMMANDS = {
-    410,   # MAV_CMD_GET_HOME_POSITION
-    511,   # MAV_CMD_SET_MESSAGE_INTERVAL
-    512,   # MAV_CMD_REQUEST_MESSAGE
-    519,   # MAV_CMD_REQUEST_PROTOCOL_VERSION
-    520,   # MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES
-    521,   # MAV_CMD_REQUEST_CAMERA_INFORMATION
-    522,   # MAV_CMD_REQUEST_CAMERA_SETTINGS
-    525,   # MAV_CMD_REQUEST_STORAGE_INFORMATION
-    527,   # MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS
+    410,  # MAV_CMD_GET_HOME_POSITION
+    511,  # MAV_CMD_SET_MESSAGE_INTERVAL
+    512,  # MAV_CMD_REQUEST_MESSAGE
+    519,  # MAV_CMD_REQUEST_PROTOCOL_VERSION
+    520,  # MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES
+    521,  # MAV_CMD_REQUEST_CAMERA_INFORMATION
+    522,  # MAV_CMD_REQUEST_CAMERA_SETTINGS
+    525,  # MAV_CMD_REQUEST_STORAGE_INFORMATION
+    527,  # MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS
     2504,  # MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION
     2505,  # MAV_CMD_REQUEST_VIDEO_STREAM_STATUS
+}
+
+DRY_RUN_BLOCKED_MESSAGE_REASONS = {
+    MSG_MISSION_CLEAR_ALL: "MISSION_CLEAR_ALL",
+    MSG_PARAM_SET: "PARAM_SET",
+    MSG_PARAM_EXT_SET: "PARAM_EXT_SET",
+    MSG_SET_MODE: "SET_MODE",
+    MSG_MANUAL_CONTROL: "MANUAL_CONTROL",
+    MSG_RC_CHANNELS_OVERRIDE: "RC_CHANNELS_OVERRIDE",
+    MSG_MISSION_SET_CURRENT: "MISSION_SET_CURRENT",
+    MSG_MISSION_WRITE_PARTIAL_LIST: "MISSION_WRITE_PARTIAL_LIST",
+    MSG_MISSION_ITEM: "MISSION_ITEM (non-INT upload not accepted in dry-run)",
+    MSG_FILE_TRANSFER_PROTOCOL: "FILE_TRANSFER_PROTOCOL not allowlisted in dry-run",
 }
 
 
@@ -344,7 +358,7 @@ def should_block_dry_run(frame: MavlinkFrame) -> tuple[bool, str | None]:
     decoded = decode_frame(frame)
 
     if frame.message_id == MSG_MISSION_COUNT:
-        if int(decoded.get("count", 0)) == 0:
+        if decoded.get("count", 0) == 0:
             return True, "MISSION_COUNT(count=0) would clear the stored mission"
         return False, None
 
@@ -358,27 +372,9 @@ def should_block_dry_run(frame: MavlinkFrame) -> tuple[bool, str | None]:
         name = COMMAND_NAMES.get(command, f"MAV_CMD_{command}")
         return True, f"{decoded['message']}:{name}"
 
-    if frame.message_id == MSG_MISSION_CLEAR_ALL:
-        return True, "MISSION_CLEAR_ALL"
-    if frame.message_id == MSG_PARAM_SET:
-        return True, "PARAM_SET"
-    if frame.message_id == MSG_PARAM_EXT_SET:
-        return True, "PARAM_EXT_SET"
-    if frame.message_id == MSG_SET_MODE:
-        return True, "SET_MODE"
-    if frame.message_id == MSG_MANUAL_CONTROL:
-        return True, "MANUAL_CONTROL"
-    if frame.message_id == MSG_RC_CHANNELS_OVERRIDE:
-        return True, "RC_CHANNELS_OVERRIDE"
-    if frame.message_id == MSG_MISSION_SET_CURRENT:
-        return True, "MISSION_SET_CURRENT"
-    if frame.message_id == MSG_MISSION_WRITE_PARTIAL_LIST:
-        return True, "MISSION_WRITE_PARTIAL_LIST"
-    if frame.message_id == MSG_MISSION_ITEM:
-        return True, "MISSION_ITEM (non-INT upload not accepted in dry-run)"
-    if frame.message_id == MSG_FILE_TRANSFER_PROTOCOL:
-        return True, "FILE_TRANSFER_PROTOCOL not allowlisted in dry-run"
-
+    explicit_reason = DRY_RUN_BLOCKED_MESSAGE_REASONS.get(frame.message_id)
+    if explicit_reason is not None:
+        return True, explicit_reason
     return True, f"unallowlisted {decoded['message']}"
 
 
@@ -549,10 +545,8 @@ class UgcsWiretapProxy:
         self._running.clear()
         for sock in (self._vsm_socket, self._aircraft_socket):
             if sock is not None:
-                try:
+                with suppress(OSError):
                     sock.close()
-                except OSError:
-                    pass
         self.recorder.close()
 
     def _pump_vsm_to_aircraft(self) -> None:
@@ -562,7 +556,7 @@ class UgcsWiretapProxy:
         while self._running.is_set():
             try:
                 data, peer = self._vsm_socket.recvfrom(65535)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 return
@@ -705,7 +699,7 @@ def _canonical_float(value: Any) -> bytes:
 
 
 def _java_round(value: float) -> int:
-    return int(math.floor(value + 0.5))
+    return math.floor(value + 0.5)
 
 
 def canonical_mission_item(item: dict[str, Any]) -> bytes:
@@ -762,6 +756,103 @@ def _numbers_equal(left: Any, right: Any, tolerance: float) -> bool:
         return False
 
 
+def _compare_capture_metadata(
+    wire_items: list[dict[str, Any]],
+    wire_metadata: dict[str, Any] | None,
+) -> list[str]:
+    if wire_metadata is None:
+        return []
+
+    differences: list[str] = []
+    expected = wire_metadata.get("expectedCount")
+    if expected is not None and int(expected) != len(wire_items):
+        differences.append(
+            f"wire upload incomplete: expected={int(expected)} captured={len(wire_items)}"
+        )
+    if expected is not None and not wire_metadata.get("acceptedAck"):
+        differences.append("no accepted RC MISSION_ACK observed for latest upload")
+    return differences
+
+
+def _compare_item(
+    wire: dict[str, Any],
+    rc: dict[str, Any],
+    *,
+    index: int,
+    float_tolerance: float,
+) -> list[str]:
+    prefix = f"seq {wire.get('missionSeq', index)}"
+    differences: list[str] = []
+
+    for wire_key, rc_key in (
+        ("missionSeq", "seq"),
+        ("command", "command"),
+        ("frame", "frame"),
+        ("autocontinue", "autocontinue"),
+    ):
+        left = wire.get(wire_key)
+        right = rc.get(rc_key)
+        if wire_key == "autocontinue":
+            left = bool(left)
+            right = bool(right)
+        if left != right:
+            differences.append(f"{prefix}: {wire_key} wire={left!r} rc={right!r}")
+
+    for wire_key, rc_key in (
+        ("param1", "param1"),
+        ("param2", "param2"),
+        ("param3", "param3"),
+        ("param4", "param4"),
+        ("latitude", "latitude"),
+        ("longitude", "longitude"),
+        ("altitude", "altitude"),
+    ):
+        left = wire.get(wire_key)
+        right = rc.get(rc_key)
+        if not _numbers_equal(left, right, float_tolerance):
+            differences.append(f"{prefix}: {wire_key} wire={left!r} rc={right!r}")
+
+    return differences
+
+
+def _compare_mission_identity(
+    wire_items: list[dict[str, Any]],
+    rc_trace: dict[str, Any],
+) -> tuple[list[str], str, str, int, int | None]:
+    differences: list[str] = []
+    wire_digest = mission_digest(wire_items) if wire_items else ""
+    rc_digest = str(rc_trace.get("missionDigest") or "")
+    if wire_items and rc_digest and wire_digest != rc_digest:
+        differences.append(f"mission digest differs: wire={wire_digest} rc={rc_digest}")
+
+    wire_plan_id = mission_plan_id(wire_items) if wire_items else 0
+    rc_plan_id_raw = rc_trace.get("planId")
+    rc_plan_id = int(rc_plan_id_raw) & 0xFFFFFFFF if rc_plan_id_raw is not None else None
+    if wire_items and rc_plan_id is not None and wire_plan_id != rc_plan_id:
+        differences.append(
+            f"mission planId differs: wire={wire_plan_id:#010x} rc={rc_plan_id:#010x}"
+        )
+    return differences, wire_digest, rc_digest, wire_plan_id, rc_plan_id
+
+
+def _capture_clock_diagnostics(
+    wire_items: list[dict[str, Any]],
+    rc_trace: dict[str, Any],
+) -> tuple[int | None, int | None, int | None]:
+    epochs = [int(row["epochNs"]) for row in wire_items if row.get("epochNs") is not None]
+    wire_last_epoch_ms = max(epochs) // 1_000_000 if epochs else None
+    rc_uploaded_epoch_ms = int(rc_trace.get("uploadedAtEpochMs") or 0) or None
+    if wire_last_epoch_ms is None or rc_uploaded_epoch_ms is None:
+        return wire_last_epoch_ms, rc_uploaded_epoch_ms, None
+
+    # Diagnostic only: these timestamps come from two devices and their wall clocks may differ.
+    return (
+        wire_last_epoch_ms,
+        rc_uploaded_epoch_ms,
+        rc_uploaded_epoch_ms - wire_last_epoch_ms,
+    )
+
+
 def compare_wiretap_to_rc(
     wire_items: list[dict[str, Any]],
     rc_trace: dict[str, Any],
@@ -770,82 +861,31 @@ def compare_wiretap_to_rc(
     wire_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compare the bytes UgCS uploaded with Lyrebird's canonical accepted mission trace."""
-    rc_items = sorted(list(rc_trace.get("items") or []), key=lambda row: int(row.get("seq", 0)))
+    rc_items = sorted(rc_trace.get("items") or [], key=lambda row: int(row.get("seq", 0)))
     wire_items = sorted(wire_items, key=lambda row: int(row.get("missionSeq", row.get("seq", 0))))
-    differences: list[str] = []
+    differences = _compare_capture_metadata(wire_items, wire_metadata)
 
     if len(wire_items) != len(rc_items):
         differences.append(f"item count differs: wire={len(wire_items)} rc={len(rc_items)}")
 
-    if wire_metadata is not None:
-        expected = wire_metadata.get("expectedCount")
-        if expected is not None and int(expected) != len(wire_items):
-            differences.append(
-                f"wire upload incomplete: expected={int(expected)} captured={len(wire_items)}"
+    for index, (wire, rc) in enumerate(zip(wire_items, rc_items)):
+        differences.extend(
+            _compare_item(
+                wire,
+                rc,
+                index=index,
+                float_tolerance=float_tolerance,
             )
-        if expected is not None and not wire_metadata.get("acceptedAck"):
-            differences.append("no accepted RC MISSION_ACK observed for latest upload")
+        )
 
-    for index in range(min(len(wire_items), len(rc_items))):
-        wire = wire_items[index]
-        rc = rc_items[index]
-        prefix = f"seq {wire.get('missionSeq', index)}"
+    identity = _compare_mission_identity(wire_items, rc_trace)
+    identity_differences, wire_digest, rc_digest, wire_plan_id, rc_plan_id = identity
+    differences.extend(identity_differences)
 
-        for wire_key, rc_key in (
-            ("missionSeq", "seq"),
-            ("command", "command"),
-            ("frame", "frame"),
-            ("autocontinue", "autocontinue"),
-        ):
-            left = wire.get(wire_key)
-            right = rc.get(rc_key)
-            if wire_key == "autocontinue":
-                left = bool(left)
-                right = bool(right)
-            if left != right:
-                differences.append(f"{prefix}: {wire_key} wire={left!r} rc={right!r}")
-
-        for wire_key, rc_key in (
-            ("param1", "param1"),
-            ("param2", "param2"),
-            ("param3", "param3"),
-            ("param4", "param4"),
-            ("latitude", "latitude"),
-            ("longitude", "longitude"),
-            ("altitude", "altitude"),
-        ):
-            left = wire.get(wire_key)
-            right = rc.get(rc_key)
-            if not _numbers_equal(left, right, float_tolerance):
-                differences.append(f"{prefix}: {wire_key} wire={left!r} rc={right!r}")
-
-    wire_digest = mission_digest(wire_items) if wire_items else ""
-    rc_digest = str(rc_trace.get("missionDigest") or "")
-    if wire_items and rc_digest and wire_digest != rc_digest:
-        differences.append(f"mission digest differs: wire={wire_digest} rc={rc_digest}")
-
-    wire_plan_id = mission_plan_id(wire_items) if wire_items else 0
-    rc_plan_id_raw = rc_trace.get("planId")
-    if wire_items and rc_plan_id_raw is not None:
-        rc_plan_id = int(rc_plan_id_raw) & 0xFFFFFFFF
-        if wire_plan_id != rc_plan_id:
-            differences.append(
-                f"mission planId differs: wire={wire_plan_id:#010x} rc={rc_plan_id:#010x}"
-            )
-    else:
-        rc_plan_id = None
-
-    wire_last_epoch_ms = None
-    if wire_items:
-        epochs = [int(row["epochNs"]) for row in wire_items if row.get("epochNs") is not None]
-        if epochs:
-            wire_last_epoch_ms = max(epochs) // 1_000_000
-
-    rc_uploaded_epoch_ms = int(rc_trace.get("uploadedAtEpochMs") or 0) or None
-    clock_delta_ms = None
-    if wire_last_epoch_ms is not None and rc_uploaded_epoch_ms is not None:
-        # Diagnostic only: these timestamps come from two devices and their wall clocks may differ.
-        clock_delta_ms = rc_uploaded_epoch_ms - wire_last_epoch_ms
+    wire_last_epoch_ms, rc_uploaded_epoch_ms, clock_delta_ms = _capture_clock_diagnostics(
+        wire_items,
+        rc_trace,
+    )
 
     return {
         "ok": not differences,

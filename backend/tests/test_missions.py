@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from pymavlink.dialects.v20 import common as mavlink_common
 from sqlalchemy import delete
 
 from app.api_missions import (
