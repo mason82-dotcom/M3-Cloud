@@ -131,15 +131,15 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
             )
             workflows.append(
                 _workflow(
-                    key="MULTISPECTRAL",
+                    key="DRONEDB",
                     ready=complete >= 2,
                     eligible_assets=complete * len(M3M_COMPLETE),
                     complete_groups=complete,
                     incomplete_groups=partial,
                     reason=(
-                        f"{complete} complete RGB + 4-band capture groups"
+                        f"{complete} complete RGB + 4-band capture groups ready for DroneDB handoff"
                         if complete >= 2
-                        else "At least two complete RGB + Green/Red/RedEdge/NIR capture groups are required"
+                        else "DroneDB handoff requires at least two complete RGB + Green/Red/RedEdge/NIR capture groups"
                     ),
                 )
             )
@@ -180,6 +180,7 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
         datasets,
         key=lambda item: (str(item["platform"]), str(item["prefix"])),
     )
+
 
 
 def build_dataset_manifest(

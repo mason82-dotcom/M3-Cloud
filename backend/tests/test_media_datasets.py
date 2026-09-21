@@ -136,7 +136,7 @@ def test_m3m_dataset_requires_all_four_bands_plus_rgb() -> None:
     ]
 
     dataset = build_media_datasets(items)[0]
-    multi = workflow(dataset, "MULTISPECTRAL")
+    multi = workflow(dataset, "DRONEDB")
 
     assert workflow(dataset, "WEBODM")["ready"] is True
     assert multi["ready"] is False
@@ -186,7 +186,7 @@ def test_thermal_manifest_keeps_original_paths_and_completeness() -> None:
     assert groups[0]["files"][0]["relative_path"].startswith("M4T/site/")
 
 
-def test_m3m_multispectral_becomes_ready_with_two_complete_groups() -> None:
+def test_m3m_dronedb_becomes_ready_with_two_complete_groups() -> None:
     items = []
     for index in (1, 2):
         group = f"M3M/field/DJI_{index:04d}"
@@ -201,7 +201,7 @@ def test_m3m_multispectral_becomes_ready_with_two_complete_groups() -> None:
         )
 
     dataset = build_media_datasets(items)[0]
-    multi = workflow(dataset, "MULTISPECTRAL")
+    multi = workflow(dataset, "DRONEDB")
 
     assert multi["ready"] is True
     assert multi["complete_groups"] == 2

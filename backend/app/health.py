@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import httpx
 from sqlalchemy import text
 
 from app.config import settings
@@ -45,13 +46,22 @@ async def _emqx_probe() -> None:
     await writer.wait_closed()
 
 
+async def _dronedb_probe() -> None:
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        response = await client.get(f"{settings.dronedb_url.rstrip('/')}/version")
+        response.raise_for_status()
+
+
 async def readiness() -> dict[str, Any]:
-    checks = await asyncio.gather(
+    probes = [
         _check("postgres", _database_probe),
         _check("redis", _redis_probe),
         _check("object_storage", _object_storage_probe),
         _check("emqx", _emqx_probe),
-    )
+    ]
+    if settings.dronedb_enabled and settings.dronedb_url:
+        probes.append(_check("dronedb", _dronedb_probe))
+    checks = await asyncio.gather(*probes)
     services = dict(checks)
     return {
         "ok": all(service["ok"] for service in services.values()),

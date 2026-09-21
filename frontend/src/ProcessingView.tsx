@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  createDroneDBJob,
   createThermogramJob,
   createWebODMJob,
   fetchExternalResultStatus,
@@ -14,6 +15,7 @@ import {
   fetchThermalCapturePoints,
   fetchThermogramHandoff,
   importExternalResults,
+  dronedbHandoffDownloadUrl,
   processingResultDownloadUrl,
   processingResultInlineUrl,
   thermogramHandoffDownloadUrl,
@@ -393,6 +395,9 @@ export function ProcessingView() {
   const [profile, setProfile] = useState("m3e-ortho");
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [dronedbPrefix, setDronedbPrefix] = useState("");
+  const [dronedbName, setDronedbName] = useState("");
+  const [dronedbSubmitting, setDronedbSubmitting] = useState(false);
   const [thermogramPrefix, setThermogramPrefix] = useState("");
   const [thermogramName, setThermogramName] = useState("");
   const [thermogramSubmitting, setThermogramSubmitting] = useState(false);
@@ -551,6 +556,23 @@ export function ProcessingView() {
     [datasets, profiles],
   );
   const selectedDataset = availableDatasets.find((item) => item.prefix === prefix);
+  const dronedbDatasets = useMemo(
+    () =>
+      datasets.filter((dataset) =>
+        dataset.platform === "M3M" &&
+        dataset.workflows.some(
+          (workflow) => workflow.key === "DRONEDB" && workflow.ready,
+        ),
+      ),
+    [datasets],
+  );
+  const selectedDronedbDataset = dronedbDatasets.find(
+    (item) => item.prefix === dronedbPrefix,
+  );
+  const selectedDronedbWorkflow = selectedDronedbDataset?.workflows.find(
+    (item) => item.key === "DRONEDB",
+  );
+
   const thermogramDatasets = useMemo(
     () =>
       datasets.filter((dataset) =>
@@ -596,6 +618,24 @@ export function ProcessingView() {
   }, [availableDatasets, prefix]);
 
   useEffect(() => {
+    if (!dronedbPrefix && dronedbDatasets.length > 0) {
+      setDronedbPrefix(dronedbDatasets[0].prefix);
+    }
+  }, [dronedbDatasets, dronedbPrefix]);
+
+  useEffect(() => {
+    if (!dronedbPrefix) return;
+    if (
+      !dronedbName ||
+      dronedbDatasets.some((item) => item.prefix.endsWith(dronedbName))
+    ) {
+      setDronedbName(
+        `${dronedbPrefix.split("/").pop() ?? dronedbPrefix} M3M`,
+      );
+    }
+  }, [dronedbDatasets, dronedbName, dronedbPrefix]);
+
+  useEffect(() => {
     if (!thermogramPrefix && thermogramDatasets.length > 0) {
       setThermogramPrefix(thermogramDatasets[0].prefix);
     }
@@ -629,6 +669,25 @@ export function ProcessingView() {
       setProfile(compatibleProfiles[0].key);
     }
   }, [compatibleProfiles, profile]);
+
+  const submitDronedb = useCallback(async () => {
+    if (!selectedDronedbDataset || !dronedbPrefix) return;
+    setDronedbSubmitting(true);
+    try {
+      const job = await createDroneDBJob({
+        name:
+          dronedbName.trim() ||
+          `${dronedbPrefix.split("/").pop() ?? "M3M"} M3M`,
+        input_prefix: dronedbPrefix,
+      });
+      setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setDronedbSubmitting(false);
+    }
+  }, [dronedbName, dronedbPrefix, selectedDronedbDataset]);
 
   const submitThermogram = useCallback(async () => {
     if (!selectedThermogramDataset || !thermogramPrefix) return;
@@ -765,6 +824,70 @@ export function ProcessingView() {
         {error ? <div className="mediaWarning">{error}</div> : null}
       </section>
 
+      <section className="panel processingCreate">
+        <div className="panelHead">
+          <div>
+            <h2>M3M → DroneDB</h2>
+            <small>RGB + Green/Red/RedEdge/NIR · immutable dataset handoff</small>
+          </div>
+          <span>{dronedbDatasets.length} M3M datasets</span>
+        </div>
+
+        <div className="processingForm">
+          <label>
+            M3M dataset
+            <select
+              value={dronedbPrefix}
+              onChange={(event) => setDronedbPrefix(event.target.value)}
+            >
+              {dronedbDatasets.length === 0 ? (
+                <option value="">No complete M3M dataset</option>
+              ) : dronedbDatasets.map((item) => (
+                <option key={item.prefix} value={item.prefix}>
+                  {item.prefix} · {item.asset_count} originals
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Dataset name
+            <input
+              maxLength={255}
+              onChange={(event) => setDronedbName(event.target.value)}
+              value={dronedbName}
+            />
+          </label>
+
+          <button
+            disabled={dronedbSubmitting || !selectedDronedbDataset}
+            onClick={() => void submitDronedb()}
+            type="button"
+          >
+            {dronedbSubmitting ? "Queueing…" : "Publish to DroneDB"}
+          </button>
+        </div>
+
+        {selectedDronedbDataset ? (
+          <div className="processingDataset">
+            <span>Platform<b>M3M</b></span>
+            <span>Complete groups<b>{selectedDronedbWorkflow?.complete_groups ?? 0}</b></span>
+            <span>Frozen files<b>{selectedDronedbWorkflow?.eligible_assets ?? 0}</b></span>
+            <span>Media<b>RGB / G / R / RE / NIR</b></span>
+          </div>
+        ) : null}
+
+        <div className="processingProfile">
+          <strong>DroneDB dataset handoff</strong>
+          <span>
+            M3-Cloud freezes the complete M3M capture groups, verifies every
+            source against its SHA-256, publishes the originals under raw/ and
+            writes m3cloud-handoff.json with provenance. Multispectral processing
+            then continues in DroneDB instead of the M3-Cloud WebODM path.
+          </span>
+        </div>
+      </section>
+
       <section className="panel thermogramCreate">
         <div className="panelHead">
           <div>
@@ -833,7 +956,7 @@ export function ProcessingView() {
         <div className="panelHead">
           <div>
             <h2>Processing jobs</h2>
-            <small>WebODM project/task state</small>
+            <small>WebODM · DroneDB · M3T thermal worker</small>
           </div>
           <button onClick={() => void refresh()} type="button">Refresh</button>
         </div>
@@ -869,6 +992,24 @@ export function ProcessingView() {
                 <span>Remote<b>{job.remote_status ?? "—"}</b></span>
                 <span>Assets<b>{job.available_assets.length}</b></span>
               </div>
+
+              {job.kind === "DRONEDB" ? (
+                <div className="thermogramActions">
+                  <a href={dronedbHandoffDownloadUrl(job.id)}>
+                    Download M3M handoff
+                  </a>
+                  {job.remote?.url ? (
+                    <a href={job.remote.url} rel="noreferrer" target="_blank">
+                      Open DroneDB dataset
+                    </a>
+                  ) : null}
+                  {job.remote?.dataset ? (
+                    <small>
+                      {job.remote.organization ?? "—"} / {job.remote.dataset}
+                    </small>
+                  ) : null}
+                </div>
+              ) : null}
 
               {job.kind === "THERMOGRAM" ? (
                 <div className="thermogramActions">
