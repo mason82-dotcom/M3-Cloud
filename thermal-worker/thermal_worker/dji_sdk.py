@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import platform
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 DIRP_SUCCESS = 0
@@ -395,6 +399,6 @@ class DjiThermalSdk:
             if created and handle.value:
                 try:
                     self._destroy(handle)
-                except Exception:
+                except (OSError, ctypes.ArgumentError) as exc:
                     # Never mask the primary decode exception with cleanup failure.
-                    pass
+                    logger.warning("DJI DIRP handle cleanup failed: %s", exc)
