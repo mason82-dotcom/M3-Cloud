@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import delete, select
 
 from app.database import session_factory
+from app.media.datasets import build_media_datasets
 from app.media.importer import MediaImporter
 from app.models import Flight, MediaAsset, MediaDatasetRecord
 
@@ -478,10 +479,12 @@ async def test_importer_catalogs_m3t_rjpeg_r_suffix_as_complete_pair(
         "M3T/survey/DJI_0001"
     }
     assert dataset is not None
+    summaries = build_media_datasets(assets)
+    assert len(summaries) == 1
     thermogram = next(
-        option
-        for option in dataset.options
-        if option["key"] == "THERMOGRAM"
+        workflow
+        for workflow in summaries[0]["workflows"]
+        if workflow["key"] == "THERMOGRAM"
     )
     assert thermogram["ready"] is True
     assert thermogram["complete_groups"] == 1
