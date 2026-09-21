@@ -60,6 +60,8 @@ export interface PayloadState {
 export interface BatteryState {
   capacity_percent?: number | null;
   remain_flight_time_s?: number | null;
+  return_home_power_percent?: number | null;
+  landing_power_percent?: number | null;
 }
 
 export interface Telemetry {
