@@ -53,6 +53,7 @@ class MeasurementParams:
     humidity_pct: float
     emissivity: float
     reflection_c: float
+    ambient_temp_c: float
 
     def as_dict(self) -> dict[str, float]:
         return {
@@ -60,6 +61,7 @@ class MeasurementParams:
             "humidity_pct": self.humidity_pct,
             "emissivity": self.emissivity,
             "reflection_c": self.reflection_c,
+            "ambient_temp_c": self.ambient_temp_c,
         }
 
 
@@ -85,17 +87,20 @@ class _DirpRjpegVersion(ctypes.Structure):
 
 class _DirpResolution(ctypes.Structure):
     _fields_ = [
-        ("width", ctypes.c_uint32),
-        ("height", ctypes.c_uint32),
+        ("width", ctypes.c_int32),
+        ("height", ctypes.c_int32),
     ]
 
 
 class _DirpMeasurementParams(ctypes.Structure):
+    # Modern DJI TSDK ABI (including 1.8) adds ambient_temp after reflection.
+    # Keeping the exact field order is required for ctypes/C ABI compatibility.
     _fields_ = [
         ("distance", ctypes.c_float),
         ("humidity", ctypes.c_float),
         ("emissivity", ctypes.c_float),
         ("reflection", ctypes.c_float),
+        ("ambient_temp", ctypes.c_float),
     ]
 
 
@@ -248,6 +253,7 @@ class DjiThermalSdk:
             "humidity_pct": (20.0, 100.0),
             "emissivity": (0.10, 1.00),
             "reflection_c": (-40.0, 500.0),
+            "ambient_temp_c": (-50.0, 80.0),
         }
         unknown = set(result) - set(ranges)
         if unknown:
@@ -329,12 +335,17 @@ class DjiThermalSdk:
                     humidity_pct=float(params.humidity),
                     emissivity=float(params.emissivity),
                     reflection_c=float(params.reflection),
+                    ambient_temp_c=float(params.ambient_temp),
                 )
                 if requested:
                     params.distance = requested.get("distance_m", measurement.distance_m)
                     params.humidity = requested.get("humidity_pct", measurement.humidity_pct)
                     params.emissivity = requested.get("emissivity", measurement.emissivity)
                     params.reflection = requested.get("reflection_c", measurement.reflection_c)
+                    params.ambient_temp = requested.get(
+                        "ambient_temp_c",
+                        measurement.ambient_temp_c,
+                    )
                     set_code = int(
                         self._set_measurement(handle, ctypes.byref(params))
                     )
@@ -344,20 +355,36 @@ class DjiThermalSdk:
                             humidity_pct=float(params.humidity),
                             emissivity=float(params.emissivity),
                             reflection_c=float(params.reflection),
+                            ambient_temp_c=float(params.ambient_temp),
                         )
                         measurement_mode = "overridden"
                     elif set_code in {DIRP_ERROR_UNSUPPORTED_FUNC, DIRP_ERROR_NOT_READY}:
-                        measurement_mode = "sdk_native_locked"
-                        measurement_error_code = set_code
+                        raise ThermalSdkError(
+                            "dirp_set_measurement_params",
+                            set_code,
+                            "measurement overrides were requested but this R-JPEG does not allow them",
+                        )
                     else:
                         raise ThermalSdkError("dirp_set_measurement_params", set_code)
             elif measurement_code in {DIRP_ERROR_UNSUPPORTED_FUNC, DIRP_ERROR_NOT_READY}:
+                if requested:
+                    raise ThermalSdkError(
+                        "dirp_get_measurement_params",
+                        measurement_code,
+                        "measurement overrides were requested but this R-JPEG exposes no editable parameters",
+                    )
                 measurement_mode = "sdk_native_locked"
                 measurement_error_code = measurement_code
             else:
                 # Decoding can still be valid when a product does not expose editable
                 # measurement parameters. Preserve the failure as provenance rather than
                 # silently fabricating settings.
+                if requested:
+                    raise ThermalSdkError(
+                        "dirp_get_measurement_params",
+                        measurement_code,
+                        "measurement overrides were requested but current parameters could not be read",
+                    )
                 measurement_mode = "sdk_native_unreadable"
                 measurement_error_code = measurement_code
 
