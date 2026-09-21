@@ -115,6 +115,24 @@ GET /api/v1/dji/pilot/status
 
 See `docs/dji-pilot2.md` for the complete RC Pro Enterprise / Pilot 2 workflow.
 
+## Coordination with the M3M multispectral workflow
+
+Cloud API integration must not collapse M3E, M3T and M3M into one generic Mavic 3 Enterprise
+camera model. M3-Cloud/Lyrebird already uses the MSDK `CameraType` as the authoritative
+aircraft-side camera discriminator.
+
+Current cross-component contract:
+
+- `M3M_RGB_MULTISPECTRAL` remains the M3M survey capture profile.
+- M3M capture/readback continues to use RGB + NDVI + G + R + RE + NIR MSDK sources.
+- Cloud API topology must preserve undocumented/unknown DJI product type/subtype values instead
+  of guessing an M3M identity from another Mavic 3 Enterprise variant.
+- Cloud API work may transport flight, media, RTK and lineage metadata, but must not silently
+  replace the dedicated M3M processing/handoff workflow.
+- The multispectral processing boundary remains separate from this Cloud API installation work;
+  M3-Cloud keeps planning, capture, media ingest, hashes, EXIF/XMP, RTK metadata and validated
+  dataset lineage/handoff.
+
 ## Mobile SDK relationship
 
 DJI Mobile SDK V5 remains a separate aircraft-side dependency used by `com.lyrebird.rc`.
