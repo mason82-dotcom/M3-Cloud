@@ -13,7 +13,7 @@ import dji.v5.ux.mapkit.maplibre.utils.MaplibreUtils;
 
 
 
-import com.mapbox.geojson.Point;
+import org.maplibre.geojson.Point;
 
 
 

@@ -1,7 +1,7 @@
 package dji.v5.ux.mapkit.maplibre.map;
 
 import dji.v5.ux.mapkit.core.maps.DJIUiSettings;
-import com.mapbox.mapboxsdk.maps.UiSettings;
+import org.maplibre.android.maps.UiSettings;
 
 /**
  * Created by joeyang on 11/3/17.
@@ -16,7 +16,7 @@ public class MUiSettings implements DJIUiSettings {
 
     @Override
     public void setZoomControlsEnabled(boolean enabled) {
-        // no zoom controls available on Mapbox since 7.0.0
+        // no zoom controls available on MapLibre since 7.0.0
     }
 
     @Override

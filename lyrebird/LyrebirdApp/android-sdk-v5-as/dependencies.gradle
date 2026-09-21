@@ -18,8 +18,8 @@ ext {
     deps.leakcanary = 'com.squareup.leakcanary:leakcanary-android:2.14'
     deps.xcrash = 'com.iqiyi.xcrash:xcrash-android-lib:3.1.0'
     deps.rx2Java = 'io.reactivex.rxjava2:rxjava:2.2.21' // Currently used by the CSDK upgrade module
-    deps.maplibreTurf = 'org.maplibre.gl:android-sdk-turf:5.9.1'
-    deps.maplibreSdk = 'org.maplibre.gl:android-sdk:10.3.1'
+    deps.maplibreTurf = 'org.maplibre.gl:android-sdk-turf:6.0.1'
+    deps.maplibreSdk = 'org.maplibre.gl:android-sdk:11.5.1'
     deps.lottie = 'com.airbnb.android:lottie:3.3.1' // Used in the RTK scan page for animations
     deps.cardview = 'androidx.cardview:cardview:1.0.0' // Used in PopoverView
     deps.material = 'com.google.android.material:material:1.14.0' // Used by AvoidanceShortcutWidget
@@ -77,7 +77,7 @@ ext {
     // WPMZ mission file parsing. Keep this aligned with the dependency published by MSDK 5.18.0.
     // For local dependency testing: copy this aar to the main project's sdklib directory
     // and add as a local dependency in the aircraft module's gradle: api(name:"djisdkwpmz", ext:'aar')
-    deps.wpmzSdk = 'com.dji:wpmzsdk:1.0.5.0'
+    deps.wpmzSdk = 'com.dji:wpmzsdk:1.0.5.1'
     // Extended EditText for sample
     deps.expandedit = "com.github.thomhurst:ExpandableHintText:1.0.7"
 

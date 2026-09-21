@@ -18,16 +18,16 @@ import dji.v5.ux.mapkit.maplibre.annotations.MaplibreMarker
 import dji.v5.ux.mapkit.maplibre.annotations.MaplibrePolygon
 import dji.v5.ux.mapkit.maplibre.annotations.MaplibrePolyline
 import dji.v5.ux.mapkit.maplibre.utils.*
-import com.mapbox.geojson.Feature
-import com.mapbox.mapboxsdk.geometry.LatLng
-import com.mapbox.mapboxsdk.maps.MapboxMap
-import com.mapbox.mapboxsdk.maps.Style
-import com.mapbox.mapboxsdk.style.layers.Layer
+import org.maplibre.geojson.Feature
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.Layer
 import dji.v5.utils.common.LogUtils
 import java.util.*
 import kotlin.collections.HashSet
 
-class MaplibreMapDelegateKt(private val mapboxMap: MapboxMap,
+class MaplibreMapDelegateKt(private val mapboxMap: MapLibreMap,
                             private val context: Context,
                             mapView: View
 ) : DJIBaseMap() {

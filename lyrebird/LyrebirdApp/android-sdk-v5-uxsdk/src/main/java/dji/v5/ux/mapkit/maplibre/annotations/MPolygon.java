@@ -7,31 +7,31 @@ import dji.v5.ux.mapkit.core.models.DJILatLng;
 import dji.v5.ux.mapkit.core.models.annotations.DJIPolygon;
 import dji.v5.ux.mapkit.core.models.annotations.DJIPolygonOptions;
 import dji.v5.ux.mapkit.maplibre.utils.MaplibreUtils;
-import com.mapbox.mapboxsdk.annotations.Polygon;
-import com.mapbox.mapboxsdk.annotations.Polyline;
-import com.mapbox.mapboxsdk.annotations.PolylineOptions;
-import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.maps.MapboxMap;
+import org.maplibre.android.annotations.Polygon;
+import org.maplibre.android.annotations.Polyline;
+import org.maplibre.android.annotations.PolylineOptions;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.maps.MapLibreMap;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Created by joeyang on 11/2/17.
- * Mapbox的多边形代理类
+ * MapLibre的多边形代理类
  */
 public class MPolygon implements DJIPolygon {
 
     private static final float NO_ALPHA = 0.0F;
 
-    private MapboxMap mapboxMap;
+    private MapLibreMap mapboxMap;
     private Polygon polygon;
     private DJIPolygonOptions options;
     private Polyline border;
     private float borderAlpha;
 
 
-    public MPolygon(Polygon polygon, MapboxMap mapboxMap, DJIPolygonOptions options) {
+    public MPolygon(Polygon polygon, MapLibreMap mapboxMap, DJIPolygonOptions options) {
         this.polygon = polygon;
         this.mapboxMap = mapboxMap;
         this.options = options;
