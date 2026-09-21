@@ -428,6 +428,7 @@ def _select_scan_segments(
     overshoot_m: float,
     reference_xy: tuple[float, float] | None,
     return_to_reference: bool,
+    max_segments: int | None = None,
 ) -> tuple[
     list[tuple[tuple[float, float], tuple[float, float]]],
     int,
@@ -444,7 +445,7 @@ def _select_scan_segments(
         else [requested_direction_deg]
     )
     best: tuple[
-        tuple[float, int, float],
+        tuple[int, float, int, float],
         list[tuple[tuple[float, float], tuple[float, float]]],
         int,
         float,
@@ -469,9 +470,11 @@ def _select_scan_segments(
         )
         route_m = _route_distance(oriented)
         score = route_m + ingress_m + egress_m
-        # Prefer shorter total travel, then fewer capture segments, then the lower heading
-        # for deterministic output when geometrically equivalent candidates tie.
-        rank = (score, len(oriented), heading)
+        # A route that fits Lyrebird's mission-item limit always wins over an infeasible one.
+        # Within the same feasibility class, prefer shorter travel, fewer segments, then the
+        # lower heading for deterministic output when geometrically equivalent candidates tie.
+        over_limit = int(max_segments is not None and len(oriented) > max_segments)
+        rank = (over_limit, score, len(oriented), heading)
         if best is None or rank < best[0]:
             best = (
                 rank,
@@ -589,6 +592,12 @@ def build_grid_preview(
         if effective_overshoot_m < 0.0:
             raise ValueError("Overshoot cannot be negative")
 
+    terminal_item_count = 1 if finish in {"RTH", "LAND"} else 0
+    max_capture_segments = max(
+        0,
+        (MAX_MISSION_ITEMS - 3 - terminal_item_count) // 4,
+    )
+
     (
         segments_xy,
         scan_line_count,
@@ -607,6 +616,7 @@ def build_grid_preview(
         overshoot_m=effective_overshoot_m,
         reference_xy=reference_xy,
         return_to_reference=finish == "RTH",
+        max_segments=max_capture_segments,
     )
 
     items: list[dict[str, Any]] = []
