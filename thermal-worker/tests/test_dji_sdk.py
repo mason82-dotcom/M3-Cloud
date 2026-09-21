@@ -81,6 +81,7 @@ def _fake_sdk(*, measure_code=0):
     sdk.sdk_label = "fake-tsdk"
     sdk._library_path = Path("libdirp.so")
     sdk._library_sha256 = "b" * 64
+    sdk._helper_sha256 = {"libhelper.so": "a" * 64}
     destroyed = []
 
     def create(_raw, _size, handle_ptr):
@@ -180,6 +181,7 @@ def test_decode_uses_sdk_reported_resolution_and_versions():
     assert result.measurement_error_code == -12
     assert result.sdk_library_name == "libdirp.so"
     assert result.sdk_library_sha256 == "b" * 64
+    assert result.sdk_helper_sha256 == {"libhelper.so": "a" * 64}
     assert result.measurement_ranges["distance_m"] == {
         "min": 1.0,
         "max": 500.0,
@@ -423,3 +425,49 @@ def test_sdk_library_sha256_fingerprints_exact_binary(tmp_path):
         "7c5314c3029aecb065ea54bce859c63fe502cdfa08e3a0c5cc8fc754fbe4e6fb"
     )
 
+
+
+def test_expected_sdk_sha256_is_normalized_and_rejects_invalid_value():
+    value = "A" * 64
+    assert DjiThermalSdk._normalize_expected_sha256(value) == "a" * 64
+    assert DjiThermalSdk._normalize_expected_sha256("") is None
+
+    with pytest.raises(ValueError, match="64 hexadecimal"):
+        DjiThermalSdk._normalize_expected_sha256("not-a-sha256")
+
+
+def test_expected_sdk_sha256_rejects_mismatch():
+    with pytest.raises(RuntimeError, match="libdirp SHA256 mismatch"):
+        DjiThermalSdk._verify_expected_sha256("a" * 64, "b" * 64)
+
+    DjiThermalSdk._verify_expected_sha256("a" * 64, "a" * 64)
+    DjiThermalSdk._verify_expected_sha256("a" * 64, None)
+
+
+def test_helper_binary_fingerprints_cover_native_dependency_set(
+    tmp_path,
+    monkeypatch,
+):
+    import thermal_worker.dji_sdk as dji
+
+    monkeypatch.setattr(dji.platform, "system", lambda: "Linux")
+    main = tmp_path / "libdirp.so"
+    helper = tmp_path / "libv_dirp.so"
+    versioned = tmp_path / "libjpeg.so.8"
+    main.write_bytes(b"main")
+    helper.write_bytes(b"helper")
+    versioned.write_bytes(b"jpeg")
+
+    sdk = object.__new__(DjiThermalSdk)
+    sdk.release_dir = tmp_path
+    sdk._library_path = main
+
+    paths = sdk._helper_binary_paths()
+    assert [path.name for path in paths] == ["libjpeg.so.8", "libv_dirp.so"]
+    assert {
+        path.name: DjiThermalSdk._sha256_path(path)
+        for path in paths
+    } == {
+        "libjpeg.so.8": "41e5787e9f28562d07b891b1816b492309d646c0f2829743fa4963a9f9cc1d61",
+        "libv_dirp.so": "e81d3b0e9d82feaaf5f6e55bdff24731d7eee08632ffa63801e6397290c5d20a",
+    }
