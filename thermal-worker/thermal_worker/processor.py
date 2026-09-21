@@ -116,7 +116,112 @@ def _capture_output_name(index: int, capture_group: str) -> str:
     return f"{index:05d}_{safe}_{short_hash}"
 
 
-def _handoff_fingerprint(handoff: Mapping[str, Any]) -> str:
+def _hotspot_analysis(
+    temperature: np.ndarray,
+    *,
+    delta_c: float,
+    min_pixels: int,
+) -> tuple[dict[str, Any], np.ndarray]:
+    if not math.isfinite(delta_c) or delta_c <= 0:
+        raise ValueError("hotspot_delta_c must be finite and greater than zero")
+    if min_pixels < 1:
+        raise ValueError("hotspot_min_pixels must be at least 1")
+
+    finite_mask = np.isfinite(temperature)
+    finite = temperature[finite_mask]
+    if finite.size == 0:
+        raise ValueError("Temperature plane contains no finite samples")
+
+    baseline_c = float(np.median(finite))
+    threshold_c = baseline_c + float(delta_c)
+    candidate_mask = finite_mask & (temperature >= threshold_c)
+    visited = np.zeros(candidate_mask.shape, dtype=np.bool_)
+    height, width = candidate_mask.shape
+    components: list[dict[str, Any]] = []
+
+    for y0, x0 in np.argwhere(candidate_mask):
+        y0 = int(y0)
+        x0 = int(x0)
+        if visited[y0, x0]:
+            continue
+        stack = [(y0, x0)]
+        visited[y0, x0] = True
+        pixels: list[tuple[int, int]] = []
+        while stack:
+            y, x = stack.pop()
+            pixels.append((y, x))
+            for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                if (
+                    0 <= ny < height
+                    and 0 <= nx < width
+                    and candidate_mask[ny, nx]
+                    and not visited[ny, nx]
+                ):
+                    visited[ny, nx] = True
+                    stack.append((ny, nx))
+
+        if len(pixels) < min_pixels:
+            continue
+        ys = np.fromiter((point[0] for point in pixels), dtype=np.int32)
+        xs = np.fromiter((point[1] for point in pixels), dtype=np.int32)
+        values = temperature[ys, xs]
+        max_index = int(np.argmax(values))
+        components.append(
+            {
+                "pixel_count": int(len(pixels)),
+                "max_c": float(values[max_index]),
+                "mean_c": float(np.mean(values)),
+                "delta_max_c": float(values[max_index] - baseline_c),
+                "centroid_x_px": float(np.mean(xs)),
+                "centroid_y_px": float(np.mean(ys)),
+                "peak_x_px": int(xs[max_index]),
+                "peak_y_px": int(ys[max_index]),
+                "bbox": {
+                    "x_min": int(np.min(xs)),
+                    "y_min": int(np.min(ys)),
+                    "x_max": int(np.max(xs)),
+                    "y_max": int(np.max(ys)),
+                },
+            }
+        )
+
+    components.sort(key=lambda item: float(item["max_c"]), reverse=True)
+    kept_mask = np.zeros(candidate_mask.shape, dtype=np.uint8)
+    for component in components:
+        bbox = component["bbox"]
+        y_slice = slice(int(bbox["y_min"]), int(bbox["y_max"]) + 1)
+        x_slice = slice(int(bbox["x_min"]), int(bbox["x_max"]) + 1)
+        window = candidate_mask[y_slice, x_slice]
+        kept_mask[y_slice, x_slice][window] = 255
+
+    candidate_pixels = int(np.count_nonzero(candidate_mask))
+    return (
+        {
+            "method": "GLOBAL_MEDIAN_DELTA_CONNECTED_4",
+            "diagnostic_scope": "HOTSPOT_CANDIDATES_ONLY",
+            "baseline_c": baseline_c,
+            "delta_threshold_c": float(delta_c),
+            "threshold_c": threshold_c,
+            "min_component_pixels": int(min_pixels),
+            "candidate_pixels": candidate_pixels,
+            "candidate_fraction": float(candidate_pixels / finite.size),
+            "component_count": len(components),
+            "components": components[:100],
+            "components_truncated": len(components) > 100,
+            "note": (
+                "Candidates are sensor-space thermal regions above a global median delta. "
+                "They are not classified equipment or PV defects."
+            ),
+        },
+        kept_mask,
+    )
+
+
+def _handoff_fingerprint(
+    handoff: Mapping[str, Any],
+    *,
+    processing_options: Mapping[str, Any],
+) -> str:
     groups = handoff.get("capture_groups")
     normalized_groups: list[dict[str, Any]] = []
     if isinstance(groups, list):
@@ -156,6 +261,7 @@ def _handoff_fingerprint(handoff: Mapping[str, Any]) -> str:
         "job_id": handoff.get("job_id"),
         "input_prefix": handoff.get("input_prefix"),
         "capture_groups": normalized_groups,
+        "processing_options": processing_options,
     }
     encoded = json.dumps(
         payload,
@@ -257,6 +363,8 @@ def process_handoff(
     decoder: ThermalDecoder,
     *,
     measurement_overrides: Mapping[str, float] | None = None,
+    hotspot_delta_c: float = 10.0,
+    hotspot_min_pixels: int = 4,
 ) -> dict[str, Any]:
     handoff_file = Path(handoff_path)
     handoff = json.loads(handoff_file.read_text(encoding="utf-8"))
@@ -277,7 +385,17 @@ def process_handoff(
     destination = Path(output_root)
     destination_parent = destination.parent
     destination_parent.mkdir(parents=True, exist_ok=True)
-    input_fingerprint = _handoff_fingerprint(handoff)
+    processing_options = {
+        "measurement_overrides": dict(measurement_overrides or {}),
+        "hotspot_analysis": {
+            "delta_c": float(hotspot_delta_c),
+            "min_pixels": int(hotspot_min_pixels),
+        },
+    }
+    input_fingerprint = _handoff_fingerprint(
+        handoff,
+        processing_options=processing_options,
+    )
     existing = _existing_manifest(
         destination,
         expected_job_id=handoff.get("job_id"),
@@ -338,10 +456,17 @@ def process_handoff(
                 )
     
             statistics = _stats(temperature)
+            hotspot_analysis, hotspot_mask = _hotspot_analysis(
+                temperature,
+                delta_c=hotspot_delta_c,
+                min_pixels=hotspot_min_pixels,
+            )
             folder = staging / "captures" / _capture_output_name(index, capture_group)
             folder.mkdir(parents=True, exist_ok=True)
             temperature_path = folder / "temperature.tif"
             preview_path = folder / "preview.png"
+            hotspot_mask_path = folder / "hotspot-mask.png"
+            hotspots_path = folder / "hotspots.json"
             metadata_path = folder / "thermal.json"
     
             _write_temperature_tiff(
@@ -359,6 +484,19 @@ def process_handoff(
             )
             preview = _preview(temperature, statistics)
             preview.save(preview_path, format="PNG")
+            Image.fromarray(hotspot_mask, mode="L").save(
+                hotspot_mask_path,
+                format="PNG",
+            )
+            hotspots_path.write_text(
+                json.dumps(
+                    hotspot_analysis,
+                    indent=2,
+                    sort_keys=True,
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
     
             thermal_metadata: dict[str, Any] = {
                 "schema_version": 1,
@@ -405,6 +543,9 @@ def process_handoff(
                     "requested_overrides": dict(measurement_overrides or {}),
                     "statistics": statistics,
                 },
+                "analysis": {
+                    "hotspots": hotspot_analysis,
+                },
                 "registration": {
                     "wide_thermal_coregistered": False,
                     "georeferenced_temperature_raster": False,
@@ -416,6 +557,8 @@ def process_handoff(
                 "artifacts": {
                     "temperature_tif": temperature_path.relative_to(staging).as_posix(),
                     "preview_png": preview_path.relative_to(staging).as_posix(),
+                    "hotspot_mask_png": hotspot_mask_path.relative_to(staging).as_posix(),
+                    "hotspots_json": hotspots_path.relative_to(staging).as_posix(),
                 },
             }
             metadata_path.write_text(
@@ -429,7 +572,16 @@ def process_handoff(
                     "temperature_tif": temperature_path.relative_to(staging).as_posix(),
                     "preview_png": preview_path.relative_to(staging).as_posix(),
                     "thermal_json": metadata_path.relative_to(staging).as_posix(),
+                    "hotspot_mask_png": hotspot_mask_path.relative_to(staging).as_posix(),
+                    "hotspots_json": hotspots_path.relative_to(staging).as_posix(),
                     "statistics": statistics,
+                    "hotspots": {
+                        "baseline_c": hotspot_analysis["baseline_c"],
+                        "threshold_c": hotspot_analysis["threshold_c"],
+                        "component_count": hotspot_analysis["component_count"],
+                        "candidate_pixels": hotspot_analysis["candidate_pixels"],
+                        "candidate_fraction": hotspot_analysis["candidate_fraction"],
+                    },
                     "width": decoded.width,
                     "height": decoded.height,
                     "sdk_label": decoded.sdk_label,
@@ -448,6 +600,7 @@ def process_handoff(
             "job_id": handoff.get("job_id"),
             "source_handoff_schema": schema_version,
             "input_fingerprint": input_fingerprint,
+            "processing_options": processing_options,
             "capture_group_count": len(results),
             "capture_groups": results,
         }
