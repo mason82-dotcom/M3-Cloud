@@ -298,7 +298,14 @@ def thermal_result_manifest_details(root: Path) -> dict[str, dict[str, object]]:
         }
         if isinstance(capture_group, str):
             common["capture_group"] = capture_group
-        for key in ("width", "height", "sdk_label", "measurement_mode", "statistics"):
+        for key in (
+            "width",
+            "height",
+            "sdk_label",
+            "measurement_mode",
+            "measurement_abi",
+            "statistics",
+        ):
             value = group.get(key)
             if value is not None:
                 common[key] = value
