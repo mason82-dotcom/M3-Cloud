@@ -58,6 +58,18 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--reflection-c", type=float)
     parser.add_argument("--ambient-temp-c", type=float)
     parser.add_argument(
+        "--hotspot-delta-c",
+        type=float,
+        default=float(os.environ.get("M3_THERMAL_HOTSPOT_DELTA_C", "10")),
+        help="Generic hotspot candidate threshold above image median in °C.",
+    )
+    parser.add_argument(
+        "--hotspot-min-pixels",
+        type=int,
+        default=int(os.environ.get("M3_THERMAL_HOTSPOT_MIN_PIXELS", "4")),
+        help="Minimum 4-connected candidate component size in thermal pixels.",
+    )
+    parser.add_argument(
         "--api-base",
         default=os.environ.get("M3CLOUD_API_BASE"),
         help="M3-Cloud base URL (or M3CLOUD_API_BASE). Required for --watch.",
@@ -125,6 +137,8 @@ def _run_one_shot(
             result_dir,
             decoder,
             measurement_overrides=overrides,
+            hotspot_delta_c=args.hotspot_delta_c,
+            hotspot_min_pixels=args.hotspot_min_pixels,
         )
 
         if api is not None:
@@ -178,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
             poll_seconds=args.poll_seconds,
             retry_failed=args.retry_failed,
             measurement_overrides=overrides,
+            hotspot_delta_c=args.hotspot_delta_c,
+            hotspot_min_pixels=args.hotspot_min_pixels,
         )
         return 0
 
