@@ -58,7 +58,7 @@ ext {
     deps.room_compiler = 'androidx.room:room-compiler:2.8.4'
     deps.legacySupport = 'androidx.legacy:legacy-support-v4:1.0.0'
     deps.media = 'androidx.media:media:1.0.0'
-    deps.dynamicanimation = 'androidx.dynamicanimation:dynamicanimation:1.0.0'
+    deps.dynamicanimation = 'androidx.dynamicanimation:dynamicanimation:1.1.0'
     deps.ktxCore = "androidx.core:core-ktx:1.17.0"
     deps.ktxFrag = "androidx.fragment:fragment-ktx:1.9.0"
     deps.ktxNavigation = "androidx.navigation:navigation-fragment-ktx:2.10.0"
