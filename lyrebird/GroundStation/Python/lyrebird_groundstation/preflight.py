@@ -239,6 +239,43 @@ def _battery_storage_checks(
     ]
 
 
+def _camera_platform_check(platform: str) -> Check:
+    if platform in SUPPORTED_PLATFORMS:
+        return _pass("camera_platform", f"Detected {platform}")
+    return _fail("camera_platform", f"Unsupported/unknown camera platform: {platform}")
+
+
+def _survey_capture_profile_check(
+    camera: dict[str, Any],
+    platform: str,
+    profile: Any,
+) -> Check:
+    if profile and bool(camera.get("surveyProfileSupported")):
+        return _pass("survey_capture_profile", f"{profile} supported by runtime source range")
+    return _fail(
+        "survey_capture_profile",
+        f"No supported survey profile for platform={platform}, profile={profile}",
+    )
+
+
+def _expected_platform_check(platform: str, expected_platform: str) -> Check:
+    wanted = expected_platform.upper()
+    if platform == wanted:
+        return _pass("expected_platform", f"Detected platform matches {wanted}")
+    return _fail("expected_platform", f"Expected {wanted}, detected {platform}")
+
+
+def _expected_capture_profile_check(profile: Any, expected_capture_profile: str) -> Check:
+    wanted = expected_capture_profile.upper()
+    actual = str(profile or "").upper()
+    if actual == wanted:
+        return _pass("expected_capture_profile", f"Capture profile matches {wanted}")
+    return _fail(
+        "expected_capture_profile",
+        f"Expected {wanted}, selected {actual or 'NONE'}",
+    )
+
+
 def _camera_gimbal_checks(
     snapshot: dict[str, Any],
     expected_platform: str | None,
@@ -256,38 +293,13 @@ def _camera_gimbal_checks(
             "Raw gimbal telemetry valid",
             "Raw gimbal telemetry unavailable/invalid",
         ),
-        (
-            _pass("camera_platform", f"Detected {platform}")
-            if platform in SUPPORTED_PLATFORMS
-            else _fail("camera_platform", f"Unsupported/unknown camera platform: {platform}")
-        ),
-        (
-            _pass("survey_capture_profile", f"{profile} supported by runtime source range")
-            if profile and bool(camera.get("surveyProfileSupported"))
-            else _fail(
-                "survey_capture_profile",
-                f"No supported survey profile for platform={platform}, profile={profile}",
-            )
-        ),
+        _camera_platform_check(platform),
+        _survey_capture_profile_check(camera, platform, profile),
     ]
     if expected_platform:
-        wanted = expected_platform.upper()
-        checks.append(
-            _pass("expected_platform", f"Detected platform matches {wanted}")
-            if platform == wanted
-            else _fail("expected_platform", f"Expected {wanted}, detected {platform}")
-        )
+        checks.append(_expected_platform_check(platform, expected_platform))
     if expected_capture_profile:
-        wanted = expected_capture_profile.upper()
-        actual = str(profile or "").upper()
-        checks.append(
-            _pass("expected_capture_profile", f"Capture profile matches {wanted}")
-            if actual == wanted
-            else _fail(
-                "expected_capture_profile",
-                f"Expected {wanted}, selected {actual or 'NONE'}",
-            )
-        )
+        checks.append(_expected_capture_profile_check(profile, expected_capture_profile))
     return checks
 
 
@@ -311,6 +323,38 @@ def _rtk_check(snapshot: dict[str, Any], policy: PreflightPolicy) -> Check:
     return _pass("rtk", f"RTK {fix}, connected/healthy, age {age_ms} ms")
 
 
+def _mission_trace_check(items: list[dict[str, Any]], declared: int) -> Check:
+    if items and declared == len(items):
+        return _pass("mission_trace", f"Accepted mission contains {len(items)} items")
+    return _fail(
+        "mission_trace",
+        f"Mission trace incomplete: declared={declared}, items={len(items)}",
+    )
+
+
+def _mission_frame_check(items: list[dict[str, Any]]) -> Check:
+    frame_errors = _mission_frame_errors(items)
+    if not frame_errors:
+        return _pass("mission_frames", "All mission-item frames are Lyrebird-compatible")
+    return _fail("mission_frames", "; ".join(frame_errors[:5]))
+
+
+def _mission_age_check(
+    mission_trace: dict[str, Any],
+    snapshot_ts: int,
+    policy: PreflightPolicy,
+) -> Check:
+    uploaded_ms = int(mission_trace.get("uploadedAtEpochMs") or 0)
+    mission_age = snapshot_ts - uploaded_ms if snapshot_ts and uploaded_ms else -1
+    if 0 <= mission_age <= policy.max_mission_age_ms:
+        return _pass("mission_fresh", f"Accepted mission age {mission_age} ms")
+    return _fail(
+        "mission_fresh",
+        f"Accepted mission stale/unverifiable: age={mission_age} ms "
+        f"(policy {policy.max_mission_age_ms} ms)",
+    )
+
+
 def _mission_checks(
     mission_trace: dict[str, Any] | None,
     snapshot_ts: int,
@@ -321,34 +365,11 @@ def _mission_checks(
 
     items = list(mission_trace.get("items") or [])
     declared = int(mission_trace.get("count") or 0)
-    trace_check = (
-        _pass("mission_trace", f"Accepted mission contains {len(items)} items")
-        if items and declared == len(items)
-        else _fail(
-            "mission_trace",
-            f"Mission trace incomplete: declared={declared}, items={len(items)}",
-        )
-    )
-
-    frame_errors = _mission_frame_errors(items)
-    frame_check = (
-        _pass("mission_frames", "All mission-item frames are Lyrebird-compatible")
-        if not frame_errors
-        else _fail("mission_frames", "; ".join(frame_errors[:5]))
-    )
-
-    uploaded_ms = int(mission_trace.get("uploadedAtEpochMs") or 0)
-    mission_age = snapshot_ts - uploaded_ms if snapshot_ts and uploaded_ms else -1
-    age_check = (
-        _pass("mission_fresh", f"Accepted mission age {mission_age} ms")
-        if 0 <= mission_age <= policy.max_mission_age_ms
-        else _fail(
-            "mission_fresh",
-            f"Accepted mission stale/unverifiable: age={mission_age} ms "
-            f"(policy {policy.max_mission_age_ms} ms)",
-        )
-    )
-    return [trace_check, frame_check, age_check]
+    return [
+        _mission_trace_check(items, declared),
+        _mission_frame_check(items),
+        _mission_age_check(mission_trace, snapshot_ts, policy),
+    ]
 
 
 def _wiretap_checks(
@@ -382,8 +403,7 @@ def _wiretap_checks(
             if result.get("ok")
             else _fail(
                 "wiretap",
-                "; ".join(result.get("differences", [])[:5])
-                or "Wiretap/RC comparison failed",
+                "; ".join(result.get("differences", [])[:5]) or "Wiretap/RC comparison failed",
             )
         )
     ]

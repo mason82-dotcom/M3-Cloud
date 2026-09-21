@@ -24,6 +24,23 @@ silently pairing one `libdirp` binary with another release's headers.
 Review and comply with the DJI Thermal SDK license/EULA for the SDK version you
 install. No DJI binary is committed to this repository.
 
+## M3T-only source identity
+
+The native workflow is intentionally scoped to DJI **Mavic 3 Thermal (M3T)**.
+Before decoding each frozen WIDE/THERMAL pair, the worker inspects the
+already-catalogued camera-model metadata from M3-Cloud:
+
+- common M3T aliases such as `M3T`, `Mavic 3T` and
+  `Mavic 3 Thermal` produce `CONFIRMED`;
+- known different DJI platforms such as M3E, M3M, M3TD, M30T, H30T or M4T
+  produce `CONFLICT` and the job fails before DIRP decode;
+- missing or unrecognized model strings produce `UNCONFIRMED`, not a guessed
+  identity.
+
+Unknown sensor-specific codes therefore remain processable while a clearly
+misclassified non-M3T dataset cannot silently pass through the M3T-only
+pipeline. The evidence is preserved per capture and in the job manifest.
+
 ## Output contract
 
 For each complete M3T WIDE/THERMAL capture pair the worker writes:
