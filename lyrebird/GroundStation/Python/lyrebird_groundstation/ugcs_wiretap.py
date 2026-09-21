@@ -567,7 +567,8 @@ class UgcsWiretapProxy:
         vsm.settimeout(0.5)
 
         aircraft = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        aircraft.bind(("0.0.0.0", self.aircraft_local_port))
+        # The socket is outbound-only and immediately connected to the configured RC endpoint.
+        aircraft.bind(("0.0.0.0", self.aircraft_local_port))  # nosec B104
         # Connected UDP pins the RC endpoint in the kernel: unrelated datagrams are not delivered
         # to recvfrom(), and send() cannot accidentally target a different aircraft.
         aircraft.connect(self.rc)
