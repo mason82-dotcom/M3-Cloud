@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map, StyleSpecification } from "maplibre-gl";
-import type { FeatureCollection, LineString, Point } from "geojson";
+import type { FeatureCollection, LineString, Point, Polygon } from "geojson";
 
 import {
   createMission,
   createMissionDeployment,
   fetchMissionDeployments,
+  fetchMissionPlannerProfiles,
   fetchMissionPreflight,
   fetchMissionRevisions,
   fetchMissions,
@@ -17,10 +18,15 @@ import {
   uploadMissionDeployment,
   missionDeploymentDownloadUrl,
   missionRevisionDownloadUrl,
+  previewMissionGrid,
 } from "./api";
 import type {
   Mission,
   MissionDeployment,
+  MissionGridPreview,
+  MissionPlannerPoint,
+  MissionPlannerProfile,
+  MissionPlanningContext,
   MissionPlanItem,
   MissionPreflight,
   MissionRevision,
@@ -33,6 +39,11 @@ const ROUTE_SOURCE = "mission-route";
 const ROUTE_LAYER = "mission-route-line";
 const POINT_SOURCE = "mission-waypoints";
 const POINT_LAYER = "mission-waypoints-layer";
+const PLANNER_AREA_SOURCE = "mission-planner-area";
+const PLANNER_AREA_FILL = "mission-planner-area-fill";
+const PLANNER_AREA_LINE = "mission-planner-area-line";
+const PLANNER_POINT_SOURCE = "mission-planner-points";
+const PLANNER_POINT_LAYER = "mission-planner-points-layer";
 
 const PRIMARY_STYLE =
   import.meta.env.VITE_MAP_STYLE_URL ??
@@ -104,19 +115,95 @@ function waypointData(items: MissionPlanItem[]): FeatureCollection<Point> {
   };
 }
 
-function MissionMap({ items }: { items: MissionPlanItem[] }) {
+function plannerAreaData(
+  points: MissionPlannerPoint[],
+): FeatureCollection<Polygon> {
+  if (points.length < 3) {
+    return { type: "FeatureCollection", features: [] };
+  }
+  const coordinates = points.map((point) => [
+    point.longitude_deg,
+    point.latitude_deg,
+  ]);
+  coordinates.push([...coordinates[0]]);
+  return {
+    type: "FeatureCollection",
+    features: [{
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [coordinates] },
+      properties: {},
+    }],
+  };
+}
+
+function plannerPointData(
+  points: MissionPlannerPoint[],
+): FeatureCollection<Point> {
+  return {
+    type: "FeatureCollection",
+    features: points.map((point, index) => ({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [point.longitude_deg, point.latitude_deg],
+      },
+      properties: { index: index + 1 },
+    })),
+  };
+}
+
+function vehiclePlatform(vehicle: Vehicle | undefined): "M3E" | "M3T" | "M3M" | null {
+  const payload = vehicle?.telemetry?.payload?.platform?.toUpperCase();
+  if (payload === "M3E" || payload === "M3T" || payload === "M3M") return payload;
+  const model = vehicle?.model?.trim().toUpperCase();
+  if (model === "M3E" || model === "MAVIC 3E" || model === "MAVIC 3 ENTERPRISE") return "M3E";
+  if (model === "M3T" || model === "MAVIC 3T" || model === "MAVIC 3 THERMAL") return "M3T";
+  if (model === "M3M" || model === "MAVIC 3M" || model === "MAVIC 3 MULTISPECTRAL") return "M3M";
+  return null;
+}
+
+function missionCommandLabel(command: number): string {
+  const names: Record<number, string> = {
+    16: "WAYPOINT",
+    22: "TAKEOFF",
+    178: "CHANGE_SPEED",
+    206: "CAM_TRIGG_DIST",
+    1000: "GIMBAL_PITCHYAW",
+  };
+  return names[command] ?? String(command);
+}
+
+function MissionMap({
+  items,
+  plannerPolygon,
+  plannerDrawing,
+  onPlannerClick,
+}: {
+  items: MissionPlanItem[];
+  plannerPolygon: MissionPlannerPoint[];
+  plannerDrawing: boolean;
+  onPlannerClick?: (point: MissionPlannerPoint) => void;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const itemsRef = useRef(items);
+  const plannerClickRef = useRef(onPlannerClick);
   const [fallback, setFallback] = useState(false);
   itemsRef.current = items;
+  plannerClickRef.current = onPlannerClick;
 
   const route = useMemo(() => routeData(items), [items]);
   const points = useMemo(() => waypointData(items), [items]);
+  const plannerArea = useMemo(() => plannerAreaData(plannerPolygon), [plannerPolygon]);
+  const plannerPoints = useMemo(() => plannerPointData(plannerPolygon), [plannerPolygon]);
   const routeRef = useRef(route);
   const pointsRef = useRef(points);
+  const plannerAreaRef = useRef(plannerArea);
+  const plannerPointsRef = useRef(plannerPoints);
   routeRef.current = route;
   pointsRef.current = points;
+  plannerAreaRef.current = plannerArea;
+  plannerPointsRef.current = plannerPoints;
 
   const fit = useCallback((map: Map, current: MissionPlanItem[]) => {
     const coordinates = current
@@ -189,7 +276,52 @@ function MissionMap({ items }: { items: MissionPlanItem[] }) {
           "circle-color": "#69a9ff",
         },
       });
+      map.addSource(PLANNER_AREA_SOURCE, {
+        type: "geojson",
+        data: plannerAreaRef.current,
+      });
+      map.addLayer({
+        id: PLANNER_AREA_FILL,
+        type: "fill",
+        source: PLANNER_AREA_SOURCE,
+        paint: {
+          "fill-color": "#e8a93b",
+          "fill-opacity": 0.14,
+        },
+      });
+      map.addLayer({
+        id: PLANNER_AREA_LINE,
+        type: "line",
+        source: PLANNER_AREA_SOURCE,
+        paint: {
+          "line-color": "#e8a93b",
+          "line-width": 2,
+          "line-dasharray": [2, 1.5],
+        },
+      });
+      map.addSource(PLANNER_POINT_SOURCE, {
+        type: "geojson",
+        data: plannerPointsRef.current,
+      });
+      map.addLayer({
+        id: PLANNER_POINT_LAYER,
+        type: "circle",
+        source: PLANNER_POINT_SOURCE,
+        paint: {
+          "circle-radius": 5,
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "#1a1206",
+          "circle-color": "#e8a93b",
+        },
+      });
       fit(map, itemsRef.current);
+    });
+
+    map.on("click", (event) => {
+      plannerClickRef.current?.({
+        latitude_deg: event.lngLat.lat,
+        longitude_deg: event.lngLat.lng,
+      });
     });
 
     map.on("error", () => {
@@ -211,8 +343,16 @@ function MissionMap({ items }: { items: MissionPlanItem[] }) {
     if (!map || !map.isStyleLoaded()) return;
     (map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined)?.setData(route);
     (map.getSource(POINT_SOURCE) as GeoJSONSource | undefined)?.setData(points);
+    (map.getSource(PLANNER_AREA_SOURCE) as GeoJSONSource | undefined)?.setData(plannerArea);
+    (map.getSource(PLANNER_POINT_SOURCE) as GeoJSONSource | undefined)?.setData(plannerPoints);
     fit(map, items);
-  }, [fit, items, points, route]);
+  }, [fit, items, plannerArea, plannerPoints, points, route]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getCanvas().style.cursor = plannerDrawing ? "crosshair" : "";
+  }, [plannerDrawing]);
 
   return (
     <div className="missionMapShell">
@@ -258,6 +398,18 @@ export function MissionsView() {
   const [deployments, setDeployments] = useState<MissionDeployment[]>([]);
   const [preflight, setPreflight] = useState<MissionPreflight | null>(null);
   const [draftItems, setDraftItems] = useState<MissionPlanItem[]>([]);
+  const [draftPlanning, setDraftPlanning] = useState<MissionPlanningContext | null>(null);
+  const [plannerProfiles, setPlannerProfiles] = useState<MissionPlannerProfile[]>([]);
+  const [plannerPlatform, setPlannerPlatform] = useState<"M3E" | "M3T" | "M3M">("M3E");
+  const [plannerProfile, setPlannerProfile] = useState("");
+  const [plannerPoints, setPlannerPoints] = useState<MissionPlannerPoint[]>([]);
+  const [plannerDrawing, setPlannerDrawing] = useState(false);
+  const [plannerPreview, setPlannerPreview] = useState<MissionGridPreview | null>(null);
+  const [plannerGsd, setPlannerGsd] = useState(2);
+  const [plannerForwardOverlap, setPlannerForwardOverlap] = useState(80);
+  const [plannerSideOverlap, setPlannerSideOverlap] = useState(70);
+  const [plannerDirection, setPlannerDirection] = useState(0);
+  const [plannerSpeed, setPlannerSpeed] = useState(8);
   const [newName, setNewName] = useState("");
   const [newSurveyId, setNewSurveyId] = useState("");
   const [newAircraftSn, setNewAircraftSn] = useState("");
@@ -297,6 +449,22 @@ export function MissionsView() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void fetchMissionPlannerProfiles()
+      .then((catalog) => {
+        if (!cancelled) setPlannerProfiles(catalog.profiles);
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const selected =
     missions.find((mission) => mission.id === selectedId) ?? null;
 
@@ -306,6 +474,9 @@ export function MissionsView() {
         ? selected.plan.items.map((item) => ({ ...item, frame: item.frame ?? 6 }))
         : [],
     );
+    setDraftPlanning(selected?.plan.planning ?? null);
+    setPlannerPreview(null);
+    setPlannerDrawing(false);
     if (!selectedId) {
       setRevisions([]);
       setDeployments([]);
@@ -351,6 +522,57 @@ export function MissionsView() {
   const selectedVehicle = vehicles.find(
     (vehicle) => vehicle.sn === selected?.aircraft_sn,
   );
+
+  const availablePlannerProfiles = useMemo(
+    () => plannerProfiles.filter((profile) => profile.platform === plannerPlatform),
+    [plannerPlatform, plannerProfiles],
+  );
+
+  useEffect(() => {
+    const assigned = vehiclePlatform(selectedVehicle);
+    if (assigned) setPlannerPlatform(assigned);
+  }, [selectedVehicle?.sn, selectedVehicle?.model, selectedVehicle?.telemetry?.payload?.platform]);
+
+  useEffect(() => {
+    if (!availablePlannerProfiles.some((profile) => profile.key === plannerProfile)) {
+      setPlannerProfile(availablePlannerProfiles[0]?.key ?? "");
+    }
+  }, [availablePlannerProfiles, plannerProfile]);
+
+  const editDraft = (
+    update: (current: MissionPlanItem[]) => MissionPlanItem[],
+  ) => {
+    setDraftPlanning(null);
+    setPlannerPreview(null);
+    setDraftItems(update);
+  };
+
+  const buildSurveyGrid = async () => {
+    if (plannerPoints.length < 3 || !plannerProfile) return;
+    setBusy(true);
+    try {
+      const preview = await previewMissionGrid({
+        platform: plannerPlatform,
+        capture_profile: plannerProfile,
+        polygon: plannerPoints,
+        gsd_cm: plannerGsd,
+        forward_overlap_pct: plannerForwardOverlap,
+        side_overlap_pct: plannerSideOverlap,
+        direction_deg: plannerDirection,
+        speed_mps: plannerSpeed,
+        gimbal_pitch_deg: -90,
+      });
+      setPlannerPreview(preview);
+      setDraftItems(preview.plan.items);
+      setDraftPlanning(preview.plan.planning);
+      setPlannerDrawing(false);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const uploadHandoff = async (deployment: MissionDeployment) => {
     if (!selected) return;
@@ -410,11 +632,18 @@ export function MissionsView() {
     if (!selected) return;
     setBusy(true);
     try {
-      const updated = await updateMission(selected.id, { items: renumber(draftItems) });
+      const updated = await updateMission(selected.id, {
+        items: renumber(draftItems),
+        planning: draftPlanning,
+        ...(draftPlanning?.planner === "M3_CLOUD_GRID"
+          ? { preferred_executor: "DJI_NATIVE" as const }
+          : {}),
+      });
       setMissions((current) =>
         current.map((mission) => mission.id === updated.id ? updated : mission),
       );
       setDraftItems(updated.plan.items);
+      setDraftPlanning(updated.plan.planning ?? null);
       const [nextRevisions, nextPreflight] = await Promise.all([
         fetchMissionRevisions(updated.id),
         fetchMissionPreflight(updated.id),
@@ -559,7 +788,17 @@ export function MissionsView() {
             </div>
 
             <div className="missionGrid">
-              <MissionMap items={draftItems} />
+              <MissionMap
+                items={draftItems}
+                plannerPolygon={plannerPoints}
+                plannerDrawing={plannerDrawing}
+                onPlannerClick={plannerDrawing
+                  ? (point) => {
+                      setPlannerPoints((current) => [...current, point]);
+                      setPlannerPreview(null);
+                    }
+                  : undefined}
+              />
 
               <aside className="panel missionInspector">
                 <div className="panelHead">
@@ -758,6 +997,174 @@ export function MissionsView() {
               </aside>
             </div>
 
+            <section className="panel missionPlanner">
+              <div className="panelHead">
+                <div>
+                  <h2>Survey grid planner</h2>
+                  <small>M3E / M3T / M3M camera-aware · DJI-native distance capture</small>
+                </div>
+                <span>{plannerPoints.length} vertices</span>
+              </div>
+
+              <div className="missionPlannerBody">
+                <div className="missionPlannerFields">
+                  <label>
+                    Platform
+                    <select
+                      value={plannerPlatform}
+                      onChange={(event) =>
+                        setPlannerPlatform(event.target.value as "M3E" | "M3T" | "M3M")
+                      }
+                    >
+                      <option value="M3E">M3E</option>
+                      <option value="M3T">M3T</option>
+                      <option value="M3M">M3M</option>
+                    </select>
+                  </label>
+                  <label>
+                    Capture profile
+                    <select
+                      value={plannerProfile}
+                      onChange={(event) => setPlannerProfile(event.target.value)}
+                    >
+                      {availablePlannerProfiles.map((profile) => (
+                        <option key={profile.key} value={profile.key}>
+                          {profile.key}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    GSD cm/px
+                    <input
+                      min="0.1"
+                      max="50"
+                      step="0.1"
+                      type="number"
+                      value={plannerGsd}
+                      onChange={(event) => setPlannerGsd(Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Forward overlap %
+                    <input
+                      min="0"
+                      max="95"
+                      step="1"
+                      type="number"
+                      value={plannerForwardOverlap}
+                      onChange={(event) => setPlannerForwardOverlap(Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Side overlap %
+                    <input
+                      min="0"
+                      max="95"
+                      step="1"
+                      type="number"
+                      value={plannerSideOverlap}
+                      onChange={(event) => setPlannerSideOverlap(Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Grid heading °
+                    <input
+                      min="0"
+                      max="359.9"
+                      step="1"
+                      type="number"
+                      value={plannerDirection}
+                      onChange={(event) => setPlannerDirection(Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Requested speed m/s
+                    <input
+                      min="0.1"
+                      max="25"
+                      step="0.1"
+                      type="number"
+                      value={plannerSpeed}
+                      onChange={(event) => setPlannerSpeed(Number(event.target.value))}
+                    />
+                  </label>
+                </div>
+
+                <div className="missionPlannerActions">
+                  <button
+                    className={plannerDrawing ? "active" : ""}
+                    disabled={busy || selected.status === "ARCHIVED"}
+                    onClick={() => setPlannerDrawing((value) => !value)}
+                    type="button"
+                  >
+                    {plannerDrawing ? "Stop drawing" : "Draw polygon on map"}
+                  </button>
+                  <button
+                    disabled={busy || plannerPoints.length === 0}
+                    onClick={() => {
+                      setPlannerPoints((current) => current.slice(0, -1));
+                      setPlannerPreview(null);
+                    }}
+                    type="button"
+                  >
+                    Undo vertex
+                  </button>
+                  <button
+                    disabled={busy || plannerPoints.length === 0}
+                    onClick={() => {
+                      setPlannerPoints([]);
+                      setPlannerPreview(null);
+                    }}
+                    type="button"
+                  >
+                    Clear polygon
+                  </button>
+                  <button
+                    disabled={
+                      busy ||
+                      selected.status === "ARCHIVED" ||
+                      plannerPoints.length < 3 ||
+                      !plannerProfile
+                    }
+                    onClick={() => void buildSurveyGrid()}
+                    type="button"
+                  >
+                    Generate grid preview
+                  </button>
+                </div>
+
+                <small className="missionPlannerHint">
+                  Enable drawing, click at least three polygon vertices on the map, then generate.
+                  The preview replaces the editable draft only; Save plan creates the immutable
+                  revision. Camera-specific planner context is stored with that revision and
+                  preflight blocks a later M3E/M3T/M3M mismatch.
+                </small>
+
+                {plannerPreview ? (
+                  <div className="missionPlannerStats">
+                    <span>Altitude <b>{plannerPreview.geometry.altitude_m.toFixed(1)} m</b></span>
+                    <span>Line spacing <b>{plannerPreview.geometry.actual_line_spacing_m.toFixed(1)} m</b></span>
+                    <span>Trigger <b>{plannerPreview.geometry.trigger_distance_m.toFixed(1)} m</b></span>
+                    <span>Speed <b>{plannerPreview.cadence.effective_speed_mps.toFixed(1)} m/s</b></span>
+                    <span>Segments <b>{plannerPreview.geometry.capture_segment_count}</b></span>
+                    <span>Photos ≤ <b>{plannerPreview.geometry.expected_photos_upper_bound}</b></span>
+                    <span>Items <b>{plannerPreview.mission_item_count}</b></span>
+                    <span>Area <b>{(plannerPreview.geometry.area_m2 / 10_000).toFixed(2)} ha</b></span>
+                  </div>
+                ) : null}
+
+                {plannerPreview?.warnings.map((warning) => (
+                  <div className="missionPlannerWarning" key={warning}>{warning}</div>
+                ))}
+                {availablePlannerProfiles.find((profile) => profile.key === plannerProfile)?.note ? (
+                  <small className="missionPlannerNote">
+                    {availablePlannerProfiles.find((profile) => profile.key === plannerProfile)?.note}
+                  </small>
+                ) : null}
+              </div>
+            </section>
+
             <section className="panel missionEditor">
               <div className="panelHead">
                 <div>
@@ -768,7 +1175,7 @@ export function MissionsView() {
                   <button
                     disabled={busy || selected.status === "ARCHIVED"}
                     onClick={() =>
-                      setDraftItems((current) => [
+                      editDraft((current) => [
                         ...current,
                         nextWaypoint(current, selectedVehicle),
                       ])
@@ -792,6 +1199,7 @@ export function MissionsView() {
                   <thead>
                     <tr>
                       <th>#</th>
+                      <th>Command</th>
                       <th>Frame</th>
                       <th>Latitude</th>
                       <th>Longitude</th>
@@ -806,12 +1214,15 @@ export function MissionsView() {
                       <tr key={`${index}:${item.seq}`}>
                         <td>{index}</td>
                         <td>
+                          <span className="missionCommand">{missionCommandLabel(item.command)}</span>
+                        </td>
+                        <td>
                           <select
-                            disabled={selected.status === "ARCHIVED"}
+                            disabled={selected.status === "ARCHIVED" || item.command !== 16}
                             value={item.frame ?? 6}
                             onChange={(event) => {
                               const frame = Number(event.target.value);
-                              setDraftItems((current) =>
+                              editDraft((current) =>
                                 current.map((candidate, candidateIndex) =>
                                   candidateIndex === index
                                     ? { ...candidate, frame }
@@ -833,13 +1244,13 @@ export function MissionsView() {
                         ] as const).map(([field, value]) => (
                           <td key={field}>
                             <input
-                              disabled={selected.status === "ARCHIVED"}
+                              disabled={selected.status === "ARCHIVED" || item.command !== 16}
                               step="any"
                               type="number"
                               value={value}
                               onChange={(event) => {
                                 const raw = event.target.value;
-                                setDraftItems((current) =>
+                                editDraft((current) =>
                                   current.map((candidate, candidateIndex) =>
                                     candidateIndex === index
                                       ? {
@@ -860,7 +1271,7 @@ export function MissionsView() {
                           <button
                             disabled={busy || selected.status === "ARCHIVED"}
                             onClick={() =>
-                              setDraftItems((current) =>
+                              editDraft((current) =>
                                 renumber(current.filter((_, currentIndex) => currentIndex !== index)),
                               )
                             }
