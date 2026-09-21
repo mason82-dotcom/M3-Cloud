@@ -173,3 +173,37 @@ latitude. Pull the log after flying:
 ```bash
 adb pull /sdcard/Documents/lyrebird/FlightLogs/$(date +%F)/
 ```
+
+
+## 7. UgCS PX4 VSM wiretap — safe dry-run before first flight
+
+The Phase-9 wiretap sits between the UgCS PX4 VSM and the RC. It records raw MAVLink 2 frames in
+both directions and, by default, is **fail-closed**: only heartbeat/time-sync, read-only parameter
+requests, mission upload/download traffic, and a short allowlist of read-only request commands are
+forwarded. `SET_MODE`, `MANUAL_CONTROL`, parameter writes, unknown commands/messages, MAVLink 1,
+and undecodable bytes are blocked. If one frame in a UDP datagram is unsafe, the complete datagram
+is blocked.
+
+```powershell
+$env:LYREBIRD_RC="192.168.178.63"
+lyrebird-ugcs-wiretap --listen-port 14560
+```
+
+Point the UgCS PX4 VSM to `127.0.0.1:14560`; the proxy forwards allowed traffic to RC UDP 14550.
+The first valid VSM peer is pinned, and replies are accepted only from the configured RC endpoint.
+
+Upload the mission but **do not start it**. Stop the capture with Ctrl+C and compare the actual
+wire mission with Lyrebird's accepted mission trace:
+
+```powershell
+lyrebird-ugcs-wiretap --rc 192.168.178.63 --compare .\ugcs-wiretap\ugcs-wiretap-YYYYMMDD-HHMMSS.jsonl
+```
+
+The comparison checks item count, sequence, command, frame, autocontinue, parameters, coordinates,
+altitude, and a canonical SHA-256 mission digest exposed by
+`GET /get/mavlink/mission/latest`. Float fields use a small absolute tolerance for their normal
+float32/JSON representation.
+
+Only after the dry-run comparison returns `"ok": true` should `--live-flight` be considered for
+a controlled field test. `--live-flight` disables the dry-run command allowlist; it does not
+replace Lyrebird's own signing/control-authority and manual-override safety gates.
