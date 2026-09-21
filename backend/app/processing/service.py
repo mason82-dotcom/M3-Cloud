@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
 import logging
 import mimetypes
 import tempfile
@@ -25,6 +26,7 @@ from app.models import (
 from app.processing.mbtiles import publish_mbtiles
 from app.processing.rastertiles import RASTER_TILE_ARCHIVES, publish_raster_tiles
 from app.processing.tiles3d import THREE_D_TILE_ARCHIVES, publish_3d_tiles
+from app.processing.dronedb import DroneDBClient
 from app.processing.profiles import WebODMProfile, get_profile
 from app.storage import create_storage_client
 from app.processing.webodm import WebODMClient
@@ -41,6 +43,7 @@ REMOTE_STATUS = {
 }
 
 THERMOGRAM_KINDS = ("WIDE", "THERMAL")
+M3M_DRONEDB_KINDS = ("RGB", "MS_GREEN", "MS_RED", "MS_RED_EDGE", "MS_NIR")
 
 
 def select_thermogram_assets(assets: list[MediaAsset]) -> list[MediaAsset]:
@@ -77,6 +80,123 @@ def select_thermogram_assets(assets: list[MediaAsset]) -> list[MediaAsset]:
             "Thermogram requires at least one complete M3T Wide/Thermal capture pair"
         )
     return selected
+
+
+def select_dronedb_assets(assets: list[MediaAsset]) -> list[MediaAsset]:
+    """Freeze complete M3M RGB + four-band capture groups for DroneDB."""
+
+    by_group: dict[str, list[MediaAsset]] = {}
+    for asset in assets:
+        if (
+            asset.platform != "M3M"
+            or asset.media_kind not in M3M_DRONEDB_KINDS
+            or not asset.capture_group
+        ):
+            continue
+        by_group.setdefault(asset.capture_group, []).append(asset)
+
+    selected: list[MediaAsset] = []
+    order = {kind: index for index, kind in enumerate(M3M_DRONEDB_KINDS)}
+    required = set(M3M_DRONEDB_KINDS)
+    complete_groups = 0
+
+    for group in sorted(by_group):
+        members = by_group[group]
+        by_kind = {asset.media_kind: asset for asset in members}
+        if not required.issubset(by_kind):
+            continue
+        complete_groups += 1
+        selected.extend(
+            sorted(
+                (by_kind[kind] for kind in M3M_DRONEDB_KINDS),
+                key=lambda item: order[item.media_kind],
+            )
+        )
+
+    if complete_groups < 2:
+        raise ValueError(
+            "DroneDB handoff requires at least two complete M3M RGB + Green/Red/RedEdge/NIR capture groups"
+        )
+    return selected
+
+
+def _dronedb_remote_path(input_prefix: str, relative_path: str) -> str:
+    prefix = PurePosixPath(input_prefix)
+    path = PurePosixPath(relative_path)
+    try:
+        relative = path.relative_to(prefix)
+    except ValueError as exc:
+        raise ValueError("M3M asset is outside the frozen dataset prefix") from exc
+    if not relative.parts:
+        raise ValueError("M3M asset path cannot resolve to the dataset root")
+    return f"raw/{relative.as_posix()}"
+
+
+def _job_option(job: ProcessingJob, name: str) -> object | None:
+    for item in job.options or []:
+        if isinstance(item, dict) and item.get("name") == name:
+            return item.get("value")
+    return None
+
+
+def build_dronedb_handoff(
+    job: ProcessingJob,
+    frozen: list[ProcessingJobAsset],
+) -> dict[str, object]:
+    if job.kind != "DRONEDB" or job.platform != "M3M":
+        raise ValueError("Processing job is not an M3M DroneDB handoff")
+
+    required = set(M3M_DRONEDB_KINDS)
+    grouped: dict[str, set[str]] = {}
+    assets: list[dict[str, object]] = []
+    for item in frozen:
+        if item.capture_group:
+            grouped.setdefault(item.capture_group, set()).add(item.media_kind)
+        assets.append(
+            {
+                "ordinal": item.ordinal,
+                "media_asset_id": str(item.media_asset_id),
+                "relative_path": item.relative_path,
+                "remote_path": _dronedb_remote_path(job.input_prefix, item.relative_path),
+                "media_kind": item.media_kind,
+                "capture_group": item.capture_group,
+                "size_bytes": item.size_bytes,
+                "sha256": item.sha256,
+                "capture_time_utc": (
+                    item.capture_time_utc.isoformat()
+                    if item.capture_time_utc
+                    else None
+                ),
+                "metadata": item.metadata_snapshot or {},
+            }
+        )
+
+    complete_groups = sum(1 for kinds in grouped.values() if required.issubset(kinds))
+    return {
+        "schema_version": 1,
+        "kind": "M3CLOUD_M3M_DRONEDB_HANDOFF",
+        "workflow": "DRONEDB",
+        "platform": "M3M",
+        "job_id": str(job.id),
+        "flight_id": str(job.flight_id) if job.flight_id else None,
+        "survey_id": str(job.survey_id) if job.survey_id else None,
+        "created_at": job.created_at.isoformat(),
+        "input_prefix": job.input_prefix,
+        "required_media_kinds": list(M3M_DRONEDB_KINDS),
+        "capture_group_count": complete_groups,
+        "asset_count": len(assets),
+        "source_policy": "IMMUTABLE_FROZEN_ORIGINALS",
+        "remote": {
+            "organization": _job_option(job, "dronedb_org"),
+            "dataset": _job_option(job, "dronedb_dataset"),
+            "url": _job_option(job, "dronedb_dataset_url"),
+        },
+        "assets": assets,
+        "note": (
+            "DroneDB receives byte-for-byte verified M3M originals plus M3-Cloud provenance. "
+            "Downstream photogrammetry/reflectance processing remains a separate DroneDB task."
+        ),
+    }
 
 
 def _handoff_path(root: str, prefix: str) -> str:
@@ -307,6 +427,13 @@ class ProcessingManager:
         webodm_username: str = "",
         webodm_password: str = "",
         webodm_timeout_seconds: float = 300.0,
+        dronedb_enabled: bool = False,
+        dronedb_url: str = "",
+        dronedb_public_url: str = "",
+        dronedb_username: str = "",
+        dronedb_password: str = "",
+        dronedb_org: str = "m3cloud",
+        dronedb_timeout_seconds: float = 300.0,
         poll_interval_seconds: float = 5.0,
     ):
         self.sessions = sessions
@@ -322,6 +449,13 @@ class ProcessingManager:
         self.webodm_username = webodm_username
         self.webodm_password = webodm_password
         self.webodm_timeout_seconds = webodm_timeout_seconds
+        self.dronedb_enabled = dronedb_enabled
+        self.dronedb_url = dronedb_url.rstrip("/")
+        self.dronedb_public_url = (dronedb_public_url or dronedb_url).rstrip("/")
+        self.dronedb_username = dronedb_username
+        self.dronedb_password = dronedb_password
+        self.dronedb_org = dronedb_org.strip()
+        self.dronedb_timeout_seconds = dronedb_timeout_seconds
         self.poll_interval_seconds = max(2.0, poll_interval_seconds)
         self._queue: asyncio.Queue[uuid.UUID] = asyncio.Queue()
         self._worker: asyncio.Task[None] | None = None
@@ -452,6 +586,119 @@ class ProcessingManager:
 
         await self._queue.put(job.id)
         return job
+
+    async def create_dronedb_job(
+        self,
+        *,
+        name: str,
+        input_prefix: str,
+    ) -> ProcessingJob:
+        if not self.dronedb_enabled or not self.dronedb_url:
+            raise RuntimeError("DroneDB integration is disabled")
+        if not self.dronedb_username or not self.dronedb_password:
+            raise RuntimeError("DroneDB credentials are not configured")
+        if not self.dronedb_org:
+            raise RuntimeError("DroneDB organization is not configured")
+
+        normalized_prefix = normalize_prefix(input_prefix)
+        async with self.sessions() as session:
+            candidates = (
+                await session.scalars(
+                    select(MediaAsset)
+                    .where(
+                        MediaAsset.present.is_(True),
+                        MediaAsset.duplicate_of.is_(None),
+                        MediaAsset.platform == "M3M",
+                        (
+                            (MediaAsset.relative_path == normalized_prefix)
+                            | MediaAsset.relative_path.startswith(normalized_prefix + "/")
+                        ),
+                    )
+                    .order_by(MediaAsset.relative_path)
+                )
+            ).all()
+            assets = select_dronedb_assets(candidates)
+
+            dataset_records = (
+                await session.scalars(
+                    select(MediaDatasetRecord).where(
+                        MediaDatasetRecord.platform == "M3M",
+                        MediaDatasetRecord.prefix == normalized_prefix,
+                    )
+                )
+            ).all()
+            dataset_record = dataset_records[0] if len(dataset_records) == 1 else None
+
+            now = datetime.now(timezone.utc)
+            job_id = uuid.uuid4()
+            dataset_slug = f"m3m-{job_id.hex[:16]}"
+            public_url = (
+                f"{self.dronedb_public_url}/orgs/{self.dronedb_org}/ds/{dataset_slug}"
+                if self.dronedb_public_url
+                else ""
+            )
+            job = ProcessingJob(
+                id=job_id,
+                kind="DRONEDB",
+                status="QUEUED",
+                name=name.strip() or normalized_prefix.split("/")[-1],
+                input_prefix=normalized_prefix,
+                platform="M3M",
+                flight_id=dataset_record.flight_id if dataset_record else None,
+                survey_id=dataset_record.survey_id if dataset_record else None,
+                media_kinds=list(M3M_DRONEDB_KINDS),
+                options=[
+                    {"name": "workflow", "value": "DRONEDB_M3M_HANDOFF"},
+                    {"name": "dronedb_org", "value": self.dronedb_org},
+                    {"name": "dronedb_dataset", "value": dataset_slug},
+                    {"name": "dronedb_dataset_url", "value": public_url},
+                ],
+                image_count=len(assets),
+                uploaded_count=0,
+                progress=0.0,
+                available_assets=[],
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(job)
+            await session.flush()
+            session.add_all(
+                [
+                    ProcessingJobAsset(
+                        job_id=job.id,
+                        media_asset_id=asset.id,
+                        ordinal=index,
+                        relative_path=asset.relative_path,
+                        size_bytes=asset.size_bytes,
+                        sha256=asset.sha256,
+                        media_kind=asset.media_kind,
+                        capture_group=asset.capture_group,
+                        capture_time_utc=asset.capture_time_utc,
+                        metadata_snapshot=asset_metadata_payload(asset),
+                    )
+                    for index, asset in enumerate(assets)
+                ]
+            )
+            await session.commit()
+
+        await self._queue.put(job.id)
+        return job
+
+    async def dronedb_handoff(self, job_id: uuid.UUID) -> dict[str, object]:
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is None:
+                raise LookupError("Processing job not found")
+            if job.kind != "DRONEDB" or job.platform != "M3M":
+                raise ValueError("Processing job is not an M3M DroneDB handoff")
+            frozen = (
+                await session.scalars(
+                    select(ProcessingJobAsset)
+                    .where(ProcessingJobAsset.job_id == job_id)
+                    .order_by(ProcessingJobAsset.ordinal)
+                )
+            ).all()
+            return build_dronedb_handoff(job, list(frozen))
 
     async def create_thermogram_job(
         self,
@@ -815,10 +1062,26 @@ class ProcessingManager:
         async with self.sessions() as session:
             await session.execute(
                 update(ProcessingJob)
-                .where(ProcessingJob.status == "UPLOADING")
+                .where(
+                    ProcessingJob.kind == "WEBODM",
+                    ProcessingJob.status == "UPLOADING",
+                )
                 .values(
                     status="INTERRUPTED",
                     error="Backend restarted during WebODM upload",
+                    updated_at=now,
+                    finished_at=now,
+                )
+            )
+            await session.execute(
+                update(ProcessingJob)
+                .where(
+                    ProcessingJob.kind == "DRONEDB",
+                    ProcessingJob.status == "UPLOADING",
+                )
+                .values(
+                    status="INTERRUPTED",
+                    error="Backend restarted during DroneDB handoff",
                     updated_at=now,
                     finished_at=now,
                 )
@@ -840,6 +1103,7 @@ class ProcessingManager:
             queued = (
                 await session.scalars(
                     select(ProcessingJob.id).where(
+                        ProcessingJob.kind.in_(("WEBODM", "DRONEDB")),
                         ProcessingJob.status == "QUEUED",
                         ProcessingJob.remote_project_id.is_(None),
                         ProcessingJob.remote_task_id.is_(None),
@@ -864,6 +1128,20 @@ class ProcessingManager:
                 self._queue.task_done()
 
     async def _run_job(self, job_id: uuid.UUID) -> None:
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is None or job.status != "QUEUED":
+                return
+            kind = job.kind
+
+        if kind == "WEBODM":
+            await self._run_webodm_job(job_id)
+        elif kind == "DRONEDB":
+            await self._run_dronedb_job(job_id)
+        else:
+            await self._fail_job(job_id, ValueError(f"Unsupported queued processing kind: {kind}"))
+
+    async def _run_webodm_job(self, job_id: uuid.UUID) -> None:
         try:
             async with self.sessions() as session:
                 job = await session.get(ProcessingJob, job_id)
@@ -933,6 +1211,138 @@ class ProcessingManager:
             raise
         except Exception as exc:
             await self._fail_job(job_id, exc)
+
+    async def _run_dronedb_job(self, job_id: uuid.UUID) -> None:
+        client: DroneDBClient | None = None
+        try:
+            async with self.sessions() as session:
+                job = await session.get(ProcessingJob, job_id)
+                if job is None or job.status != "QUEUED":
+                    return
+                frozen = list(
+                    (
+                        await session.scalars(
+                            select(ProcessingJobAsset)
+                            .where(ProcessingJobAsset.job_id == job_id)
+                            .order_by(ProcessingJobAsset.ordinal)
+                        )
+                    ).all()
+                )
+                if not frozen:
+                    raise ValueError("DroneDB handoff contains no frozen M3M assets")
+
+                paths = [
+                    resolve_asset_path(self.media_root, item.relative_path)
+                    for item in frozen
+                ]
+                for path, item in zip(paths, frozen, strict=True):
+                    if not path.is_file():
+                        raise FileNotFoundError(path)
+                    await asyncio.to_thread(
+                        verify_frozen_input,
+                        path,
+                        expected_size=item.size_bytes,
+                        expected_sha256=item.sha256,
+                    )
+
+                handoff = build_dronedb_handoff(job, frozen)
+                org_slug = str(_job_option(job, "dronedb_org") or self.dronedb_org)
+                dataset_slug = str(_job_option(job, "dronedb_dataset") or "")
+                if not dataset_slug:
+                    raise ValueError("DroneDB dataset slug is missing from the frozen job")
+
+                now = datetime.now(timezone.utc)
+                job.status = "UPLOADING"
+                job.started_at = now
+                job.updated_at = now
+                await session.commit()
+                job_name = job.name
+
+            client = DroneDBClient(
+                self.dronedb_url,
+                username=self.dronedb_username,
+                password=self.dronedb_password,
+                timeout_seconds=self.dronedb_timeout_seconds,
+            )
+            await asyncio.to_thread(
+                client.ensure_organization,
+                org_slug,
+                name="M3-Cloud",
+            )
+            await asyncio.to_thread(
+                client.ensure_dataset,
+                org_slug,
+                dataset_slug,
+                name=job_name,
+                tagline=f"M3-Cloud M3M handoff {job_id}",
+            )
+
+            remote_assets: list[str] = []
+            total = len(frozen)
+            for index, (item, path) in enumerate(zip(frozen, paths, strict=True), start=1):
+                remote_path = _dronedb_remote_path(handoff["input_prefix"], item.relative_path)
+                await asyncio.to_thread(
+                    client.upload_file,
+                    org_slug,
+                    dataset_slug,
+                    source=path,
+                    remote_path=remote_path,
+                )
+                remote_assets.append(remote_path)
+                await self._set_dronedb_upload_progress(job_id, index, total)
+
+            manifest_bytes = json.dumps(
+                handoff,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+            manifest_path = "m3cloud-handoff.json"
+            await asyncio.to_thread(
+                client.upload_bytes,
+                org_slug,
+                dataset_slug,
+                data=manifest_bytes,
+                remote_path=manifest_path,
+                filename=manifest_path,
+                content_type="application/json",
+            )
+
+            now = datetime.now(timezone.utc)
+            async with self.sessions() as session:
+                job = await session.get(ProcessingJob, job_id)
+                if job is not None:
+                    job.status = "COMPLETED"
+                    job.progress = 1.0
+                    job.uploaded_count = total
+                    job.available_assets = remote_assets + [manifest_path]
+                    job.error = None
+                    job.updated_at = now
+                    job.finished_at = now
+                    await session.commit()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._fail_job(job_id, exc)
+        finally:
+            if client is not None:
+                await asyncio.to_thread(client.close)
+
+    async def _set_dronedb_upload_progress(
+        self,
+        job_id: uuid.UUID,
+        uploaded: int,
+        total: int,
+    ) -> None:
+        async with self.sessions() as session:
+            job = await session.get(ProcessingJob, job_id)
+            if job is None:
+                return
+            job.uploaded_count = uploaded
+            job.progress = 0.95 * uploaded / max(1, total)
+            job.updated_at = datetime.now(timezone.utc)
+            await session.commit()
 
     async def _poll_loop(self) -> None:
         while True:
