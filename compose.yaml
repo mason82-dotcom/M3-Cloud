@@ -110,7 +110,7 @@ services:
     ports:
       - "${DRONEDB_PORT:-5000}:5000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:5000/quickhealth"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5000/version"]
       interval: 10s
       timeout: 5s
       retries: 20

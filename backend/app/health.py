@@ -48,7 +48,7 @@ async def _emqx_probe() -> None:
 
 async def _dronedb_probe() -> None:
     async with httpx.AsyncClient(timeout=3.0) as client:
-        response = await client.get(f"{settings.dronedb_url.rstrip('/')}/quickhealth")
+        response = await client.get(f"{settings.dronedb_url.rstrip('/')}/version")
         response.raise_for_status()
 
 
