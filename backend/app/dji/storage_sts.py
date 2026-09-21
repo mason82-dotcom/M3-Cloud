@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -95,15 +96,86 @@ def presign_pilot_object(
     )
 
 
+def _sts_mode(settings: Settings) -> str:
+    return settings.dji_pilot_storage_sts_mode.strip().lower()
+
+
+def _pilot_session_policy(
+    *,
+    bucket: str,
+    workspace_id: str,
+) -> dict[str, Any]:
+    if not bucket or any(token in bucket for token in ("*", "?", "[", "]")):
+        raise DJIPilotStorageError("DJI Pilot storage bucket is invalid")
+    if (
+        not workspace_id
+        or "/" in workspace_id
+        or any(token in workspace_id for token in ("*", "?", "[", "]"))
+    ):
+        raise DJIPilotStorageError("DJI Pilot workspace id is invalid for storage policy")
+
+    prefix = f"pilot2/{workspace_id}"
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                    "s3:AbortMultipartUpload",
+                    "s3:ListMultipartUploadParts",
+                ],
+                "Resource": [
+                    f"arn:aws:s3:::{bucket}/{prefix}/*",
+                ],
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "s3:ListBucket",
+                ],
+                "Resource": [
+                    f"arn:aws:s3:::{bucket}",
+                ],
+                "Condition": {
+                    "StringLike": {
+                        "s3:prefix": [
+                            prefix,
+                            f"{prefix}/*",
+                        ],
+                    },
+                },
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "s3:GetBucketLocation",
+                ],
+                "Resource": [
+                    f"arn:aws:s3:::{bucket}",
+                ],
+            },
+        ],
+    }
+
+
 def pilot_storage_ready(settings: Settings) -> bool:
     endpoint = settings.dji_pilot_storage_endpoint.strip()
-    role_arn = settings.dji_pilot_storage_role_arn.strip()
     provider = settings.dji_pilot_storage_provider.strip().lower()
-    return bool(
+    mode = _sts_mode(settings)
+    base_ready = bool(
         endpoint.startswith(("http://", "https://"))
-        and role_arn
         and provider in {"minio", "aws", "ali"}
     )
+    if not base_ready:
+        return False
+    if mode == "federation_token":
+        return True
+    if mode == "assume_role":
+        return bool(settings.dji_pilot_storage_role_arn.strip())
+    return False
 
 
 def create_pilot_storage_client(settings: Settings):
@@ -170,12 +242,39 @@ def issue_pilot_sts_credentials(
         region_name=region,
         config=Config(signature_version="v4"),
     )
+    mode = _sts_mode(settings)
+    bucket = settings.dji_pilot_storage_bucket.strip() or "m3-media"
     try:
-        response = client.assume_role(
-            RoleArn=settings.dji_pilot_storage_role_arn.strip(),
-            RoleSessionName="m3cloud-pilot2",
-            DurationSeconds=duration,
-        )
+        if mode == "federation_token":
+            response = client.get_federation_token(
+                Name="m3cloud-pilot2",
+                DurationSeconds=duration,
+                Policy=json.dumps(
+                    _pilot_session_policy(
+                        bucket=bucket,
+                        workspace_id=workspace_id,
+                    ),
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+            )
+        elif mode == "assume_role":
+            role_arn = settings.dji_pilot_storage_role_arn.strip()
+            if not role_arn:
+                raise DJIPilotStorageError(
+                    "DJI Pilot AssumeRole mode requires a storage role ARN"
+                )
+            response = client.assume_role(
+                RoleArn=role_arn,
+                RoleSessionName="m3cloud-pilot2",
+                DurationSeconds=duration,
+            )
+        else:
+            raise DJIPilotStorageError(
+                f"Unsupported DJI Pilot storage STS mode: {mode!r}"
+            )
+    except DJIPilotStorageError:
+        raise
     except Exception as exc:
         raise DJIPilotStorageError(
             f"Unable to obtain DJI Pilot storage credentials: {exc}"
@@ -195,7 +294,7 @@ def issue_pilot_sts_credentials(
         raise DJIPilotStorageError("STS response contains incomplete credentials")
 
     return DJIPilotStorageCredentials(
-        bucket=settings.dji_pilot_storage_bucket.strip() or "m3-media",
+        bucket=bucket,
         endpoint=endpoint,
         provider=settings.dji_pilot_storage_provider.strip().lower(),
         region=region,
