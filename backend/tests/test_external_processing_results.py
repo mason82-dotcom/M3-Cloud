@@ -19,6 +19,26 @@ class FakeStorage:
             "content_type": (ExtraArgs or {}).get("ContentType"),
         }
 
+    def get_object(self, Bucket, Key):
+        stored = self.objects[(Bucket, Key)]
+
+        class Body:
+            def __init__(self, payload):
+                self.payload = payload
+                self.closed = False
+
+            def iter_chunks(self, chunk_size):
+                for offset in range(0, len(self.payload), chunk_size):
+                    yield self.payload[offset:offset + chunk_size]
+
+            def close(self):
+                self.closed = True
+
+        return {
+            "Body": Body(stored["data"]),
+            "ContentType": stored.get("content_type"),
+        }
+
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_thermogram_external_results_are_archived(
@@ -375,4 +395,80 @@ async def test_failed_thermal_job_requires_explicit_claim_retry(
     claimed = await manager.claim_external_job(job_id, retry_failed=True)
     assert claimed.status == "RUNNING_EXTERNAL"
     assert claimed.error is None
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_inline_thermal_result_serves_only_classified_preview(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from app.api_processing import view_processing_result
+
+    job_id = __import__("uuid").uuid4()
+    result_id = __import__("uuid").uuid4()
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as session:
+        session.add(
+            ProcessingJob(
+                id=job_id,
+                kind="THERMOGRAM",
+                status="COMPLETED",
+                name="M3T inline",
+                input_prefix="M3T/inline",
+                platform="M3T",
+                flight_id=None,
+                media_kinds=["WIDE", "THERMAL"],
+                options=[],
+                image_count=2,
+                uploaded_count=0,
+                progress=1.0,
+                remote_project_id=None,
+                remote_task_id=None,
+                remote_status=None,
+                available_assets=["preview.png"],
+                error=None,
+                created_at=now,
+                started_at=now,
+                updated_at=now,
+                finished_at=now,
+            )
+        )
+        session.add(
+            ProcessingResult(
+                id=result_id,
+                job_id=job_id,
+                asset_name="captures/preview.png",
+                bucket="m3-results",
+                object_key=f"external/{job_id}/captures/preview.png",
+                size_bytes=7,
+                sha256="a" * 64,
+                content_type="image/png",
+                details={
+                    "thermal_contract": "M3T_THERMAL_RESULTS_V1",
+                    "result_kind": "THERMAL_PREVIEW",
+                },
+                created_at=now,
+            )
+        )
+        await session.commit()
+
+    storage = FakeStorage()
+    storage.objects[
+        ("m3-results", f"external/{job_id}/captures/preview.png")
+    ] = {
+        "data": b"pngdata",
+        "content_type": "image/png",
+    }
+    monkeypatch.setattr(
+        "app.api_processing.create_storage_client",
+        lambda: storage,
+    )
+
+    response = await view_processing_result(job_id, result_id)
+    payload = b"".join([chunk async for chunk in response.body_iterator])
+
+    assert response.media_type == "image/png"
+    assert response.headers["content-disposition"] == "inline"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert payload == b"pngdata"
 
