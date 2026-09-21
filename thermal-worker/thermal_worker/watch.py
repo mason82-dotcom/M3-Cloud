@@ -71,6 +71,8 @@ def process_claimed_thermogram(
     decoder: ThermalDecoder,
     *,
     measurement_overrides: Mapping[str, float] | None = None,
+    hotspot_delta_c: float = 10.0,
+    hotspot_min_pixels: int = 4,
     import_results: bool = True,
 ) -> dict[str, Any]:
     job_id = job.get("id")
@@ -95,6 +97,8 @@ def process_claimed_thermogram(
                 result_drop_path,
                 decoder,
                 measurement_overrides=measurement_overrides,
+                hotspot_delta_c=hotspot_delta_c,
+                hotspot_min_pixels=hotspot_min_pixels,
             )
 
         api.transition(job_id, "COMPLETED_EXTERNAL")
@@ -128,6 +132,8 @@ def watch_thermograms(
     poll_seconds: float = 10.0,
     retry_failed: bool = False,
     measurement_overrides: Mapping[str, float] | None = None,
+    hotspot_delta_c: float = 10.0,
+    hotspot_min_pixels: int = 4,
 ) -> None:
     interval = max(2.0, float(poll_seconds))
     while True:
@@ -156,6 +162,8 @@ def watch_thermograms(
                 job,
                 decoder,
                 measurement_overrides=measurement_overrides,
+                hotspot_delta_c=hotspot_delta_c,
+                hotspot_min_pixels=hotspot_min_pixels,
                 import_results=True,
             )
             logger.info(
