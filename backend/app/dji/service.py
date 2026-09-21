@@ -4,13 +4,16 @@ from dataclasses import dataclass
 
 from redis.asyncio import Redis
 
-from app.dji.telemetry import TelemetryObserver
-
 from app.config import settings
+from app.dji.events import DJIEventDispatcher
 from app.dji.mqtt import DJIMqttTransport
+from app.dji.properties import DJIPropertyClient
 from app.dji.registry import DeviceRegistry
+from app.dji.requests import DJIRequestDispatcher
 from app.dji.router import DJIMessageRouter
-from app.dji.telemetry import TelemetryStore
+from app.dji.services import DJIServiceClient
+from app.dji.telemetry import TelemetryObserver, TelemetryStore
+from app.dji.transactions import DJITransactionManager
 
 
 @dataclass
@@ -19,6 +22,11 @@ class DJIService:
     telemetry: TelemetryStore
     router: DJIMessageRouter
     transport: DJIMqttTransport
+    transactions: DJITransactionManager
+    services: DJIServiceClient
+    properties: DJIPropertyClient
+    events: DJIEventDispatcher
+    requests: DJIRequestDispatcher
 
     @classmethod
     def create(
@@ -28,8 +36,12 @@ class DJIService:
     ) -> "DJIService":
         registry = DeviceRegistry(redis)
         telemetry = TelemetryStore(redis, observer=telemetry_observer)
+        transactions = DJITransactionManager()
+        events = DJIEventDispatcher()
+        requests = DJIRequestDispatcher()
 
         transport: DJIMqttTransport
+        router: DJIMessageRouter
 
         async def handle(topic: str, payload: bytes) -> None:
             await router.handle(topic, payload)
@@ -40,11 +52,25 @@ class DJIService:
             username=settings.dji_mqtt_username or None,
             password=settings.dji_mqtt_password or None,
         )
-        router = DJIMessageRouter(registry, transport, telemetry)
+        router = DJIMessageRouter(
+            registry,
+            transport,
+            telemetry,
+            transactions=transactions,
+            events=events,
+            requests=requests,
+        )
+        services = DJIServiceClient(transport, transactions)
+        properties = DJIPropertyClient(transport, transactions)
 
         return cls(
             registry=registry,
             telemetry=telemetry,
             router=router,
             transport=transport,
+            transactions=transactions,
+            services=services,
+            properties=properties,
+            events=events,
+            requests=requests,
         )

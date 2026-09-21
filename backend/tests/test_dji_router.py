@@ -2,7 +2,10 @@ import json
 
 import pytest
 
+from app.dji.protocol import parse_envelope
 from app.dji.router import DJIMessageRouter
+from app.dji.topics import TopicKind
+from app.dji.transactions import DJITransactionManager
 
 
 class FakeRegistry:
@@ -142,3 +145,87 @@ async def test_state_need_reply_is_acknowledged() -> None:
     assert reply["tid"] == "t-state"
     assert reply["bid"] == "b-state"
     assert reply["data"]["result"] == 0
+
+
+@pytest.mark.asyncio
+async def test_services_reply_resolves_registered_transaction() -> None:
+    registry = FakeRegistry()
+    publisher = FakePublisher()
+    telemetry = FakeTelemetry()
+    transactions = DJITransactionManager()
+    router = DJIMessageRouter(
+        registry,
+        publisher,
+        telemetry,
+        transactions=transactions,
+    )
+    pending = transactions.register(TopicKind.SERVICES_REPLY, "RC123", "t-service")
+
+    payload = json.dumps(
+        {
+            "tid": "t-service",
+            "bid": "b-service",
+            "timestamp": 500,
+            "method": "live_start_push",
+            "data": {"result": 0},
+        }
+    ).encode()
+
+    await router.handle("thing/product/RC123/services_reply", payload)
+    reply = await transactions.wait(pending, timeout_s=0.2)
+
+    assert reply.method == "live_start_push"
+    assert reply.data["result"] == 0
+    assert transactions.pending_count == 0
+
+
+@pytest.mark.asyncio
+async def test_event_need_reply_uses_events_reply_topic() -> None:
+    publisher = FakePublisher()
+    router = DJIMessageRouter(FakeRegistry(), publisher, FakeTelemetry())
+
+    await router.handle(
+        "thing/product/RC123/events",
+        json.dumps(
+            {
+                "tid": "t-event",
+                "bid": "b-event",
+                "timestamp": 600,
+                "method": "cloud_control_auth_notify",
+                "need_reply": 1,
+                "data": {"result": 0},
+            }
+        ).encode(),
+    )
+
+    assert len(publisher.messages) == 1
+    topic, raw, _, _ = publisher.messages[0]
+    assert topic == "thing/product/RC123/events_reply"
+    reply = parse_envelope(raw)
+    assert reply.tid == "t-event"
+    assert reply.data["result"] == 0
+
+
+@pytest.mark.asyncio
+async def test_unknown_device_request_fails_closed() -> None:
+    publisher = FakePublisher()
+    router = DJIMessageRouter(FakeRegistry(), publisher, FakeTelemetry())
+
+    await router.handle(
+        "thing/product/RC123/requests",
+        json.dumps(
+            {
+                "tid": "t-request",
+                "bid": "b-request",
+                "timestamp": 700,
+                "method": "unknown_server_capability",
+                "data": {},
+            }
+        ).encode(),
+    )
+
+    assert len(publisher.messages) == 1
+    topic, raw, _, _ = publisher.messages[0]
+    assert topic == "thing/product/RC123/requests_reply"
+    reply = parse_envelope(raw)
+    assert reply.data["result"] != 0
