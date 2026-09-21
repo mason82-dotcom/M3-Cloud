@@ -34,9 +34,9 @@ def claim_next_thermogram(
         if not isinstance(job_id, str) or not job_id:
             continue
         try:
-            claimed = api.transition(job_id, "RUNNING_EXTERNAL")
+            claimed = api.claim(job_id, retry_failed=retry_failed)
         except M3CloudApiError as exc:
-            # A second worker may have claimed the job between list and transition.
+            # A second worker may have claimed the job between list and claim.
             if exc.status in {409, 422}:
                 continue
             raise
