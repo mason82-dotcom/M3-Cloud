@@ -52,6 +52,29 @@ The readiness endpoint reports PostgreSQL, Redis, MinIO and EMQX independently.
 Lyrebird remains the aircraft-side integration layer; persistent project, survey, processing and operator services belong in M3-Cloud.
 
 
+### Reproducible dependency locks
+
+Backend direct dependency constraints live in `backend/requirements.in` and
+`backend/requirements-dev.in`. Production images install
+`backend/requirements.lock`; CI installs `backend/requirements-dev.lock`.
+Both lockfiles pin the complete resolved dependency graph and include package
+hashes.
+
+The frontend commits `frontend/package-lock.json`. Docker and CI use
+`npm ci` so transitive JavaScript dependencies are installed exactly as
+recorded in the lockfile.
+
+Refresh all dependency locks intentionally with Python 3.12 and Node.js 22:
+
+```bash
+bash scripts/update-lockfiles.sh
+```
+
+Review the resulting dependency changes and run CI before merging them.
+`backend/requirements.txt` remains only as a backward-compatible
+developer/test wrapper around the development lockfile.
+
+
 ## Fleet dashboard
 
 The first browser dashboard is served through the frontend reverse proxy:
