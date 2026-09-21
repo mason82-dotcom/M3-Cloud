@@ -217,12 +217,11 @@ function vehiclePlatform(vehicle: Vehicle | undefined): "M3E" | "M3T" | "M3M" | 
   return null;
 }
 
-function plannerStartReference(vehicle: Vehicle | undefined): MissionPlannerPoint | null {
-  const validPoint = (
-    latitude: number | null | undefined,
-    longitude: number | null | undefined,
-  ): MissionPlannerPoint | null =>
-    typeof latitude === "number" &&
+function validPlannerPoint(
+  latitude: unknown,
+  longitude: unknown,
+): MissionPlannerPoint | null {
+  return typeof latitude === "number" &&
     Number.isFinite(latitude) &&
     latitude >= -90 &&
     latitude <= 90 &&
@@ -232,11 +231,24 @@ function plannerStartReference(vehicle: Vehicle | undefined): MissionPlannerPoin
     longitude <= 180
       ? { latitude_deg: latitude, longitude_deg: longitude }
       : null;
+}
 
+function plannerStartReference(vehicle: Vehicle | undefined): MissionPlannerPoint | null {
   const home = vehicle?.telemetry?.aircraft_state?.home;
   return (
-    validPoint(home?.latitude, home?.longitude) ??
-    validPoint(vehicle?.telemetry?.latitude, vehicle?.telemetry?.longitude)
+    validPlannerPoint(home?.latitude, home?.longitude) ??
+    validPlannerPoint(vehicle?.telemetry?.latitude, vehicle?.telemetry?.longitude)
+  );
+}
+
+function planningStartReference(
+  planning: MissionPlanningContext | null,
+): MissionPlannerPoint | null {
+  if (planning?.planner !== "M3_CLOUD_GRID") return null;
+  const parameters = planning.parameters ?? {};
+  return validPlannerPoint(
+    parameters.start_reference_latitude_deg,
+    parameters.start_reference_longitude_deg,
   );
 }
 
@@ -717,6 +729,15 @@ export function MissionsView() {
     (vehicle) => vehicle.sn === selected?.aircraft_sn,
   );
   const plannerReference = plannerStartReference(selectedVehicle);
+  const mapPlannerReference =
+    plannerPreview?.input.start_reference ??
+    planningStartReference(draftPlanning) ??
+    plannerReference;
+  const mapPlannerReturnToReference =
+    (
+      plannerPreview?.input.finish_action ??
+      draftPlanning?.parameters?.finish_action
+    ) === "RTH";
 
   const availablePlannerProfiles = useMemo(
     () => plannerProfiles.filter((profile) => profile.platform === plannerPlatform),
@@ -997,6 +1018,8 @@ export function MissionsView() {
                 items={draftItems}
                 plannerPolygon={plannerPoints}
                 plannerDrawing={plannerDrawing}
+                plannerReference={mapPlannerReference}
+                plannerReturnToReference={mapPlannerReturnToReference}
                 onPlannerClick={plannerDrawing
                   ? (point) => {
                       setPlannerPoints((current) => [...current, point]);
