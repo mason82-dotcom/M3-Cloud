@@ -545,7 +545,9 @@ class UgcsWiretapProxy:
         vsm.settimeout(0.5)
 
         aircraft = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        aircraft.bind(("0.0.0.0", self.aircraft_local_port))
+        # INADDR_ANY lets the kernel select the correct local interface for the RC route. The
+        # immediately following UDP connect() pins this socket to exactly self.rc.
+        aircraft.bind(("0.0.0.0", self.aircraft_local_port))  # nosec B104
         # Connected UDP pins the RC endpoint in the kernel: unrelated datagrams are not delivered
         # to recvfrom(), and send() cannot accidentally target a different aircraft.
         aircraft.connect(self.rc)
