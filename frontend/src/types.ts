@@ -190,6 +190,83 @@ export interface MissionPlanItem {
   autocontinue: boolean;
 }
 
+export interface MissionPlanningContext {
+  schema_version: number;
+  planner: "M3_CLOUD_GRID" | string;
+  platform: "M3E" | "M3T" | "M3M" | string;
+  capture_profile: string;
+  planning_sensor?: string;
+  geometry_source?: string;
+  parameters?: Record<string, number | string | boolean | null>;
+  derived?: Record<string, number | string | boolean | null>;
+}
+
+export interface MissionPlannerProfile {
+  key: string;
+  platform: "M3E" | "M3T" | "M3M";
+  capture_profile: string;
+  planning_sensor: string;
+  width_px: number;
+  height_px: number;
+  horizontal_fov_deg: number;
+  vertical_fov_deg: number;
+  min_interval_s: number;
+  geometry_source: string;
+  note: string;
+}
+
+export interface MissionPlannerPoint {
+  latitude_deg: number;
+  longitude_deg: number;
+}
+
+export interface MissionGridPreview {
+  schema_version: number;
+  planner: "M3_CLOUD_GRID";
+  profile: MissionPlannerProfile;
+  input: {
+    polygon: MissionPlannerPoint[];
+    gsd_cm: number;
+    forward_overlap_pct: number;
+    side_overlap_pct: number;
+    direction_deg: number;
+    requested_speed_mps: number;
+    gimbal_pitch_deg: number;
+  };
+  geometry: {
+    area_m2: number;
+    altitude_m: number;
+    footprint_width_m: number;
+    footprint_height_m: number;
+    desired_line_spacing_m: number;
+    actual_line_spacing_m: number;
+    trigger_distance_m: number;
+    overshoot_m: number;
+    scan_line_count: number;
+    capture_segment_count: number;
+    route_distance_m: number;
+    capture_distance_m: number;
+    expected_photos_upper_bound: number;
+  };
+  cadence: {
+    minimum_interval_s: number;
+    requested_speed_mps: number;
+    max_camera_speed_mps: number;
+    effective_speed_mps: number;
+    effective_trigger_interval_s: number;
+    speed_limited_by_camera: boolean;
+  };
+  mission_item_count: number;
+  warnings: string[];
+  plan: {
+    schema_version: number;
+    protocol: string;
+    items: MissionPlanItem[];
+    planning: MissionPlanningContext;
+  };
+  compatibility: Mission["compatibility"];
+}
+
 export interface MissionRevision {
   mission_id: string;
   version: number;
@@ -199,6 +276,7 @@ export interface MissionRevision {
     schema_version: number;
     protocol: string;
     items: MissionPlanItem[];
+    planning?: MissionPlanningContext;
   };
   compatibility: Mission["compatibility"];
   created_at: string;
@@ -322,6 +400,7 @@ export interface Mission {
     schema_version: number;
     protocol: string;
     items: MissionPlanItem[];
+    planning?: MissionPlanningContext;
   };
   compatibility: {
     m3cloud_execution_enabled: boolean;

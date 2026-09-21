@@ -11,6 +11,10 @@ import type {
   MediaPositionCollection,
   Mission,
   MissionDeployment,
+  MissionGridPreview,
+  MissionPlannerPoint,
+  MissionPlannerProfile,
+  MissionPlanningContext,
   MissionPlanItem,
   MissionPreflight,
   MissionRevision,
@@ -175,6 +179,42 @@ export async function fetchMissions(input: {
   return response.json() as Promise<Mission[]>;
 }
 
+export async function fetchMissionPlannerProfiles(): Promise<{
+  schema_version: number;
+  profiles: MissionPlannerProfile[];
+  note: string;
+}> {
+  const response = await fetch("/api/v1/missions/planner/profiles");
+  if (!response.ok) {
+    throw new Error(`Mission planner profiles failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function previewMissionGrid(input: {
+  platform: "M3E" | "M3T" | "M3M";
+  capture_profile?: string | null;
+  polygon: MissionPlannerPoint[];
+  gsd_cm: number;
+  forward_overlap_pct: number;
+  side_overlap_pct: number;
+  direction_deg: number;
+  speed_mps: number;
+  gimbal_pitch_deg?: number;
+  overshoot_m?: number | null;
+}): Promise<MissionGridPreview> {
+  const response = await fetch("/api/v1/missions/planner/grid-preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Grid planner failed: ${response.status}`);
+  }
+  return response.json() as Promise<MissionGridPreview>;
+}
+
 export async function fetchMissionPreflight(
   missionId: string,
 ): Promise<MissionPreflight> {
@@ -272,6 +312,7 @@ export async function createMission(input: {
   aircraft_sn?: string | null;
   preferred_executor?: "DJI_NATIVE" | "ONBOARD" | null;
   items?: MissionPlanItem[];
+  planning?: MissionPlanningContext | null;
 }): Promise<Mission> {
   const response = await fetch("/api/v1/missions", {
     method: "POST",
@@ -294,6 +335,7 @@ export async function updateMission(
     preferred_executor?: "DJI_NATIVE" | "ONBOARD" | null;
     status?: "DRAFT" | "READY" | "ARCHIVED";
     items?: MissionPlanItem[];
+    planning?: MissionPlanningContext | null;
   },
 ): Promise<Mission> {
   const response = await fetch(
