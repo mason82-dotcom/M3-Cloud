@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
 import logging
 import mimetypes
 import tempfile
@@ -244,11 +245,81 @@ def result_object_key(job_id: uuid.UUID, asset_name: str) -> str:
     return f"webodm/{job_id}/{asset_name}"
 
 
-def external_result_object_key(job_id: uuid.UUID, relative_path: str) -> str:
+def _external_relative_path(relative_path: str) -> str:
     safe = PurePosixPath(relative_path.replace("\\", "/"))
     if safe.is_absolute() or ".." in safe.parts:
         raise ValueError("external result path must stay inside the job result folder")
-    return f"external/{job_id}/{safe.as_posix()}"
+    return safe.as_posix()
+
+
+def external_result_object_key(job_id: uuid.UUID, relative_path: str) -> str:
+    return f"external/{job_id}/{_external_relative_path(relative_path)}"
+
+
+def thermal_result_manifest_details(root: Path) -> dict[str, dict[str, object]]:
+    manifest_path = root / "result-manifest.json"
+    if not manifest_path.is_file():
+        return {}
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("contract") != "M3T_THERMAL_RESULTS_V1"
+        or manifest.get("workflow") != "THERMOGRAM"
+        or manifest.get("platform") != "M3T"
+    ):
+        return {}
+
+    details: dict[str, dict[str, object]] = {
+        "result-manifest.json": {
+            "result_kind": "THERMAL_MANIFEST",
+            "thermal_contract": "M3T_THERMAL_RESULTS_V1",
+        }
+    }
+    groups = manifest.get("capture_groups")
+    if not isinstance(groups, list):
+        return details
+
+    field_kinds = {
+        "temperature_tif": "TEMPERATURE_RASTER",
+        "preview_png": "THERMAL_PREVIEW",
+        "thermal_json": "THERMAL_METADATA",
+    }
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        capture_group = group.get("capture_group")
+        common: dict[str, object] = {
+            "thermal_contract": "M3T_THERMAL_RESULTS_V1",
+            "georeferenced": False,
+        }
+        if isinstance(capture_group, str):
+            common["capture_group"] = capture_group
+        for key in ("width", "height", "sdk_label", "measurement_mode", "statistics"):
+            value = group.get(key)
+            if value is not None:
+                common[key] = value
+        for field, result_kind in field_kinds.items():
+            value = group.get(field)
+            if not isinstance(value, str) or not value:
+                continue
+            try:
+                relative = _external_relative_path(value)
+            except ValueError:
+                continue
+            details[relative] = {
+                **common,
+                "result_kind": result_kind,
+                "temperature_unit": (
+                    "degree_Celsius"
+                    if result_kind == "TEMPERATURE_RASTER"
+                    else None
+                ),
+            }
+    return details
 
 
 def normalize_prefix(raw: str) -> str:
@@ -676,6 +747,10 @@ class ProcessingManager:
 
         root = self.external_result_root / str(job_id)
         files = await asyncio.to_thread(self._external_result_files, root)
+        thermal_details = await asyncio.to_thread(
+            thermal_result_manifest_details,
+            root,
+        )
         if not files:
             raise ValueError(
                 f"No external results found in {_handoff_path(self.external_result_handoff_root, str(job_id))}"
@@ -736,6 +811,7 @@ class ProcessingManager:
                             "source": "external",
                             "workflow": "THERMOGRAM",
                             "relative_path": relative,
+                            **thermal_details.get(relative, {}),
                         },
                         created_at=datetime.now(timezone.utc),
                     )
