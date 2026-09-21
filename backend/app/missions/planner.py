@@ -378,25 +378,29 @@ def _candidate_headings(
 
 def _orient_for_reference(
     segments: list[tuple[tuple[float, float], tuple[float, float]]],
-    reference_xy: tuple[float, float] | None,
+    start_reference_xy: tuple[float, float] | None,
     *,
-    return_to_reference: bool,
+    return_reference_xy: tuple[float, float] | None,
 ) -> tuple[
     list[tuple[tuple[float, float], tuple[float, float]]],
     bool,
     float,
     float,
 ]:
-    if reference_xy is None:
+    if start_reference_xy is None and return_reference_xy is None:
         return segments, False, 0.0, 0.0
 
     def external_distance(
         candidate: list[tuple[tuple[float, float], tuple[float, float]]],
     ) -> tuple[float, float, float]:
-        ingress = _distance(reference_xy, candidate[0][0])
+        ingress = (
+            _distance(start_reference_xy, candidate[0][0])
+            if start_reference_xy is not None
+            else 0.0
+        )
         egress = (
-            _distance(candidate[-1][1], reference_xy)
-            if return_to_reference
+            _distance(candidate[-1][1], return_reference_xy)
+            if return_reference_xy is not None
             else 0.0
         )
         return ingress + egress, ingress, egress
@@ -405,8 +409,8 @@ def _orient_for_reference(
     reversed_segments = _reverse_segments(segments)
     reverse_total, reverse_ingress, reverse_egress = external_distance(reversed_segments)
 
-    # For RTH, reversing a route often leaves ingress+return unchanged. In that tie,
-    # prefer the traversal with the shorter ingress so the first survey leg begins nearer home.
+    # When two traversals have the same total external travel, prefer the shorter ingress so
+    # the first survey leg begins nearer the aircraft's current/start reference.
     if (
         reverse_total + 1e-9 < forward_total
         or (
@@ -426,8 +430,8 @@ def _select_scan_segments(
     line_spacing_m: float,
     footprint_cross_m: float,
     overshoot_m: float,
-    reference_xy: tuple[float, float] | None,
-    return_to_reference: bool,
+    start_reference_xy: tuple[float, float] | None,
+    return_reference_xy: tuple[float, float] | None,
     max_segments: int | None = None,
 ) -> tuple[
     list[tuple[tuple[float, float], tuple[float, float]]],
@@ -465,8 +469,8 @@ def _select_scan_segments(
         )
         oriented, reversed_for_reference, ingress_m, egress_m = _orient_for_reference(
             segments,
-            reference_xy,
-            return_to_reference=return_to_reference,
+            start_reference_xy,
+            return_reference_xy=return_reference_xy,
         )
         route_m = _route_distance(oriented)
         score = route_m + ingress_m + egress_m
@@ -627,8 +631,10 @@ def build_grid_preview(
         line_spacing_m=desired_line_spacing_m,
         footprint_cross_m=footprint_width_m,
         overshoot_m=effective_overshoot_m,
-        reference_xy=reference_xy,
-        return_to_reference=finish == "RTH",
+        start_reference_xy=reference_xy,
+        return_reference_xy=(
+            home_reference_xy if home_reference_xy is not None else reference_xy
+        ) if finish == "RTH" else None,
         max_segments=max_capture_segments,
     )
 
