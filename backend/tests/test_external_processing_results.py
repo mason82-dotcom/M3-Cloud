@@ -183,6 +183,8 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
                 "width": 640,
                 "height": 512,
                 "sdk_label": "1.8_20251211",
+                "sdk_library_name": "libdirp.so",
+                "sdk_library_sha256": "d" * 64,
                 "api_version": {"api": 8, "magic": "DIRP"},
                 "measurement_mode": "sdk_native",
                 "measurement_ranges": {
@@ -243,6 +245,8 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert temperature["georeferenced"] is False
     assert temperature["statistics"]["max_c"] == 42.5
     assert temperature["sdk_label"] == "1.8_20251211"
+    assert temperature["sdk_library_name"] == "libdirp.so"
+    assert temperature["sdk_library_sha256"] == "d" * 64
     assert temperature["api_version"] == {"api": 8, "magic": "DIRP"}
     assert temperature["measurement_ranges"]["distance_m"]["max"] == 500.0
     assert temperature["registration"]["status"] == "NOT_REGISTERED"
