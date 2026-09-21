@@ -41,11 +41,15 @@ REMOTE_STATUS = {
     50: "CANCELED",
 }
 
+THERMOGRAM_REQUIRED_KINDS = ("THERMAL",)
+THERMOGRAM_OPTIONAL_KINDS = ("WIDE",)
 THERMOGRAM_KINDS = ("WIDE", "THERMAL")
+THERMOGRAM_HANDOFF_SCHEMA = 4
+THERMOGRAM_WORKER_CONTRACT = "M3T_RJPEG_V2"
 
 
 def select_thermogram_assets(assets: list[MediaAsset]) -> list[MediaAsset]:
-    """Freeze complete M3T Wide/Thermal capture pairs for an external Thermogram job."""
+    """Freeze M3T thermal captures and optional Wide companions."""
 
     by_group: dict[str, list[MediaAsset]] = {}
     for asset in assets:
@@ -59,23 +63,26 @@ def select_thermogram_assets(assets: list[MediaAsset]) -> list[MediaAsset]:
 
     selected: list[MediaAsset] = []
     order = {kind: index for index, kind in enumerate(THERMOGRAM_KINDS)}
-    required = set(THERMOGRAM_KINDS)
 
     for group in sorted(by_group):
         members = by_group[group]
         by_kind = {asset.media_kind: asset for asset in members}
-        if not required.issubset(by_kind):
+        if "THERMAL" not in by_kind:
             continue
         selected.extend(
             sorted(
-                (by_kind[kind] for kind in THERMOGRAM_KINDS),
+                (
+                    by_kind[kind]
+                    for kind in THERMOGRAM_KINDS
+                    if kind in by_kind
+                ),
                 key=lambda item: order[item.media_kind],
             )
         )
 
     if not selected:
         raise ValueError(
-            "Thermogram requires at least one complete M3T Wide/Thermal capture pair"
+            "Thermogram requires at least one M3T thermal R-JPEG capture"
         )
     return selected
 
@@ -105,14 +112,22 @@ def build_thermogram_handoff(
             grouped.setdefault(asset.capture_group, []).append(asset)
 
     groups: list[dict[str, object]] = []
+    paired_capture_group_count = 0
+    thermal_only_capture_group_count = 0
     for group in sorted(grouped):
         members = grouped[group]
         kinds = {asset.media_kind for asset in members}
-        if not set(THERMOGRAM_KINDS).issubset(kinds):
+        if "THERMAL" not in kinds:
             continue
+        paired = "WIDE" in kinds
+        if paired:
+            paired_capture_group_count += 1
+        else:
+            thermal_only_capture_group_count += 1
         groups.append(
             {
                 "capture_group": group,
+                "paired_wide": paired,
                 "files": [
                     {
                         "id": str(asset.id),
@@ -146,19 +161,22 @@ def build_thermogram_handoff(
         )
 
     if not groups:
-        raise ValueError("Thermogram job contains no complete M3T capture pairs")
+        raise ValueError("Thermogram job contains no M3T thermal captures")
 
     return {
-        "schema_version": 3,
+        "schema_version": THERMOGRAM_HANDOFF_SCHEMA,
         "workflow": "THERMOGRAM",
-        "worker_contract": "M3T_RJPEG_V1",
+        "worker_contract": THERMOGRAM_WORKER_CONTRACT,
         "platform": "M3T",
         "job_id": str(job.id),
         "flight_id": str(job.flight_id) if job.flight_id else None,
         "input_prefix": job.input_prefix,
         "external_path": _handoff_path(handoff_root, job.input_prefix),
-        "required_media_kinds": list(THERMOGRAM_KINDS),
+        "required_media_kinds": list(THERMOGRAM_REQUIRED_KINDS),
+        "optional_media_kinds": list(THERMOGRAM_OPTIONAL_KINDS),
         "capture_group_count": len(groups),
+        "paired_capture_group_count": paired_capture_group_count,
+        "thermal_only_capture_group_count": thermal_only_capture_group_count,
         "asset_count": sum(len(group["files"]) for group in groups),
         "capture_groups": groups,
     }
@@ -671,7 +689,11 @@ class ProcessingManager:
                 platform="M3T",
                 flight_id=dataset_record.flight_id if dataset_record else None,
                 survey_id=dataset_record.survey_id if dataset_record else None,
-                media_kinds=list(THERMOGRAM_KINDS),
+                media_kinds=[
+                    kind
+                    for kind in THERMOGRAM_KINDS
+                    if any(asset.media_kind == kind for asset in assets)
+                ],
                 options=[
                     {"name": "workflow", "value": "THERMOGRAM_M3T"},
                     {
