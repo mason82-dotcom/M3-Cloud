@@ -8,14 +8,14 @@ import dji.v5.ux.mapkit.core.utils.DJIMapkitLog
 import dji.v5.ux.mapkit.maplibre.utils.*
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
-import com.mapbox.mapboxsdk.maps.MapboxMap
-import com.mapbox.mapboxsdk.maps.Style
-import com.mapbox.mapboxsdk.style.layers.LineLayer
-import com.mapbox.mapboxsdk.style.layers.Property
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory
-import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
 
-class MaplibrePolyline(private val mapboxMap: MapboxMap,
+class MaplibrePolyline(private val mapboxMap: MapLibreMap,
                        val options: DJIPolylineOptions,
                        private val onRemovePolyline: (zindex: Int, polyline: MaplibrePolyline) -> Boolean,
                        private val onAddPolyline: (zindex: Int, polyline: MaplibrePolyline) -> Unit
