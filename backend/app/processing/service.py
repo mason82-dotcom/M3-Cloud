@@ -331,6 +331,7 @@ def thermal_result_manifest_details(
                     "capture_count",
                     "pair_capture_time_evidence_count",
                     "pair_gps_evidence_count",
+                    "registration_evidence_counts",
                 ):
                     value = aggregate_summary.get(key)
                     if value is not None:
