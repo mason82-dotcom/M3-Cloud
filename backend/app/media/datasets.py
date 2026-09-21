@@ -9,7 +9,8 @@ from app.models import MediaAsset
 
 
 WEBODM_KINDS = frozenset({"RGB", "WIDE"})
-M3T_PAIR = frozenset({"WIDE", "THERMAL"})
+M3T_THERMOGRAM_REQUIRED = frozenset({"THERMAL"})
+M3T_REGISTRATION_PAIR = frozenset({"WIDE", "THERMAL"})
 M3M_COMPLETE = frozenset(
     {"RGB", "MS_GREEN", "MS_RED", "MS_RED_EDGE", "MS_NIR"}
 )
@@ -82,25 +83,38 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
         ]
 
         if platform == "M3T":
-            complete = sum(
-                1 for kinds in by_capture.values()
-                if M3T_PAIR.issubset(kinds)
+            thermal_groups = sum(
+                1
+                for kinds in by_capture.values()
+                if M3T_THERMOGRAM_REQUIRED.issubset(kinds)
             )
-            partial = sum(
-                1 for kinds in by_capture.values()
-                if kinds & M3T_PAIR and not M3T_PAIR.issubset(kinds)
+            paired_groups = sum(
+                1
+                for kinds in by_capture.values()
+                if M3T_REGISTRATION_PAIR.issubset(kinds)
+            )
+            wide_only_groups = sum(
+                1
+                for kinds in by_capture.values()
+                if "WIDE" in kinds and "THERMAL" not in kinds
+            )
+            eligible_assets = sum(
+                len(kinds & M3T_REGISTRATION_PAIR)
+                for kinds in by_capture.values()
+                if "THERMAL" in kinds
             )
             workflows.append(
                 _workflow(
                     key="THERMOGRAM",
-                    ready=complete > 0,
-                    eligible_assets=complete * len(M3T_PAIR),
-                    complete_groups=complete,
-                    incomplete_groups=partial,
+                    ready=thermal_groups > 0,
+                    eligible_assets=eligible_assets,
+                    complete_groups=thermal_groups,
+                    incomplete_groups=wide_only_groups,
                     reason=(
-                        f"{complete} complete Wide/Thermal capture groups"
-                        if complete > 0
-                        else "No complete Wide/Thermal capture group"
+                        f"{thermal_groups} thermal capture groups "
+                        f"({paired_groups} with Wide companions)"
+                        if thermal_groups > 0
+                        else "No thermal R-JPEG capture group"
                     ),
                 )
             )
@@ -205,7 +219,7 @@ def build_dataset_manifest(
         complete = True
         required: set[str] = set()
         if platform == "M3T":
-            required = set(M3T_PAIR)
+            required = set(M3T_THERMOGRAM_REQUIRED)
             complete = required.issubset(kinds)
         elif platform == "M3M":
             required = set(M3M_COMPLETE)
