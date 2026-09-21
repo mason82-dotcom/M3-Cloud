@@ -282,7 +282,7 @@ def thermal_result_manifest_details(
     manifest_common: dict[str, object] = {
         "thermal_contract": "M3T_THERMAL_RESULTS_V1",
     }
-    for key in ("input_fingerprint", "source_handoff_schema"):
+    for key in ("input_fingerprint", "source_handoff_schema", "processing_options"):
         value = manifest.get(key)
         if value is not None:
             manifest_common[key] = value
@@ -301,6 +301,8 @@ def thermal_result_manifest_details(
         "temperature_tif": "TEMPERATURE_RASTER",
         "preview_png": "THERMAL_PREVIEW",
         "thermal_json": "THERMAL_METADATA",
+        "hotspot_mask_png": "HOTSPOT_MASK",
+        "hotspots_json": "HOTSPOT_ANALYSIS",
     }
     for group in groups:
         if not isinstance(group, dict):
@@ -321,6 +323,7 @@ def thermal_result_manifest_details(
             "measurement_abi",
             "measurement_ranges",
             "statistics",
+            "hotspots",
         ):
             value = group.get(key)
             if value is not None:
