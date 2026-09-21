@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: write
+
 on:
   pull_request:
   push:
@@ -21,6 +24,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -51,6 +56,20 @@ jobs:
             lyrebird/GroundStation/Python/lyrebird_groundstation/ugcs_wiretap.py
             lyrebird/GroundStation/tests/test_preflight.py
             lyrebird/GroundStation/tests/test_ugcs_wiretap.py
+
+      - name: Commit Ruff formatting
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add             GroundStation/Python/lyrebird_groundstation/preflight.py             GroundStation/Python/lyrebird_groundstation/ugcs_wiretap.py             GroundStation/tests/test_preflight.py             GroundStation/tests/test_ugcs_wiretap.py
+          if git diff --cached --quiet; then
+            echo "Ruff formatting already committed"
+          else
+            git commit -m "Format GroundStation with Ruff"
+            git push origin "HEAD:$BRANCH"
+          fi
 
       - name: Radon complexity
         run: python scripts/check_radon_complexity.py
