@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 from app.config import settings
 from app.dji.devices import DJIDeviceService
 from app.dji.events import DJIEventDispatcher
+from app.dji.gateway import DJIGatewayService
 from app.dji.mqtt import DJIMqttTransport
 from app.dji.properties import DJIPropertyClient
 from app.dji.registry import DeviceRegistry
@@ -29,6 +30,7 @@ class DJIService:
     events: DJIEventDispatcher
     requests: DJIRequestDispatcher
     devices: DJIDeviceService
+    gateways: DJIGatewayService
 
     @classmethod
     def create(
@@ -62,10 +64,12 @@ class DJIService:
             events=events,
             requests=requests,
             devices=devices,
+            gateways=gateways,
         )
         services = DJIServiceClient(transport, transactions)
         properties = DJIPropertyClient(transport, transactions)
         devices = DJIDeviceService(registry, telemetry, properties)
+        gateways = DJIGatewayService(registry, telemetry)
 
         return cls(
             registry=registry,
