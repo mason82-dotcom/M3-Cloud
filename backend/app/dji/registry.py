@@ -237,6 +237,10 @@ class DeviceRegistry:
             # Live UI fan-out must never prevent DJI topology acknowledgement.
             logger.warning("Failed to publish live topology event", exc_info=True)
 
+    async def get_device(self, sn: str) -> dict[str, Any] | None:
+        raw = await self.redis.get(self.device_key(sn))
+        return json.loads(raw) if raw else None
+
     async def list_devices(self) -> list[dict[str, Any]]:
         devices: list[dict[str, Any]] = []
         async for key in self.redis.scan_iter(match="dji:device:*"):
