@@ -45,6 +45,10 @@ def vehicle(
     fix="FIXED",
     failsafe=False,
     platform="M3E",
+    capacity_percent=75,
+    remain_flight_time_s=None,
+    return_home_power_percent=None,
+    landing_power_percent=None,
 ):
     telemetry = {
         "aircraft_state": {
@@ -59,7 +63,10 @@ def vehicle(
             "manual_override": False,
         },
         "battery": {
-            "capacity_percent": 75,
+            "capacity_percent": capacity_percent,
+            "remain_flight_time_s": remain_flight_time_s,
+            "return_home_power_percent": return_home_power_percent,
+            "landing_power_percent": landing_power_percent,
         },
         "payload": {
             "platform": platform,
@@ -173,3 +180,94 @@ def test_grid_preflight_blocks_camera_platform_or_executor_mismatch():
         item["code"] == "planner_executor" and item["level"] == "BLOCK"
         for item in wrong_executor["checks"]
     )
+
+def test_grid_preflight_uses_dji_remaining_time_and_power_thresholds():
+    planned = mission(
+        preferred_executor="DJI_NATIVE",
+        plan_json={
+            **mission().plan_json,
+            "planning": {
+                "schema_version": 1,
+                "planner": "M3_CLOUD_GRID",
+                "platform": "M3E",
+                "capture_profile": "M3E_MAPPING",
+                "planning_sensor": "RGB_WIDE_20MP",
+                "derived": {
+                    "nominal_route_time_s": 600.0,
+                },
+            },
+        },
+    )
+
+    comfortable = evaluate_preflight(
+        planned,
+        vehicle(
+            remain_flight_time_s=900,
+            return_home_power_percent=25,
+            landing_power_percent=10,
+        ),
+    )
+    assert comfortable["checks_passed"] is True
+    assert any(
+        item["code"] == "planner_flight_time" and item["level"] == "PASS"
+        for item in comfortable["checks"]
+    )
+    assert any(
+        item["code"] == "battery_power_margin" and item["level"] == "PASS"
+        for item in comfortable["checks"]
+    )
+
+    tight = evaluate_preflight(
+        planned,
+        vehicle(
+            remain_flight_time_s=650,
+            return_home_power_percent=70,
+            landing_power_percent=10,
+        ),
+    )
+    assert tight["checks_passed"] is True
+    assert any(
+        item["code"] == "planner_flight_time" and item["level"] == "WARN"
+        for item in tight["checks"]
+    )
+    assert any(
+        item["code"] == "battery_power_margin" and item["level"] == "WARN"
+        for item in tight["checks"]
+    )
+
+    insufficient = evaluate_preflight(
+        planned,
+        vehicle(
+            capacity_percent=20,
+            remain_flight_time_s=500,
+            return_home_power_percent=25,
+            landing_power_percent=10,
+        ),
+    )
+    assert insufficient["checks_passed"] is False
+    assert any(
+        item["code"] == "planner_flight_time" and item["level"] == "BLOCK"
+        for item in insufficient["checks"]
+    )
+    assert any(
+        item["code"] == "battery_power_margin" and item["level"] == "BLOCK"
+        for item in insufficient["checks"]
+    )
+
+    forced_landing = evaluate_preflight(
+        planned,
+        vehicle(
+            capacity_percent=9,
+            remain_flight_time_s=900,
+            return_home_power_percent=25,
+            landing_power_percent=10,
+        ),
+    )
+    assert forced_landing["checks_passed"] is False
+    check = next(
+        item for item in forced_landing["checks"]
+        if item["code"] == "battery_power_margin"
+    )
+    assert check["level"] == "BLOCK"
+    assert "forced-landing" in check["message"]
+
