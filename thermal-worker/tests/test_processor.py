@@ -297,3 +297,31 @@ def test_changed_processing_options_do_not_reuse_existing_results(tmp_path):
             hotspot_delta_c=5.0,
         )
 
+def test_hotspot_mask_excludes_small_island_inside_retained_component_bbox():
+    from thermal_worker.processor import _hotspot_analysis
+
+    temperature = np.full((7, 7), 20.0, dtype=np.float32)
+    # One retained U-shaped component with a large bounding box.
+    for y, x in [
+        (1, 1), (2, 1), (3, 1), (4, 1), (5, 1),
+        (5, 2), (5, 3), (5, 4), (5, 5),
+        (4, 5), (3, 5), (2, 5), (1, 5),
+    ]:
+        temperature[y, x] = 35.0
+    # A single hot pixel lies inside that bounding box but is disconnected and
+    # must be filtered by min_pixels rather than painted back into the mask.
+    temperature[3, 3] = 40.0
+
+    analysis, mask = _hotspot_analysis(
+        temperature,
+        delta_c=10.0,
+        min_pixels=4,
+    )
+
+    assert analysis["candidate_pixels"] == 14
+    assert analysis["retained_pixels"] == 13
+    assert analysis["filtered_pixels"] == 1
+    assert analysis["component_count"] == 1
+    assert mask[3, 3] == 0
+    assert np.count_nonzero(mask) == 13
+
