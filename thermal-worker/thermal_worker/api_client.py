@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -41,27 +42,39 @@ class M3CloudApi:
             },
             method=method,
         )
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self.timeout_seconds,
-            ) as response:
-                raw = response.read()
-        except urllib.error.HTTPError as exc:
-            raw = exc.read()
+        raw: bytes | None = None
+        for attempt in range(3):
             try:
-                decoded = json.loads(raw) if raw else {}
-                detail = decoded.get("detail") if isinstance(decoded, dict) else None
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                detail = None
-            raise M3CloudApiError(
-                method,
-                url,
-                exc.code,
-                str(detail or exc.reason),
-            ) from exc
-        except urllib.error.URLError as exc:
-            raise M3CloudApiError(method, url, 0, str(exc.reason)) from exc
+                with urllib.request.urlopen(
+                    request,
+                    timeout=self.timeout_seconds,
+                ) as response:
+                    raw = response.read()
+                break
+            except urllib.error.HTTPError as exc:
+                response_body = exc.read()
+                try:
+                    decoded = json.loads(response_body) if response_body else {}
+                    detail = decoded.get("detail") if isinstance(decoded, dict) else None
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    detail = None
+                if exc.code in {502, 503, 504} and attempt < 2:
+                    time.sleep(float(attempt + 1))
+                    continue
+                raise M3CloudApiError(
+                    method,
+                    url,
+                    exc.code,
+                    str(detail or exc.reason),
+                ) from exc
+            except urllib.error.URLError as exc:
+                if attempt < 2:
+                    time.sleep(float(attempt + 1))
+                    continue
+                raise M3CloudApiError(method, url, 0, str(exc.reason)) from exc
+
+        if raw is None:
+            raise M3CloudApiError(method, url, 0, "request produced no response")
 
         if not raw:
             return None
