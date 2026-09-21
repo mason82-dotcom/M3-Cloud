@@ -218,6 +218,7 @@ def test_home_radius_is_computed_from_home_not_start_reference():
 
     assert preview["geometry"]["max_reference_distance_m"] is not None
     assert preview["geometry"]["max_home_distance_m"] is not None
+    assert preview["geometry"]["return_distance_m"] > 500.0
     assert (
         preview["geometry"]["max_home_distance_m"]
         > preview["geometry"]["max_reference_distance_m"] + 500.0
