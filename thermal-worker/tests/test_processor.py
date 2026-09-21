@@ -146,9 +146,12 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert metadata["registration"]["wide_thermal_coregistered"] is False
     assert metadata["registration"]["georeferenced_temperature_raster"] is False
     assert (output / "result-manifest.json").is_file()
+    assert len(manifest["input_fingerprint"]) == 64
 
-    with pytest.raises(FileExistsError, match="refusing to overwrite"):
-        process_handoff(handoff_path, output, FakeDecoder())
+    retry_decoder = FakeDecoder()
+    retried = process_handoff(handoff_path, output, retry_decoder)
+    assert retried == manifest
+    assert retry_decoder.paths == []
 
 
 def test_process_handoff_rejects_changed_frozen_input(tmp_path):
