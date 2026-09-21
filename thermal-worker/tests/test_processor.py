@@ -114,6 +114,13 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert temperature_data.dtype == np.float32
     assert temperature_data.shape == (2, 3)
     assert temperature_data[1, 1] == np.float32(42.5)
+    with tifffile.TiffFile(temperature_path) as tiff:
+        embedded = json.loads(tiff.pages[0].description)
+    assert embedded["unit"] == "degree_Celsius"
+    assert embedded["api_version"] == {"api": 8, "magic": "DIRP"}
+    assert embedded["rjpeg_version"] == {"rjpeg": 3, "header": 1, "curve": 1}
+    assert embedded["measurement_abi"] == "AMBIENT_V2"
+    assert embedded["georeferenced"] is False
 
     with Image.open(preview_path) as preview:
         assert preview.mode == "L"
@@ -128,6 +135,9 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert metadata["registration"]["wide_thermal_coregistered"] is False
     assert metadata["registration"]["georeferenced_temperature_raster"] is False
     assert (output / "result-manifest.json").is_file()
+
+    with pytest.raises(FileExistsError, match="refusing to overwrite"):
+        process_handoff(handoff_path, output, FakeDecoder())
 
 
 def test_process_handoff_rejects_changed_frozen_input(tmp_path):
@@ -170,5 +180,9 @@ def test_process_handoff_rejects_changed_frozen_input(tmp_path):
     handoff_path = tmp_path / "handoff.json"
     handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
 
+    output = tmp_path / "out"
     with pytest.raises(ValueError, match="SHA256 mismatch"):
-        process_handoff(handoff_path, tmp_path / "out", FakeDecoder())
+        process_handoff(handoff_path, output, FakeDecoder())
+
+    assert not output.exists()
+    assert not list(tmp_path.glob(".out.staging-*"))
