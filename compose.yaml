@@ -81,6 +81,7 @@ services:
 
   dronedb:
     image: ${DRONEDB_IMAGE:-dronedb/registry:latest}
+    platform: ${DRONEDB_PLATFORM:-linux/amd64}
     restart: unless-stopped
     depends_on:
       dronedb-db:
@@ -117,6 +118,7 @@ services:
 
   dronedb-node:
     image: ${DRONEDB_IMAGE:-dronedb/registry:latest}
+    platform: ${DRONEDB_PLATFORM:-linux/amd64}
     restart: unless-stopped
     depends_on:
       dronedb:
