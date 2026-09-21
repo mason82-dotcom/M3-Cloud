@@ -137,6 +137,14 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
 
     assert manifest["contract"] == RESULT_CONTRACT
     assert manifest["capture_group_count"] == 1
+    assert manifest["decoder_provenance"] == {
+        "decoder": "DJI_DIRP",
+        "sdk_label": "test-sdk",
+        "sdk_library_name": "libdirp.so",
+        "sdk_library_sha256": "c" * 64,
+        "measurement_abi": "AMBIENT_V2",
+        "api_version": {"api": 8, "magic": "DIRP"},
+    }
     assert decoder.paths == [thermal]
     assert decoder.overrides == {"emissivity": 0.95}
 
@@ -238,6 +246,7 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     summary_json = json.loads(
         (output / manifest["summary_json"]).read_text(encoding="utf-8")
     )
+    assert summary_json["decoder_provenance"] == manifest["decoder_provenance"]
     assert summary_json["aggregate"]["capture_count"] == 1
     assert summary_json["aggregate"]["georeferenced_capture_count"] == 1
     assert summary_json["aggregate"]["max_c"] == 42.5
@@ -766,4 +775,82 @@ def test_registration_audit_leaves_missing_pair_evidence_unknown():
     }
     assert pair["wide_dji_calibration_raw"] == {}
     assert pair["thermal_dji_calibration_raw"] == {}
+
+def test_process_handoff_rejects_decoder_provenance_change_between_captures(
+    tmp_path,
+):
+    class ChangingDecoder(FakeDecoder):
+        def decode_file(self, path, *, overrides=None):
+            result = super().decode_file(path, overrides=overrides)
+            if len(self.paths) == 2:
+                return DecodeResult(
+                    temperature_c=result.temperature_c,
+                    width=result.width,
+                    height=result.height,
+                    api_version=result.api_version,
+                    rjpeg_version=result.rjpeg_version,
+                    measurement_params=result.measurement_params,
+                    measurement_ranges=result.measurement_ranges,
+                    measurement_mode=result.measurement_mode,
+                    measurement_error_code=result.measurement_error_code,
+                    sdk_label=result.sdk_label,
+                    measurement_abi=result.measurement_abi,
+                    sdk_library_name=result.sdk_library_name,
+                    sdk_library_sha256="e" * 64,
+                )
+            return result
+
+    source = tmp_path / "input"
+    source.mkdir()
+    groups = []
+    for index in (1, 2):
+        wide = source / f"DJI_{index:04d}_W.JPG"
+        thermal = source / f"DJI_{index:04d}_T.JPG"
+        wide.write_bytes(f"wide-{index}".encode())
+        thermal.write_bytes(f"thermal-{index}".encode())
+        groups.append(
+            {
+                "capture_group": f"M3T/site/DJI_{index:04d}",
+                "files": [
+                    {
+                        "media_kind": "WIDE",
+                        "path_relative_to_input": wide.name,
+                        "filename": wide.name,
+                        "size_bytes": wide.stat().st_size,
+                        "sha256": _sha(wide),
+                    },
+                    {
+                        "media_kind": "THERMAL",
+                        "path_relative_to_input": thermal.name,
+                        "filename": thermal.name,
+                        "size_bytes": thermal.stat().st_size,
+                        "sha256": _sha(thermal),
+                    },
+                ],
+            }
+        )
+
+    handoff = {
+        "schema_version": 3,
+        "worker_contract": "M3T_RJPEG_V1",
+        "workflow": "THERMOGRAM",
+        "platform": "M3T",
+        "job_id": "job-decoder-change",
+        "external_path": str(source),
+        "capture_groups": groups,
+    }
+    handoff_path = tmp_path / "handoff.json"
+    handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match="decoder provenance changed",
+    ):
+        process_handoff(
+            handoff_path,
+            tmp_path / "results",
+            ChangingDecoder(),
+        )
+
+    assert not (tmp_path / "results").exists()
 
