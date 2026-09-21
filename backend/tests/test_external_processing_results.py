@@ -147,6 +147,14 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
         "job_id": "job",
         "source_handoff_schema": 3,
         "input_fingerprint": "a" * 64,
+        "decoder_provenance": {
+            "decoder": "DJI_DIRP",
+            "sdk_label": "1.8_20251211",
+            "sdk_library_name": "libdirp.so",
+            "sdk_library_sha256": "d" * 64,
+            "measurement_abi": "AMBIENT_V2",
+            "api_version": {"api": 8, "magic": "DIRP"},
+        },
         "georeferenced_capture_count": 1,
         "capture_points_geojson": "capture-points.geojson",
         "registration_audit_json": "registration-audit.json",
@@ -237,6 +245,7 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
         "pair_gps_evidence_count": 1,
     }
     assert summary_json["result_kind"] == "THERMAL_SUMMARY"
+    assert summary_json["decoder_provenance"]["sdk_library_sha256"] == "d" * 64
     assert summary_csv["result_kind"] == "THERMAL_SUMMARY_CSV"
     assert summary_json["thermal_summary"]["max_c"] == 42.5
     assert summary_json["thermal_summary"]["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
@@ -247,6 +256,7 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert temperature["sdk_label"] == "1.8_20251211"
     assert temperature["sdk_library_name"] == "libdirp.so"
     assert temperature["sdk_library_sha256"] == "d" * 64
+    assert temperature["decoder_provenance"] == manifest["decoder_provenance"]
     assert temperature["api_version"] == {"api": 8, "magic": "DIRP"}
     assert temperature["measurement_ranges"]["distance_m"]["max"] == 500.0
     assert temperature["registration"]["status"] == "NOT_REGISTERED"
@@ -262,6 +272,9 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert hotspots["result_kind"] == "HOTSPOT_ANALYSIS"
     assert hotspots["hotspots"]["component_count"] == 1
     assert details["result-manifest.json"]["result_kind"] == "THERMAL_MANIFEST"
+    assert details["result-manifest.json"]["decoder_provenance"] == (
+        manifest["decoder_provenance"]
+    )
 
 
 
