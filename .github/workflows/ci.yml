@@ -85,6 +85,39 @@ jobs:
       - name: Spotless, compile, and unit tests
         run: ./gradlew --no-daemon :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
 
+      - name: Assemble and inventory Android APK
+        run: |
+          ./gradlew --no-daemon :app:assembleCurrentDebug
+          APK="../lyrebird-app/build/outputs/apk/current/debug/Lyrebird-debug.apk"
+          test -f "$APK"
+
+          REPORT_DIR="build/reports/binary"
+          EXTRACT_DIR="$RUNNER_TEMP/lyrebird-apk"
+          rm -rf "$EXTRACT_DIR"
+          mkdir -p "$REPORT_DIR" "$EXTRACT_DIR"
+
+          unzip -Z1 "$APK" | sort > "$REPORT_DIR/apk-contents.txt"
+          unzip -q "$APK" 'lib/*' -d "$EXTRACT_DIR"
+
+          {
+            echo "APK: $APK"
+            sha256sum "$APK"
+            echo
+            find "$EXTRACT_DIR/lib" -type f -name '*.so' -print0 \
+              | sort -z \
+              | while IFS= read -r -d '' LIB; do
+                  REL="${LIB#$EXTRACT_DIR/}"
+                  echo "=== $REL ==="
+                  sha256sum "$LIB"
+                  file "$LIB"
+                  readelf -h "$LIB" | grep -E 'Class:|Data:|Machine:'
+                  readelf -d "$LIB" | grep -E '\(SONAME\)|\(NEEDED\)' || true
+                  echo
+                done
+          } > "$REPORT_DIR/native-libs.txt"
+
+          test -s "$REPORT_DIR/native-libs.txt"
+
       - name: Lyrebird Detekt and Lint reports
         run: ./gradlew --no-daemon qualityLyrebird
 
@@ -96,6 +129,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             lyrebird/LyrebirdApp/android-sdk-v5-as/build/reports/detekt/
+            lyrebird/LyrebirdApp/android-sdk-v5-as/build/reports/binary/
             lyrebird/LyrebirdApp/lyrebird-app/build/reports/
 
 
