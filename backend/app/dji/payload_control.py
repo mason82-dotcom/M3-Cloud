@@ -5,6 +5,7 @@ from typing import Any, Iterable
 from app.dji.models.payload import (
     DJIPayloadValidationError,
     bounded_number,
+    finite_number,
     normalized_storage_settings,
     require_m3t,
     strict_int,
@@ -110,17 +111,13 @@ class DJIPayloadControl:
         data.update(
             {
                 "locked": locked,
-                "pitch_speed": bounded_number(
+                "pitch_speed": finite_number(
                     pitch_speed,
                     name="pitch_speed",
-                    minimum=-1000.0,
-                    maximum=1000.0,
                 ),
-                "yaw_speed": bounded_number(
+                "yaw_speed": finite_number(
                     yaw_speed,
                     name="yaw_speed",
-                    minimum=-1000.0,
-                    maximum=1000.0,
                 ),
             }
         )
