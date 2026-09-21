@@ -10,7 +10,12 @@ import tifffile
 from PIL import Image
 
 from thermal_worker.dji_sdk import DecodeResult, MeasurementParams
-from thermal_worker.processor import RESULT_CONTRACT, process_handoff
+from thermal_worker.processor import (
+    RESULT_CONTRACT,
+    _existing_manifest,
+    _source_path,
+    process_handoff,
+)
 
 
 class FakeDecoder:
@@ -324,4 +329,55 @@ def test_hotspot_mask_excludes_small_island_inside_retained_component_bbox():
     assert analysis["component_count"] == 1
     assert mask[3, 3] == 0
     assert np.count_nonzero(mask) == 13
+
+def test_source_path_rejects_symlink_escape(tmp_path):
+    source_root = tmp_path / "media"
+    source_root.mkdir()
+    outside = tmp_path / "outside-rjpeg.JPG"
+    outside.write_bytes(b"outside")
+    link = source_root / "DJI_0001_T.JPG"
+    link.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="escapes external_path"):
+        _source_path(
+            source_root,
+            {"path_relative_to_input": link.name},
+        )
+
+
+def test_existing_manifest_rejects_intermediate_symlink_escape(tmp_path):
+    destination = tmp_path / "results"
+    destination.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "artifact.bin").write_bytes(b"external")
+
+    captures = destination / "captures"
+    captures.symlink_to(outside, target_is_directory=True)
+    artifact_path = "captures/artifact.bin"
+    manifest = {
+        "contract": RESULT_CONTRACT,
+        "job_id": "job",
+        "input_fingerprint": "f" * 64,
+        "capture_groups": [
+            {
+                "temperature_tif": artifact_path,
+                "preview_png": artifact_path,
+                "thermal_json": artifact_path,
+                "hotspot_mask_png": artifact_path,
+                "hotspots_json": artifact_path,
+            }
+        ],
+    }
+    (destination / "result-manifest.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileExistsError, match="escapes result folder"):
+        _existing_manifest(
+            destination,
+            expected_job_id="job",
+            expected_fingerprint="f" * 64,
+        )
 
