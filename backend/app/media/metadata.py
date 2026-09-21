@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image
 
 
-METADATA_VERSION = 1
+METADATA_VERSION = 2
 _XMP_SCAN_BYTES = 8 * 1024 * 1024
 _XMP_ATTRIBUTE = re.compile(
     rb'(?P<prefix>[A-Za-z][A-Za-z0-9_.-]*):(?P<name>[A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*["\'](?P<value>[^"\']*)["\']'
