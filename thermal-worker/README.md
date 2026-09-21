@@ -26,8 +26,10 @@ For each complete M3T WIDE/THERMAL capture pair the worker writes:
 
 - `temperature.tif` — Float32 temperature plane in degrees Celsius.
 - `preview.png` — 8-bit percentile-stretched preview for display only.
+- `hotspot-mask.png` — binary sensor-space mask of generic hot-region candidates.
+- `hotspots.json` — median-ΔT candidate components and sensor-pixel coordinates.
 - `thermal.json` — source hashes, DIRP/R-JPEG provenance, dimensions,
-  measurement-parameter mode and temperature statistics.
+  measurement-parameter mode, SDK ranges, temperature statistics and hotspot analysis.
 - `result-manifest.json` — job-level `M3T_THERMAL_RESULTS_V1` manifest.
 
 The temperature TIFF is intentionally **not** labelled as a GeoTIFF. It remains
@@ -89,10 +91,29 @@ non-editable through DIRP. With no overrides, the worker records
 `measurement_mode=sdk_native_locked` and uses the SDK-native radiometry.
 If an override is explicitly requested but DIRP cannot read/set the
 measurement parameters, the job fails closed rather than claiming that the
-override was applied.
+override was applied. When available, the worker queries
+`dirp_get_measurement_params_range()` and validates overrides against the
+camera/R-JPEG-specific DJI ranges rather than relying on a hard-coded distance limit.
 
 The adapter targets the modern DIRP measurement ABI used by current TSDK,
 including the `ambient_temp` field present in the current header layout.
+
+
+
+Generic hotspot candidate analysis defaults to a threshold of 10 °C above the
+image median with a minimum 4-connected component size of four thermal pixels.
+It is deliberately **not** a PV/equipment defect classifier. Adjust it with:
+
+```bash
+m3-thermal-worker m3t-thermogram-handoff.json \
+  --hotspot-delta-c 8 \
+  --hotspot-min-pixels 6
+```
+
+The analysis settings and radiometric overrides are included in the immutable
+input fingerprint. A retry only reuses an existing result folder when the
+frozen source set **and** processing settings match.
+
 
 For automatic job-state callbacks and result import:
 
