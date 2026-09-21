@@ -125,6 +125,8 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
         "workflow": "THERMOGRAM",
         "platform": "M3T",
         "job_id": "job",
+        "source_handoff_schema": 3,
+        "input_fingerprint": "a" * 64,
         "capture_groups": [
             {
                 "capture_group": "M3T/site/DJI_0001",
@@ -139,6 +141,9 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
                 "sdk_label": "1.8_20251211",
                 "api_version": {"api": 8, "magic": "DIRP"},
                 "measurement_mode": "sdk_native",
+                "measurement_ranges": {
+                    "distance_m": {"min": 1.0, "max": 500.0},
+                },
             }
         ],
     }
@@ -147,7 +152,7 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    details = thermal_result_manifest_details(root)
+    details = thermal_result_manifest_details(root, expected_job_id="job")
 
     temperature = details[
         "captures/00001_DJI_0001_deadbeef00/temperature.tif"
@@ -161,10 +166,36 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert temperature["statistics"]["max_c"] == 42.5
     assert temperature["sdk_label"] == "1.8_20251211"
     assert temperature["api_version"] == {"api": 8, "magic": "DIRP"}
+    assert temperature["measurement_ranges"]["distance_m"]["max"] == 500.0
+    assert temperature["input_fingerprint"] == "a" * 64
     assert preview["result_kind"] == "THERMAL_PREVIEW"
     assert metadata["result_kind"] == "THERMAL_METADATA"
     assert details["result-manifest.json"]["result_kind"] == "THERMAL_MANIFEST"
 
+
+
+
+
+def test_native_thermal_manifest_rejects_wrong_processing_job(tmp_path: Path) -> None:
+    root = tmp_path / "thermal-results"
+    root.mkdir()
+    manifest = {
+        "schema_version": 1,
+        "contract": "M3T_THERMAL_RESULTS_V1",
+        "workflow": "THERMOGRAM",
+        "platform": "M3T",
+        "job_id": "job-a",
+        "capture_groups": [],
+    }
+    (root / "result-manifest.json").write_text(
+        __import__("json").dumps(manifest),
+        encoding="utf-8",
+    )
+
+    assert thermal_result_manifest_details(
+        root,
+        expected_job_id="job-b",
+    ) == {}
 
 
 @pytest.mark.asyncio(loop_scope="session")
