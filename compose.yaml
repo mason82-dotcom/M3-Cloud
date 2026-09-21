@@ -127,6 +127,27 @@ services:
       - "8000:8000"
       - "${M3CLOUD_LYREBIRD_MAVLINK_PORT:-14550}:${M3CLOUD_LYREBIRD_MAVLINK_PORT:-14550}/udp"
 
+  thermal-worker:
+    profiles: ["thermal"]
+    platform: linux/amd64
+    build:
+      context: ./thermal-worker
+    restart: unless-stopped
+    environment:
+      DJI_TSDK_DIR: /opt/dji-tsdk
+      DJI_TSDK_VERSION: ${DJI_TSDK_VERSION:-1.8_20251211}
+      M3CLOUD_API_BASE: http://backend:8000
+      M3_THERMAL_LOG_LEVEL: ${M3_THERMAL_LOG_LEVEL:-INFO}
+      M3_THERMAL_HOTSPOT_DELTA_C: ${M3_THERMAL_HOTSPOT_DELTA_C:-10}
+      M3_THERMAL_HOTSPOT_MIN_PIXELS: ${M3_THERMAL_HOTSPOT_MIN_PIXELS:-4}
+    command: ["--watch"]
+    volumes:
+      - ${DJI_TSDK_HOST_PATH:-./dji-thermal-sdk}:/opt/dji-tsdk:ro
+      - ${M3CLOUD_MEDIA_IMPORT_HOST_PATH:-./media-import}:/media-import:ro
+      - ${M3CLOUD_PROCESSING_IMPORT_HOST_PATH:-./processing-import}:/processing-import
+    depends_on:
+      - backend
+
   frontend:
     build:
       context: .
