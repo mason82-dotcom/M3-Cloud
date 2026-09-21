@@ -87,17 +87,38 @@ jobs:
 
       - name: Assemble and inventory Android APK
         run: |
+          REPORT_DIR="build/reports/binary"
+          EXTRACT_DIR="$RUNNER_TEMP/lyrebird-apk"
+          mkdir -p "$REPORT_DIR"
+          
+          ./gradlew --no-daemon :app:dependencies --configuration currentDebugRuntimeClasspath \
+            > "$REPORT_DIR/runtime-classpath.txt"
+          grep -q 'com.dji:dji-sdk-v5-aircraft:5.18.0' "$REPORT_DIR/runtime-classpath.txt"
+          grep -q 'com.dji:dji-sdk-v5-networkImp:5.18.0' "$REPORT_DIR/runtime-classpath.txt"
+          grep -q 'com.dji:wpmzsdk:1.0.5.1' "$REPORT_DIR/runtime-classpath.txt"
+
           ./gradlew --no-daemon :app:assembleCurrentDebug
           APK="../lyrebird-app/build/outputs/apk/current/debug/Lyrebird-debug.apk"
           test -f "$APK"
 
-          REPORT_DIR="build/reports/binary"
-          EXTRACT_DIR="$RUNNER_TEMP/lyrebird-apk"
           rm -rf "$EXTRACT_DIR"
-          mkdir -p "$REPORT_DIR" "$EXTRACT_DIR"
+          mkdir -p "$EXTRACT_DIR"
 
           unzip -Z1 "$APK" | sort > "$REPORT_DIR/apk-contents.txt"
           unzip -q "$APK" 'lib/*' -d "$EXTRACT_DIR"
+
+          ABIS="$(find "$EXTRACT_DIR/lib" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -u)"
+          test "$ABIS" = "arm64-v8a"
+
+          for REQUIRED_LIB in \
+            libDJICSDKCommon.so \
+            libDJIRegister.so \
+            libDJIWaypointV2Core-CSDK.so \
+            libFlightRecordEngine.so \
+            libdjisdk_jni.so \
+            libdjiwpv2-CSDK.so; do
+            test -f "$EXTRACT_DIR/lib/arm64-v8a/$REQUIRED_LIB"
+          done
 
           {
             echo "APK: $APK"
