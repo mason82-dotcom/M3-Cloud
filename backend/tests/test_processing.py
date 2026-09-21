@@ -169,19 +169,28 @@ def _m3t_asset(kind: str, group: str, filename: str):
     )
 
 
-def test_thermogram_selection_freezes_only_complete_m3t_pairs() -> None:
-    complete = "M3T/site/DJI_0001"
-    incomplete = "M3T/site/DJI_0002"
+def test_thermogram_selection_requires_thermal_and_keeps_optional_wide() -> None:
+    paired = "M3T/site/DJI_0001"
+    thermal_only = "M3T/site/DJI_0002"
+    wide_only = "M3T/site/DJI_0003"
     assets = [
-        _m3t_asset("WIDE", complete, "DJI_0001_W.JPG"),
-        _m3t_asset("THERMAL", complete, "DJI_0001_T.JPG"),
-        _m3t_asset("WIDE", incomplete, "DJI_0002_W.JPG"),
+        _m3t_asset("WIDE", paired, "DJI_0001_W.JPG"),
+        _m3t_asset("THERMAL", paired, "DJI_0001_T.JPG"),
+        _m3t_asset("THERMAL", thermal_only, "DJI_0002_R.JPG"),
+        _m3t_asset("WIDE", wide_only, "DJI_0003_W.JPG"),
     ]
 
     selected = select_thermogram_assets(assets)
 
-    assert [asset.media_kind for asset in selected] == ["WIDE", "THERMAL"]
-    assert {asset.capture_group for asset in selected} == {complete}
+    assert [asset.media_kind for asset in selected] == [
+        "WIDE",
+        "THERMAL",
+        "THERMAL",
+    ]
+    assert {asset.capture_group for asset in selected} == {
+        paired,
+        thermal_only,
+    }
 
 
 def test_thermogram_handoff_is_m3t_and_preserves_original_paths() -> None:
@@ -218,11 +227,16 @@ def test_thermogram_handoff_is_m3t_and_preserves_original_paths() -> None:
         handoff_root=r"\\m3-cloud\media-import",
     )
 
-    assert handoff["schema_version"] == 3
+    assert handoff["schema_version"] == 4
     assert handoff["workflow"] == "THERMOGRAM"
-    assert handoff["worker_contract"] == "M3T_RJPEG_V1"
+    assert handoff["worker_contract"] == "M3T_RJPEG_V2"
     assert handoff["platform"] == "M3T"
+    assert handoff["required_media_kinds"] == ["THERMAL"]
+    assert handoff["optional_media_kinds"] == ["WIDE"]
     assert handoff["capture_group_count"] == 1
+    assert handoff["paired_capture_group_count"] == 1
+    assert handoff["thermal_only_capture_group_count"] == 0
+    assert handoff["capture_groups"][0]["paired_wide"] is True
     assert handoff["asset_count"] == 2
     assert handoff["external_path"] == r"\\m3-cloud\media-import\M3T\site"
     files = handoff["capture_groups"][0]["files"]
@@ -234,6 +248,53 @@ def test_thermogram_handoff_is_m3t_and_preserves_original_paths() -> None:
         "DJI_0001_W.JPG",
         "DJI_0001_T.JPG",
     ]
+
+
+def test_thermogram_v2_handoff_accepts_thermal_only_capture() -> None:
+    from datetime import datetime, timezone
+    from app.models import ProcessingJob
+
+    group = "M3T/site/DJI_0002"
+    assets = [
+        _m3t_asset("THERMAL", group, "DJI_0002_R.JPG"),
+    ]
+    now = datetime.now(timezone.utc)
+    job = ProcessingJob(
+        id=uuid.UUID("23232323-2323-2323-2323-232323232323"),
+        kind="THERMOGRAM",
+        status="WAITING_EXTERNAL",
+        name="M3T thermal-only",
+        input_prefix="M3T/site",
+        platform="M3T",
+        flight_id=None,
+        media_kinds=["THERMAL"],
+        options=[],
+        image_count=1,
+        uploaded_count=0,
+        progress=0.0,
+        available_assets=[],
+        created_at=now,
+        updated_at=now,
+    )
+
+    handoff = build_thermogram_handoff(
+        job,
+        assets,
+        handoff_root=r"\\m3-cloud\media-import",
+    )
+
+    assert handoff["schema_version"] == 4
+    assert handoff["worker_contract"] == "M3T_RJPEG_V2"
+    assert handoff["required_media_kinds"] == ["THERMAL"]
+    assert handoff["optional_media_kinds"] == ["WIDE"]
+    assert handoff["capture_group_count"] == 1
+    assert handoff["paired_capture_group_count"] == 0
+    assert handoff["thermal_only_capture_group_count"] == 1
+    assert handoff["asset_count"] == 1
+    capture = handoff["capture_groups"][0]
+    assert capture["paired_wide"] is False
+    assert [item["media_kind"] for item in capture["files"]] == ["THERMAL"]
+    assert capture["files"][0]["filename"] == "DJI_0002_R.JPG"
 
 
 def test_external_result_object_key_is_job_scoped() -> None:
