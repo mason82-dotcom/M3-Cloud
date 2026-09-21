@@ -188,6 +188,55 @@ def evaluate_preflight(
                     f"Capture profile {planned_profile} is reported by the assigned aircraft.",
                 )
 
+        derived = (
+            planning.get("derived")
+            if isinstance(planning.get("derived"), dict)
+            else {}
+        )
+        planned_altitude_m = derived.get("altitude_m")
+        limits = (
+            telemetry.get("limits")
+            if isinstance(telemetry.get("limits"), dict)
+            else {}
+        )
+        max_flight_height_m = limits.get("max_flight_height_m")
+        if (
+            isinstance(planned_altitude_m, (int, float))
+            and not isinstance(planned_altitude_m, bool)
+            and isinstance(max_flight_height_m, (int, float))
+            and not isinstance(max_flight_height_m, bool)
+        ):
+            altitude_margin_m = float(max_flight_height_m) - float(planned_altitude_m)
+            details = {
+                "planned_altitude_m": float(planned_altitude_m),
+                "max_flight_height_m": float(max_flight_height_m),
+                "margin_m": altitude_margin_m,
+                "rth_altitude_m": limits.get("rth_altitude_m"),
+                "rth_altitude_effective_m": limits.get("rth_altitude_effective_m"),
+                "rth_altitude_status": limits.get("rth_altitude_status"),
+            }
+            if altitude_margin_m < 0:
+                add(
+                    "planner_altitude_limit",
+                    "BLOCK",
+                    "Grid altitude exceeds the max flight height reported by Lyrebird.",
+                    details,
+                )
+            elif altitude_margin_m < 5:
+                add(
+                    "planner_altitude_limit",
+                    "WARN",
+                    "Grid altitude is within 5 m of the configured max flight height.",
+                    details,
+                )
+            else:
+                add(
+                    "planner_altitude_limit",
+                    "PASS",
+                    "Grid altitude is below the configured max flight height.",
+                    details,
+                )
+
         if mission.preferred_executor != "DJI_NATIVE":
             add(
                 "planner_executor",
