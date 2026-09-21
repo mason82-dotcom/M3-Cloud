@@ -63,6 +63,57 @@ function statusClass(status: string): string {
   return "warn";
 }
 
+function thermalRegistrationParts(
+  details: Record<string, unknown>,
+): string[] {
+  const registration =
+    details.registration && typeof details.registration === "object"
+      ? details.registration as Record<string, unknown>
+      : null;
+  if (!registration) return [];
+
+  const parts: string[] = [];
+  const status =
+    typeof registration.status === "string"
+      ? registration.status
+      : null;
+  if (status === "NOT_REGISTERED") {
+    parts.push("WIDE↔THERMAL not registered");
+  } else if (status) {
+    parts.push(`WIDE↔THERMAL ${status}`);
+  }
+
+  const audit =
+    registration.pair_audit && typeof registration.pair_audit === "object"
+      ? registration.pair_audit as Record<string, unknown>
+      : null;
+  const deltaMs =
+    audit && typeof audit.capture_time_delta_ms === "number"
+      ? audit.capture_time_delta_ms
+      : null;
+  const gpsDistance =
+    audit && typeof audit.gps_separation_m === "number"
+      ? audit.gps_separation_m
+      : null;
+  if (deltaMs !== null && Number.isFinite(deltaMs)) {
+    parts.push(`Δt ${deltaMs.toFixed(deltaMs < 10 ? 1 : 0)} ms`);
+  }
+  if (gpsDistance !== null && Number.isFinite(gpsDistance)) {
+    parts.push(`ΔGPS ${gpsDistance.toFixed(gpsDistance < 1 ? 2 : 1)} m`);
+  }
+  return parts;
+}
+
+function withThermalRegistration(
+  base: string,
+  details: Record<string, unknown>,
+): string {
+  const registration = thermalRegistrationParts(details);
+  return registration.length > 0
+    ? [base, ...registration].join(" · ")
+    : base;
+}
+
 function thermalResultSummary(result: ProcessingResult): string | null {
   const details = result.details;
   if (!details || details.thermal_contract !== "M3T_THERMAL_RESULTS_V1") return null;
@@ -75,10 +126,15 @@ function thermalResultSummary(result: ProcessingResult): string | null {
   const min = stats && typeof stats.min_c === "number" ? stats.min_c : null;
   const max = stats && typeof stats.max_c === "number" ? stats.max_c : null;
   if (kind === "TEMPERATURE_RASTER" && min !== null && max !== null) {
-    return `Temperature raster · ${min.toFixed(1)}–${max.toFixed(1)} °C`;
+    return withThermalRegistration(
+      `Temperature raster · ${min.toFixed(1)}–${max.toFixed(1)} °C`,
+      details,
+    );
   }
   if (kind === "THERMAL_PREVIEW") return "Thermal preview";
-  if (kind === "THERMAL_METADATA") return "Thermal metadata";
+  if (kind === "THERMAL_METADATA") {
+    return withThermalRegistration("Thermal metadata", details);
+  }
   if (kind === "HOTSPOT_MASK") return "Hotspot candidate mask";
   if (kind === "THERMAL_CAPTURE_POINTS") {
     const count =
@@ -98,9 +154,12 @@ function thermalResultSummary(result: ProcessingResult): string | null {
       hotspots && typeof hotspots.component_count === "number"
         ? hotspots.component_count
         : null;
-    return count === null
-      ? "Hotspot candidate analysis"
-      : `Hotspot candidates · ${count}`;
+    return withThermalRegistration(
+      count === null
+        ? "Hotspot candidate analysis"
+        : `Hotspot candidates · ${count}`,
+      details,
+    );
   }
   if (kind === "THERMAL_SUMMARY") {
     const summary =
@@ -123,12 +182,21 @@ function thermalResultSummary(result: ProcessingResult): string | null {
       summary && typeof summary.radiometry_warning_capture_count === "number"
         ? summary.radiometry_warning_capture_count
         : null;
+    const registrationStatus =
+      summary && typeof summary.registration_status === "string"
+        ? summary.registration_status
+        : null;
     const parts = ["Thermal summary"];
     if (captures !== null) parts.push(`${captures} captures`);
     if (hotspots !== null) parts.push(`${hotspots} hotspot candidates`);
     if (maxC !== null) parts.push(`${maxC.toFixed(1)} °C max`);
     if (radiometryWarnings !== null && radiometryWarnings > 0) {
       parts.push(`${radiometryWarnings} radiometry warnings`);
+    }
+    if (registrationStatus === "NOT_REGISTERED") {
+      parts.push("WIDE↔THERMAL not registered");
+    } else if (registrationStatus) {
+      parts.push(`WIDE↔THERMAL ${registrationStatus}`);
     }
     return parts.join(" · ");
   }
