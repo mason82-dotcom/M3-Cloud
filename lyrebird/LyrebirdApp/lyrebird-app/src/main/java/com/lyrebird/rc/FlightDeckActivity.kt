@@ -5473,7 +5473,10 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                     return@execute
                 }
 
-                val result = CameraLiveSourceController.setAndReadback(preferred)
+                val result = CameraLiveSourceController.setAndReadback(
+                    preferred,
+                    reason = "restore:$reason"
+                )
                 if (
                     result.setStatus == "OK" &&
                     result.readStatus == "OK" &&
