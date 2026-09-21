@@ -430,3 +430,60 @@ async def test_unchanged_file_is_reindexed_when_metadata_version_changes(
         assert asset is not None
         assert asset.metadata_version == METADATA_VERSION
 
+@pytest.mark.asyncio(loop_scope="session")
+async def test_importer_catalogs_m3t_rjpeg_r_suffix_as_complete_pair(
+    tmp_path: Path,
+) -> None:
+    async with session_factory() as session:
+        await session.execute(delete(MediaDatasetRecord))
+        await session.execute(delete(MediaAsset))
+        await session.commit()
+
+    root = tmp_path / "media"
+    folder = root / "M3T" / "survey"
+    folder.mkdir(parents=True)
+    wide = folder / "DJI_0001_W.JPG"
+    thermal = folder / "DJI_0001_R.JPG"
+    wide.write_bytes(b"wide-placeholder")
+    thermal.write_bytes(b"radiometric-rjpeg-placeholder")
+
+    importer = MediaImporter(
+        session_factory,
+        root=str(root),
+        min_age_seconds=0,
+    )
+    result = await importer.scan()
+
+    assert result.scanned == 2
+    assert result.added == 2
+
+    async with session_factory() as session:
+        assets = (
+            await session.scalars(
+                select(MediaAsset).where(MediaAsset.present.is_(True))
+            )
+        ).all()
+        dataset = await session.scalar(
+            select(MediaDatasetRecord).where(
+                MediaDatasetRecord.platform == "M3T",
+                MediaDatasetRecord.prefix == "M3T/survey",
+            )
+        )
+
+    assert {(asset.media_kind, asset.platform) for asset in assets} == {
+        ("WIDE", "M3T"),
+        ("THERMAL", "M3T"),
+    }
+    assert {asset.capture_group for asset in assets} == {
+        "M3T/survey/DJI_0001"
+    }
+    assert dataset is not None
+    thermogram = next(
+        option
+        for option in dataset.options
+        if option["key"] == "THERMOGRAM"
+    )
+    assert thermogram["ready"] is True
+    assert thermogram["complete_groups"] == 1
+    assert thermogram["incomplete_groups"] == 0
+
