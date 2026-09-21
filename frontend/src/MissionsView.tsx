@@ -731,6 +731,10 @@ export function MissionsView() {
   const plannerReference = plannerStartReference(selectedVehicle);
   const plannerMaxFlightHeight =
     selectedVehicle?.telemetry?.limits?.max_flight_height_m;
+  const plannerMaxFlightDistance =
+    selectedVehicle?.telemetry?.limits?.max_flight_distance_m;
+  const plannerDistanceLimitEnabled =
+    selectedVehicle?.telemetry?.limits?.distance_limit_enabled === true;
   const gridPlannerActive =
     plannerPreview !== null ||
     draftPlanning?.planner === "M3_CLOUD_GRID" ||
@@ -1425,6 +1429,13 @@ export function MissionsView() {
                     <span>Total est. <b>{Math.ceil(plannerPreview.geometry.nominal_total_time_s / 60)} min</b></span>
                     <span>Ingress <b>{plannerPreview.geometry.ingress_distance_m.toFixed(0)} m</b></span>
                     <span>Return <b>{plannerPreview.geometry.return_distance_m.toFixed(0)} m</b></span>
+                    {plannerPreview.geometry.max_reference_distance_m !== null ? (
+                      <span>Max radius <b>{plannerPreview.geometry.max_reference_distance_m.toFixed(0)} m</b></span>
+                    ) : null}
+                    {plannerDistanceLimitEnabled &&
+                    typeof plannerMaxFlightDistance === "number" ? (
+                      <span>Radius limit <b>{plannerMaxFlightDistance.toFixed(0)} m</b></span>
+                    ) : null}
                     <span>End action <b>{plannerPreview.input.finish_action}</b></span>
                     <span>Items <b>{plannerPreview.mission_item_count}</b></span>
                     <span>Area <b>{(plannerPreview.geometry.area_m2 / 10_000).toFixed(2)} ha</b></span>
@@ -1440,6 +1451,17 @@ export function MissionsView() {
                     Planned altitude {plannerPreview.geometry.altitude_m.toFixed(1)} m exceeds
                     the aircraft max-flight-height setting of {plannerMaxFlightHeight.toFixed(0)} m.
                     Saving is allowed for revision/audit, but preflight will block handoff.
+                  </div>
+                ) : null}
+                {plannerPreview &&
+                plannerDistanceLimitEnabled &&
+                typeof plannerMaxFlightDistance === "number" &&
+                plannerPreview.geometry.max_reference_distance_m !== null &&
+                plannerPreview.geometry.max_reference_distance_m > plannerMaxFlightDistance ? (
+                  <div className="missionPlannerWarning">
+                    Grid radius {plannerPreview.geometry.max_reference_distance_m.toFixed(0)} m
+                    exceeds the active max-flight-distance setting of
+                    {" "}{plannerMaxFlightDistance.toFixed(0)} m. Preflight will block handoff.
                   </div>
                 ) : null}
                 {availablePlannerProfiles.find((profile) => profile.key === plannerProfile)?.note ? (
