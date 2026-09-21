@@ -937,10 +937,11 @@ internal class MavlinkTelemetryEndpoint(
             return
         }
 
-        if (!missionFrameSupported(uploaded.item.frame)) {
+        if (!missionFrameSupported(uploaded.item)) {
             Log.i(
                 TAG,
-                "Rejecting item ${uploaded.item.seq}: unsupported MAV_FRAME ${uploaded.item.frame}"
+                "Rejecting item ${uploaded.item.seq}: MAV_FRAME ${uploaded.item.frame} " +
+                    "is incompatible with command ${uploaded.item.command}"
             )
             missions.abortUpload()
             sendMissionAck(MissionResult.UNSUPPORTED)

@@ -65,9 +65,38 @@ internal data class MissionItem(
     val passThrough: Boolean get() = isWaypoint && holdSeconds == 0.0
 }
 
-/** MAV_MISSION_RESULT values used when acknowledging an upload. */
-internal fun missionFrameSupported(frame: Int): Boolean =
-    frame == 3 || frame == 6 // MAV_FRAME_GLOBAL_RELATIVE_ALT(_INT)
+private const val MAV_FRAME_MISSION = 2
+private const val MAV_FRAME_GLOBAL_RELATIVE_ALT_INT = 6
+
+/**
+ * Validate the frame against the command, not as a global mission-wide property.
+ *
+ * MISSION_ITEM_INT positional commands must use the INT global-relative frame because x/y are
+ * degE7 integers. MAV_FRAME_MISSION is reserved for non-positional mission commands whose frame
+ * is irrelevant. Accepting MAV_FRAME_GLOBAL_RELATIVE_ALT (3) here would be ambiguous: in an INT
+ * mission item that non-INT frame formally implies unscaled x/y values, while this parser reads
+ * degE7. Reject rather than silently fly a location different from the one the GCS intended.
+ */
+internal fun missionFrameSupported(item: MissionItem): Boolean {
+    val needsRelativePositionFrame = when (item.command) {
+        Mav.CMD_NAV_WAYPOINT,
+        Mav.CMD_NAV_TAKEOFF,
+        Mav.CMD_NAV_LAND,
+        Mav.CMD_DO_SET_ROI_LOCATION -> true
+
+        Mav.CMD_DO_SET_ROI ->
+            item.param1.toInt() == Mav.ROI_MODE_LOCATION
+
+        else -> false
+    }
+
+    return if (needsRelativePositionFrame) {
+        item.frame == MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+    } else {
+        item.frame == MAV_FRAME_MISSION ||
+            item.frame == MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+    }
+}
 
 /**
  * Cross-language mission fingerprint used for MISSION_CURRENT.mission_id.

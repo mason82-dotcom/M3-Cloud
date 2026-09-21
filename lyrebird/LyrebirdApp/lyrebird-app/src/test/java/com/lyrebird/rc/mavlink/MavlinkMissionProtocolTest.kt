@@ -186,11 +186,36 @@ class MavlinkMissionProtocolTest {
     }
 
     @Test
-    fun onlyRelativeGlobalMissionFramesAreSupported() {
-        assertTrue(missionFrameSupported(3))
-        assertTrue(missionFrameSupported(6))
-        assertFalse(missionFrameSupported(0))
-        assertFalse(missionFrameSupported(10))
+    fun positionalMissionItemsRequireRelativeAltIntFrame() {
+        val wp = waypoint(0)
+        assertTrue(missionFrameSupported(wp.copy(frame = 6)))
+        assertFalse(missionFrameSupported(wp.copy(frame = 3)))
+        assertFalse(missionFrameSupported(wp.copy(frame = 2)))
+        assertFalse(missionFrameSupported(wp.copy(frame = 10)))
+    }
+
+    @Test
+    fun nonPositionalMissionCommandsAcceptMissionFrame() {
+        val speed = waypoint(0).copy(
+            command = Mav.CMD_DO_CHANGE_SPEED,
+            frame = 2,
+            latitudeDeg = 0.0,
+            longitudeDeg = 0.0,
+            altitudeM = 0.0
+        )
+        assertTrue(missionFrameSupported(speed))
+        assertTrue(missionFrameSupported(speed.copy(frame = 6)))
+        assertFalse(missionFrameSupported(speed.copy(frame = 0)))
+    }
+
+    @Test
+    fun roiLocationStillRequiresARealRelativeCoordinateFrame() {
+        val roi = waypoint(0).copy(
+            command = Mav.CMD_DO_SET_ROI_LOCATION,
+            frame = 6
+        )
+        assertTrue(missionFrameSupported(roi))
+        assertFalse(missionFrameSupported(roi.copy(frame = 2)))
     }
 
     @Test

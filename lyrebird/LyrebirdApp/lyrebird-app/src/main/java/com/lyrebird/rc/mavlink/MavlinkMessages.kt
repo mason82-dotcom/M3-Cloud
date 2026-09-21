@@ -390,9 +390,14 @@ internal object MavlinkMessages {
      */
     fun autopilotVersion(): ByteArray =
         PayloadWriter()
-            // FTP is advertised now that the endpoint serves FILE_TRANSFER_PROTOCOL v1, the
-            // protocol-discovery rule in the MAVLink FTP spec.
-            .u64(Mav.CAP_MAVLINK2 or Mav.CAP_FTP)
+            // Advertise exactly the wire services implemented by this endpoint: MAVLink 2,
+            // MISSION_ITEM_INT mission transfer, COMMAND_INT parsing and MAVLink FTP v1.
+            .u64(
+                Mav.CAP_MAVLINK2 or
+                    Mav.CAP_MISSION_INT or
+                    Mav.CAP_COMMAND_INT or
+                    Mav.CAP_FTP
+            )
             .u64(0) // uid
             .u32(PX4_COMPAT_FLIGHT_SW_VERSION.toLong())
             .u32(0).u32(0).u32(0)
