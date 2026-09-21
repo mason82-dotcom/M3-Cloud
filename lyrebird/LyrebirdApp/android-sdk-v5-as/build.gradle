@@ -41,9 +41,10 @@ allprojects {
 }
 
 def registerLockStateResolver = { Project target, List<String> configurationNames ->
-    configurationNames.each { name ->
-        target.configurations.named(name).configure {
-            resolutionStrategy.activateDependencyLocking()
+    def lockedConfigurations = configurationNames as Set
+    target.configurations.configureEach { configuration ->
+        if (lockedConfigurations.contains(configuration.name)) {
+            configuration.resolutionStrategy.activateDependencyLocking()
         }
     }
 
