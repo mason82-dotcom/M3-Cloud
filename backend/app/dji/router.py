@@ -232,11 +232,20 @@ class DJIMessageRouter:
             )
             return
 
-        result = (
-            await self.events.handle(gateway_sn, envelope)
-            if self.events is not None
-            else 0
-        )
+        try:
+            result = (
+                await self.events.handle(gateway_sn, envelope)
+                if self.events is not None
+                else 0
+            )
+        except Exception:
+            logger.exception(
+                "Failed to process DJI event %s from %s",
+                envelope.method,
+                gateway_sn,
+            )
+            result = 1
+
         if envelope.need_reply:
             await self.publisher.publish(
                 events_reply_topic(gateway_sn),
