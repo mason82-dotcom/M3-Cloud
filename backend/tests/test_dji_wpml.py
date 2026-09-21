@@ -116,9 +116,25 @@ def test_waylines_contains_m3t_identity_relative_height_gimbal_and_distance_capt
     assert root.find(".//wpml:finishAction", ns).text == "goHome"
     assert root.find(".//wpml:autoFlightSpeed", ns).text == "6.0"
     assert root.find(".//wpml:gimbalPitchRotateAngle", ns).text == "-90.0"
-    assert root.find(".//wpml:actionTriggerType", ns).text == "multipleDistance"
-    assert root.find(".//wpml:actionTriggerParam", ns).text == "12.5"
-    assert root.find(".//wpml:actionActuatorFunc", ns).text in {"gimbalRotate", "takePhoto"}
+
+    action_groups = root.findall(".//wpml:actionGroup", ns)
+    distance_groups = [
+        group
+        for group in action_groups
+        if group.find("./wpml:actionTrigger/wpml:actionTriggerType", ns) is not None
+        and group.find("./wpml:actionTrigger/wpml:actionTriggerType", ns).text
+        == "multipleDistance"
+    ]
+    assert len(distance_groups) == 1
+    distance_group = distance_groups[0]
+    assert (
+        distance_group.find("./wpml:actionTrigger/wpml:actionTriggerParam", ns).text
+        == "12.5"
+    )
+    assert (
+        distance_group.find("./wpml:action/wpml:actionActuatorFunc", ns).text
+        == "takePhoto"
+    )
 
 
 @pytest.mark.parametrize(
