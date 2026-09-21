@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.database import session_factory
@@ -23,7 +23,7 @@ from app.dji.storage_sts import (
     pilot_object_key_allowed,
     pilot_storage_ready,
 )
-from app.models import MediaAsset
+from app.models import DjiMediaGroup, MediaAsset
 
 
 router = APIRouter(tags=["dji-pilot-media"])
@@ -60,6 +60,12 @@ class MediaMetadata(BaseModel):
     gimbal_yaw_degree: float
     relative_altitude: float
     shoot_position: ShootPosition
+
+
+class GroupUploadCallbackBody(BaseModel):
+    file_group_id: str = Field(min_length=1, max_length=128)
+    file_count: int = Field(ge=0)
+    file_uploaded_count: int = Field(ge=0)
 
 
 class UploadCallbackBody(BaseModel):
@@ -288,3 +294,94 @@ async def upload_callback(
         await session.commit()
 
     return _success({"object_key": body.object_key})
+
+
+@router.post("/media/api/v1/workspaces/{workspace_id}/group-upload-callback")
+async def group_upload_callback(
+    workspace_id: str,
+    body: GroupUploadCallbackBody,
+    x_auth_token: Annotated[str | None, Header(alias="X-Auth-Token")] = None,
+) -> dict[str, object]:
+    _validate_workspace(workspace_id)
+    _validate_token(x_auth_token)
+
+    if body.file_uploaded_count > body.file_count:
+        return _failure("file_uploaded_count cannot exceed file_count")
+
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        catalogued_count = int(
+            await session.scalar(
+                select(func.count(MediaAsset.id)).where(
+                    MediaAsset.dji_file_group_id == body.file_group_id,
+                    MediaAsset.present.is_(True),
+                )
+            )
+            or 0
+        )
+        platforms = sorted(
+            {
+                value
+                for value in (
+                    await session.scalars(
+                        select(MediaAsset.platform)
+                        .where(
+                            MediaAsset.dji_file_group_id == body.file_group_id,
+                            MediaAsset.present.is_(True),
+                        )
+                        .distinct()
+                    )
+                ).all()
+                if isinstance(value, str) and value not in {"", "UNKNOWN"}
+            }
+        )
+
+        platform = platforms[0] if len(platforms) == 1 else None
+        if len(platforms) > 1:
+            group_status = "PLATFORM_MISMATCH"
+        elif catalogued_count < body.file_uploaded_count:
+            group_status = "CATALOG_PENDING"
+        elif body.file_uploaded_count < body.file_count:
+            group_status = "PARTIAL"
+        else:
+            group_status = "COMPLETE"
+
+        details = {
+            "reported_file_count": body.file_count,
+            "reported_uploaded_count": body.file_uploaded_count,
+            "catalogued_count": catalogued_count,
+            "platforms": platforms,
+        }
+
+        value = await session.scalar(
+            select(DjiMediaGroup).where(
+                DjiMediaGroup.workspace_id == workspace_id,
+                DjiMediaGroup.file_group_id == body.file_group_id,
+            )
+        )
+        if value is None:
+            value = DjiMediaGroup(
+                workspace_id=workspace_id,
+                file_group_id=body.file_group_id,
+                file_count=body.file_count,
+                file_uploaded_count=body.file_uploaded_count,
+                catalogued_count=catalogued_count,
+                status=group_status,
+                platform=platform,
+                details=details,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(value)
+        else:
+            value.file_count = body.file_count
+            value.file_uploaded_count = body.file_uploaded_count
+            value.catalogued_count = catalogued_count
+            value.status = group_status
+            value.platform = platform
+            value.details = details
+            value.updated_at = now
+
+        await session.commit()
+
+    return _success()
