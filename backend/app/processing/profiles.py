@@ -79,28 +79,6 @@ M3E_FAST_CHECK = WebODMProfile(
     platforms=("M3E", "M3T", "UNKNOWN"),
 )
 
-M3M_MULTISPECTRAL = WebODMProfile(
-    key="m3m-multispectral",
-    title="M3M Multispectral / Reflectance",
-    purpose=(
-        "Process complete Mavic 3 Multispectral captures together and generate "
-        "a calibrated multiband orthophoto."
-    ),
-    options=(
-        ("radiometric-calibration", "camera"),
-        ("feature-quality", "high"),
-        ("pc-quality", "medium"),
-        ("auto-boundary", True),
-        ("build-overviews", True),
-        ("skip-3dmodel", True),
-    ),
-    platforms=("M3M",),
-    media_kinds=("RGB", "MS_GREEN", "MS_RED", "MS_RED_EDGE", "MS_NIR"),
-    workflow="MULTISPECTRAL",
-    min_assets=10,
-    require_complete_groups=True,
-    min_complete_groups=2,
-)
 
 PROFILES = {
     profile.key: profile
@@ -108,7 +86,6 @@ PROFILES = {
         M3E_ORTHO,
         M3E_3D_BUILDING,
         M3E_FAST_CHECK,
-        M3M_MULTISPECTRAL,
     )
 }
 DEFAULT_PROFILE = M3E_ORTHO.key
