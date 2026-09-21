@@ -13,21 +13,21 @@ import dji.v5.ux.mapkit.core.models.annotations.DJIMarkerOptions;
 import dji.v5.ux.mapkit.maplibre.map.MaplibreMapDelegate;
 import dji.v5.ux.mapkit.maplibre.utils.MaplibreUtils;
 import com.mapbox.geojson.Point;
-import com.mapbox.mapboxsdk.annotations.Icon;
-import com.mapbox.mapboxsdk.annotations.Marker;
-import com.mapbox.mapboxsdk.maps.MapboxMap;
-import com.mapbox.mapboxsdk.style.layers.Property;
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
-import com.mapbox.mapboxsdk.style.layers.PropertyValue;
-import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
-import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
+import org.maplibre.android.annotations.Icon;
+import org.maplibre.android.annotations.Marker;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.style.layers.Property;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.android.style.layers.PropertyValue;
+import org.maplibre.android.style.layers.SymbolLayer;
+import org.maplibre.android.style.sources.GeoJsonSource;
 
 /**
  * Created by joeyang on 11/5/17.
  */
 public class MSymbolLayerMarker extends DJIMarker {
 
-    private MapboxMap mapboxMap;
+    private MapLibreMap mapboxMap;
     private GeoJsonSource source;
     private SymbolLayer symbolLayer;
     private Context context;
@@ -53,7 +53,7 @@ public class MSymbolLayerMarker extends DJIMarker {
 
     private DJIMarkerOptions markerOptions;
 
-    public MSymbolLayerMarker(MaplibreMapDelegate maplibreMapDelegate, MapboxMap mapboxMap, GeoJsonSource geoJsonSource, SymbolLayer symbolLayer, Marker shadowMarker, Context context, DJIMarkerOptions markerOptions) {
+    public MSymbolLayerMarker(MaplibreMapDelegate maplibreMapDelegate, MapLibreMap mapboxMap, GeoJsonSource geoJsonSource, SymbolLayer symbolLayer, Marker shadowMarker, Context context, DJIMarkerOptions markerOptions) {
         this.mapboxMap = mapboxMap;
         this.source = geoJsonSource;
         this.symbolLayer = symbolLayer;
