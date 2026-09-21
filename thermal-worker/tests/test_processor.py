@@ -11,6 +11,7 @@ from PIL import Image
 
 from thermal_worker.dji_sdk import DecodeResult, MeasurementParams
 from thermal_worker.processor import (
+    REGISTRATION_AUDIT_CONTRACT,
     RESULT_CONTRACT,
     _existing_manifest,
     _source_path,
@@ -193,6 +194,25 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert result["registration"]["status"] == "NOT_REGISTERED"
     assert result["registration"]["wide_thermal_coregistered"] is False
     assert (output / "result-manifest.json").is_file()
+    registration_audit_path = output / manifest["registration_audit_json"]
+    registration_audit = json.loads(
+        registration_audit_path.read_text(encoding="utf-8")
+    )
+    assert registration_audit["contract"] == REGISTRATION_AUDIT_CONTRACT
+    assert registration_audit["status"] == "NOT_REGISTERED"
+    assert registration_audit["pair_count"] == 1
+    assert registration_audit["pairs"][0]["capture_group"] == (
+        "M3T/site/nested/DJI_0001"
+    )
+    assert registration_audit["pairs"][0]["pair_audit"][
+        "capture_time_delta_ms"
+    ] == 0.0
+    assert registration_audit["pairs"][0]["pair_audit"][
+        "gps_separation_m"
+    ] == pytest.approx(0.0)
+    assert registration_audit["pairs"][0][
+        "wide_thermal_coregistered"
+    ] is False
     capture_points_path = output / manifest["capture_points_geojson"]
     capture_points = json.loads(capture_points_path.read_text(encoding="utf-8"))
     assert manifest["georeferenced_capture_count"] == 1
