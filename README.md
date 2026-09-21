@@ -90,6 +90,16 @@ contracts are implemented end-to-end.
 
 See [docs/dji-pilot2.md](docs/dji-pilot2.md) for server variables and the exact Pilot 2 steps.
 
+Install DJI's official Cloud API reference material locally with:
+
+```powershell
+.\scripts\install-dji-cloud-api-reference.ps1
+```
+
+This does not replace the FastAPI backend. Cloud API is a MQTT/HTTPS/WebSocket protocol integration,
+not a Python/Gradle package. See [docs/dji-cloud-api.md](docs/dji-cloud-api.md) for the version caveat,
+Developer Center license setup and the optional deprecated DJI demo.
+
 ## Fleet dashboard
 
 The first browser dashboard is served through the frontend reverse proxy:
