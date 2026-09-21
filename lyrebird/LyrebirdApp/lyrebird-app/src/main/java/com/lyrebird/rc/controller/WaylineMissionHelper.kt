@@ -62,6 +62,21 @@ import java.util.zip.ZipFile
 object WaylineMissionHelper {
 
     @Volatile
+    private var nativeStopRequested = false
+
+    @Volatile
+    private var nativePauseRequested = false
+
+    @Volatile
+    private var nativeFinishCallback: ((NativeMissionFinishReason) -> Unit)? = null
+
+    @Volatile
+    private var nativeStateListener: WaypointMissionExecuteStateListener? = null
+
+    @Volatile
+    private var nativeInfoListener: WaylineExecutingInfoListener? = null
+
+    @Volatile
     var lastMissionNameNoExt: String = ""
         internal set
 
@@ -491,12 +506,14 @@ object WaylineMissionHelper {
         onSuccess: () -> Unit,
         onFailure: (IDJIError) -> Unit
     ) {
+        nativePauseRequested = true
         WaypointMissionManager.getInstance().pauseMission(object :
             CommonCallbacks.CompletionCallback {
             override fun onSuccess() {
                 onSuccess()
             }
             override fun onFailure(error: IDJIError) {
+                nativePauseRequested = false
                 onFailure(error)
             }
         })
@@ -514,12 +531,14 @@ object WaylineMissionHelper {
             pauseMission(onSuccess, onFailure)
             return
         }
+        nativeStopRequested = true
         WaypointMissionManager.getInstance().stopMission(missionNameNoExt, object :
             CommonCallbacks.CompletionCallback {
             override fun onSuccess() {
                 onSuccess()
             }
             override fun onFailure(error: IDJIError) {
+                nativeStopRequested = false
                 onFailure(error)
             }
         })
@@ -537,7 +556,7 @@ object WaylineMissionHelper {
         userWaypoints: List<Triple<Double, Double, Double>>,
         trajectorySpeed: Double,
         onProgress: (Int) -> Unit = {},
-        onFinished: (Boolean) -> Unit = {}
+        onFinished: (NativeMissionFinishReason) -> Unit = {}
     ) {
         val wpModels = userWaypoints.mapIndexed { idx, t ->
             createWaypointFromLatLon(t.first, t.second, t.third, idx)
@@ -558,16 +577,18 @@ object WaylineMissionHelper {
         missionConfig: WaylineMissionConfig,
         autoFlightSpeed: Double,
         onProgress: (Int) -> Unit = {},
-        onFinished: (Boolean) -> Unit = {},
+        onFinished: (NativeMissionFinishReason) -> Unit = {},
         extraActionGroups: List<WaylineActionGroup> = emptyList()
     ) {
         if (waypointInfoModels.size < 2) {
             ToastUtils.showToast("Need at least 2 waypoints")
-            onFinished(false)
+            onFinished(NativeMissionFinishReason.INVALID_MISSION)
             return
         }
 
         if (lastMissionNameNoExt.isNotEmpty()) {
+            finishNativeExecution(NativeMissionFinishReason.REPLACED)
+            nativeStopRequested = true
             WaypointMissionManager.getInstance().stopMission(
                 lastMissionNameNoExt,
                 object : CommonCallbacks.CompletionCallback {
@@ -606,14 +627,14 @@ object WaylineMissionHelper {
                         }
                         override fun onFailure(error: IDJIError) {
                             ToastUtils.showToast("Start mission failed: ${error.description()}")
-                            onFinished(false)
+                            onFinished(NativeMissionFinishReason.START_FAILED)
                         }
                     }
                 )
             }
             override fun onFailure(error: IDJIError) {
                 ToastUtils.showToast("Push KMZ failed: ${error.description()}")
-                onFinished(false)
+                onFinished(NativeMissionFinishReason.UPLOAD_FAILED)
             }
         })
     }
@@ -625,46 +646,75 @@ object WaylineMissionHelper {
      * most recently started native mission — the same assumption [navigateTrajectoryNative]
      * already makes by stopping any prior one before pushing a new KMZ.
      */
-    private fun watchNativeMissionExecution(onProgress: (Int) -> Unit, onFinished: (Boolean) -> Unit) {
-        lateinit var stateListener: WaypointMissionExecuteStateListener
-        val infoListener = WaylineExecutingInfoListener { info -> onProgress(info.currentWaypointIndex) }
-        stateListener = WaypointMissionExecuteStateListener { state ->
-            when (state) {
-                WaypointMissionExecuteState.FINISHED -> {
-                    WaypointMissionManager.getInstance().removeWaypointMissionExecuteStateListener(stateListener)
-                    WaypointMissionManager.getInstance().removeWaylineExecutingInfoListener(infoListener)
-                    onFinished(true)
-                }
-                WaypointMissionExecuteState.INTERRUPTED, WaypointMissionExecuteState.DISCONNECTED,
-                WaypointMissionExecuteState.NOT_SUPPORTED -> {
-                    WaypointMissionManager.getInstance().removeWaypointMissionExecuteStateListener(stateListener)
-                    WaypointMissionManager.getInstance().removeWaylineExecutingInfoListener(infoListener)
-                    onFinished(false)
-                }
-                else -> { /* UPLOADING/PREPARING/ENTER_WAYLINE/EXECUTING/etc — still in flight */ }
+    @Synchronized
+    private fun clearNativeExecutionListeners() {
+        nativeStateListener?.let {
+            WaypointMissionManager.getInstance().removeWaypointMissionExecuteStateListener(it)
+        }
+        nativeInfoListener?.let {
+            WaypointMissionManager.getInstance().removeWaylineExecutingInfoListener(it)
+        }
+        nativeStateListener = null
+        nativeInfoListener = null
+    }
+
+    @Synchronized
+    private fun finishNativeExecution(reason: NativeMissionFinishReason) {
+        val callback = nativeFinishCallback ?: return
+        clearNativeExecutionListeners()
+        nativeFinishCallback = null
+        nativeStopRequested = false
+        nativePauseRequested = false
+        callback(reason)
+    }
+
+    private fun watchNativeMissionExecution(
+        onProgress: (Int) -> Unit,
+        onFinished: (NativeMissionFinishReason) -> Unit
+    ) {
+        clearNativeExecutionListeners()
+        nativeStopRequested = false
+        nativePauseRequested = false
+        nativeFinishCallback = onFinished
+
+        val infoListener = WaylineExecutingInfoListener { info ->
+            onProgress(info.currentWaypointIndex)
+        }
+        val stateListener = WaypointMissionExecuteStateListener { state ->
+            if (state == WaypointMissionExecuteState.EXECUTING) {
+                // A successful resume clears the pause marker. Until then, INTERRUPTED caused by
+                // pauseMission() is not a terminal mission result.
+                nativePauseRequested = false
+            }
+            val reason = NativeMissionFinishClassifier.classify(
+                stateName = state.name,
+                stopRequested = nativeStopRequested,
+                pauseRequested = nativePauseRequested
+            )
+            if (reason != null) {
+                finishNativeExecution(reason)
             }
         }
+
+        nativeInfoListener = infoListener
+        nativeStateListener = stateListener
         WaypointMissionManager.getInstance().addWaypointMissionExecuteStateListener(stateListener)
         WaypointMissionManager.getInstance().addWaylineExecutingInfoListener(infoListener)
     }
 
     fun endMission() {
         if (lastMissionNameNoExt.isEmpty()) {
-            WaypointMissionManager.getInstance().pauseMission(object : CommonCallbacks.CompletionCallback {
-                override fun onSuccess() { ToastUtils.showToast("Mission paused") }
-                override fun onFailure(error: IDJIError) { ToastUtils.showToast("No mission to stop") }
-            })
+            pauseMission(
+                onSuccess = { ToastUtils.showToast("Mission paused") },
+                onFailure = { ToastUtils.showToast("No mission to stop") }
+            )
             return
         }
-        WaypointMissionManager.getInstance().stopMission(
-            lastMissionNameNoExt,
-            object : CommonCallbacks.CompletionCallback {
-                override fun onSuccess() {
-                    ToastUtils.showToast("Mission stopped: $lastMissionNameNoExt")
-                }
-                override fun onFailure(error: IDJIError) {
-                    ToastUtils.showToast("Stop mission failed: ${error.description()}")
-                }
+        stopMission(
+            missionNameNoExt = lastMissionNameNoExt,
+            onSuccess = { ToastUtils.showToast("Mission stopped: $lastMissionNameNoExt") },
+            onFailure = { error ->
+                ToastUtils.showToast("Stop mission failed: ${error.description()}")
             }
         )
     }

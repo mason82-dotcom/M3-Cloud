@@ -549,12 +549,10 @@ object DroneController {
         // 4. Also try to stop any DJI native waypoint mission
         try {
             if (WaylineMissionHelper.lastMissionNameNoExt.isNotEmpty()) {
-                WaypointMissionManager.getInstance().stopMission(
+                WaylineMissionHelper.stopMission(
                     WaylineMissionHelper.lastMissionNameNoExt,
-                    object : CommonCallbacks.CompletionCallback {
-                        override fun onSuccess() { /* no-op */ }
-                        override fun onFailure(error: IDJIError) { /* no-op */ }
-                    }
+                    onSuccess = { /* no-op */ },
+                    onFailure = { /* no-op */ }
                 )
             }
             // Also try pause in case there's an unnamed mission running
@@ -711,11 +709,11 @@ object DroneController {
 
     private fun stopCurrentMission() {
         if (WaylineMissionHelper.lastMissionNameNoExt.isNotEmpty()) {
-            WaypointMissionManager.getInstance()
-                .stopMission(WaylineMissionHelper.lastMissionNameNoExt, object : CommonCallbacks.CompletionCallback {
-                override fun onSuccess() { /* no-op */ }
-                override fun onFailure(error: IDJIError) { /* ignore */ }
-            })
+            WaylineMissionHelper.stopMission(
+                WaylineMissionHelper.lastMissionNameNoExt,
+                onSuccess = { /* no-op */ },
+                onFailure = { /* ignore */ }
+            )
         } else {
             // Try to pause/stop any active mission even if we don't track the name
              WaypointMissionManager.getInstance().pauseMission(object : CommonCallbacks.CompletionCallback {
@@ -1651,7 +1649,7 @@ object DroneController {
         userWaypoints: List<Triple<Double, Double, Double>>,
         trajectorySpeed: Double,
         onProgress: (Int) -> Unit = {},
-        onFinished: (Boolean) -> Unit = {}
+        onFinished: (NativeMissionFinishReason) -> Unit = {}
     ) = WaylineMissionHelper.navigateTrajectoryNative(userWaypoints, trajectorySpeed, onProgress, onFinished)
 
     fun navigateWaylineMissionNative(
@@ -1659,7 +1657,7 @@ object DroneController {
         missionConfig: WaylineMissionConfig,
         autoFlightSpeed: Double,
         onProgress: (Int) -> Unit = {},
-        onFinished: (Boolean) -> Unit = {},
+        onFinished: (NativeMissionFinishReason) -> Unit = {},
         extraActionGroups: List<WaylineActionGroup> = emptyList()
     ) = WaylineMissionHelper.navigateWaylineMissionNative(
         waypointInfoModels,

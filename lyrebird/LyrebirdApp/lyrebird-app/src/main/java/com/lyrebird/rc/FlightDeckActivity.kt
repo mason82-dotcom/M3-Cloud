@@ -81,6 +81,7 @@ import com.lyrebird.rc.controller.CameraFocalLensPolicy
 import com.lyrebird.rc.controller.CameraFocalLensRole
 import com.lyrebird.rc.controller.ControlAuthority
 import com.lyrebird.rc.controller.DroneController
+import com.lyrebird.rc.controller.NativeMissionFinishReason
 import com.lyrebird.rc.edge.EdgeDetectionController
 import com.lyrebird.rc.edge.EdgeDetectionController.EdgeDetectionMetrics
 import com.lyrebird.rc.edge.EdgeDetectionConfig
@@ -7425,15 +7426,13 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
                     missionConfig,
                     speed,
                     onProgress = { waypointIndex -> listener?.onItemStarted(waypointIndex) },
-                    onFinished = { success ->
+                    onFinished = { reason ->
                         running = false
                         if (surveyMediaTrackingActive) {
-                            finalizeSurveyMedia(
-                                if (success) "mission_finished" else "mission_failed"
-                            )
+                            finalizeSurveyMedia(reason.reportValue)
                         }
                         DroneController.clearMissionActiveIfStillSet()
-                        listener?.onMissionFinished(success)
+                        listener?.onMissionFinished(reason.completed)
                     },
                     extraActionGroups = surveyActionGroups
                 )
