@@ -55,6 +55,10 @@ interface Bootstrap {
     host: string;
     token: string;
   };
+  map: {
+    user_name: string;
+    element_pre_name: string;
+  };
   media: {
     auto_upload_photo: boolean;
     auto_upload_photo_type: number;
@@ -221,6 +225,14 @@ export function PilotBootstrap() {
           connectCallback: "m3CloudWsConnectCallback",
         });
         await waitForWs(bridge);
+      }
+
+      if (config.components.map) {
+        setStatus("Loading DJI map elements…");
+        loadComponent(bridge, "map", {
+          userName: config.map.user_name,
+          elementPreName: config.map.element_pre_name,
+        });
       }
 
       if (config.components.tsa) {
