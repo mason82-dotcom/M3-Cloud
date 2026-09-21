@@ -97,10 +97,10 @@ jobs:
         run: python3 scripts/verify_dji_dependency_metadata.py
 
       - name: Spotless, compile, and unit tests
-        run: ./gradlew --no-daemon :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
+        run: ./gradlew --no-daemon --write-verification-metadata sha256 :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
 
       - name: Lyrebird Detekt and Lint reports
-        run: ./gradlew --no-daemon qualityLyrebird
+        run: ./gradlew --no-daemon --write-verification-metadata sha256 qualityLyrebird
 
       - name: Upload resolved Gradle verification metadata
         if: always()
