@@ -1550,6 +1550,7 @@ class ProcessingManager:
                     dataset_slug,
                     source=source_path,
                     remote_path=remote_path,
+                    expected_sha256=item.sha256,
                 )
                 remote_assets.append(remote_path)
                 await self._set_dronedb_upload_progress(job_id, index, total)
