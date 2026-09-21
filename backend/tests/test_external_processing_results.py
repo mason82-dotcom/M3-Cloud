@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.database import session_factory
 from app.models import ProcessingJob, ProcessingResult
-from app.processing.service import ProcessingManager
+from app.processing.service import ProcessingManager, thermal_result_manifest_details
 
 
 class FakeStorage:
@@ -112,3 +112,53 @@ async def test_thermogram_external_results_are_archived(
     assert all(result.details["source"] == "external" for result in stored)
     assert all(result.details["workflow"] == "THERMOGRAM" for result in stored)
     assert all(len(result.sha256) == 64 for result in stored)
+
+
+
+def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
+    root = tmp_path / "thermal-results"
+    capture = root / "captures" / "00001_DJI_0001_deadbeef00"
+    capture.mkdir(parents=True)
+    manifest = {
+        "schema_version": 1,
+        "contract": "M3T_THERMAL_RESULTS_V1",
+        "workflow": "THERMOGRAM",
+        "platform": "M3T",
+        "job_id": "job",
+        "capture_groups": [
+            {
+                "capture_group": "M3T/site/DJI_0001",
+                "temperature_tif": (
+                    "captures/00001_DJI_0001_deadbeef00/temperature.tif"
+                ),
+                "preview_png": "captures/00001_DJI_0001_deadbeef00/preview.png",
+                "thermal_json": "captures/00001_DJI_0001_deadbeef00/thermal.json",
+                "statistics": {"min_c": 20.0, "max_c": 42.5},
+                "width": 640,
+                "height": 512,
+                "sdk_label": "1.8_20251211",
+                "measurement_mode": "sdk_native",
+            }
+        ],
+    }
+    (root / "result-manifest.json").write_text(
+        __import__("json").dumps(manifest),
+        encoding="utf-8",
+    )
+
+    details = thermal_result_manifest_details(root)
+
+    temperature = details[
+        "captures/00001_DJI_0001_deadbeef00/temperature.tif"
+    ]
+    preview = details["captures/00001_DJI_0001_deadbeef00/preview.png"]
+    metadata = details["captures/00001_DJI_0001_deadbeef00/thermal.json"]
+
+    assert temperature["result_kind"] == "TEMPERATURE_RASTER"
+    assert temperature["temperature_unit"] == "degree_Celsius"
+    assert temperature["georeferenced"] is False
+    assert temperature["statistics"]["max_c"] == 42.5
+    assert temperature["sdk_label"] == "1.8_20251211"
+    assert preview["result_kind"] == "THERMAL_PREVIEW"
+    assert metadata["result_kind"] == "THERMAL_METADATA"
+    assert details["result-manifest.json"]["result_kind"] == "THERMAL_MANIFEST"
