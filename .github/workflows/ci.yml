@@ -141,6 +141,37 @@ jobs:
         run: PYTHONPATH=backend python -m pytest -q backend/tests
 
 
+  thermal-worker:
+    name: M3T thermal worker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: thermal-worker/pyproject.toml
+
+      - name: Install thermal worker and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "thermal-worker[test]"
+          python -m pip install ruff
+
+      - name: Compile thermal worker
+        run: python -m compileall -q thermal-worker/thermal_worker
+
+      - name: Ruff thermal worker
+        run: python -m ruff check thermal-worker/thermal_worker thermal-worker/tests --output-format=github
+
+      - name: Thermal worker tests
+        run: python -m pytest -q thermal-worker/tests
+
+
   frontend-build:
     name: M3-Cloud frontend build
     runs-on: ubuntu-latest
