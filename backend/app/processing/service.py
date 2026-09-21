@@ -381,6 +381,8 @@ def thermal_result_manifest_details(
             "width",
             "height",
             "sdk_label",
+            "sdk_library_name",
+            "sdk_library_sha256",
             "api_version",
             "measurement_mode",
             "measurement_abi",
