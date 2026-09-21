@@ -3,12 +3,14 @@ package com.lyrebird.rc.controller
 import dji.sdk.keyvalue.key.CameraKey
 import dji.sdk.keyvalue.key.DJIKey
 import dji.sdk.keyvalue.key.KeyTools
+import dji.sdk.keyvalue.value.camera.CameraMode
 import dji.sdk.keyvalue.value.camera.CameraVideoStreamSourceType
 import dji.sdk.keyvalue.value.common.ComponentIndexType
 import dji.v5.common.callback.CommonCallbacks
 import dji.v5.common.error.IDJIError
 import dji.v5.et.listen
 import dji.v5.manager.KeyManager
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -52,22 +54,74 @@ internal object CameraLiveSourceController {
     private const val TIMEOUT_MS = 1_000L
     private const val ATTEMPTS = 2
     private const val RETRY_DELAY_MS = 200L
+    private const val HISTORY_LIMIT = 64
+
+    private data class SourceEvent(
+        val timestampMs: Long,
+        val event: String,
+        val value: String?,
+        val reason: String?
+    )
+
+    private val historyLock = Any()
+    private val history = ArrayDeque<SourceEvent>()
+
+    private fun recordEvent(event: String, value: String? = null, reason: String? = null) {
+        synchronized(historyLock) {
+            if (history.size >= HISTORY_LIMIT) history.removeFirst()
+            history.addLast(
+                SourceEvent(
+                    timestampMs = System.currentTimeMillis(),
+                    event = event,
+                    value = value,
+                    reason = reason
+                )
+            )
+        }
+    }
+
+    fun historyJson(): String {
+        val events = synchronized(historyLock) { history.toList() }
+        return JSONObject()
+            .put("events", JSONArray().apply {
+                events.forEach { item ->
+                    put(
+                        JSONObject()
+                            .put("timestampMs", item.timestampMs)
+                            .put("event", item.event)
+                            .put("value", item.value ?: JSONObject.NULL)
+                            .put("reason", item.reason ?: JSONObject.NULL)
+                    )
+                }
+            })
+            .toString()
+    }
 
     @Volatile private var cachedSource: String? = null
     @Volatile private var cachedReadStatus: String = "not_reported"
     @Volatile private var trackingStarted: Boolean = false
 
-    private fun updateCachedSource(source: CameraVideoStreamSourceType?) {
+    private fun updateCachedSource(
+        source: CameraVideoStreamSourceType?,
+        event: String = "cache-update",
+        reason: String? = null
+    ) {
+        val previous = cachedSource
         if (source != null) {
             cachedSource = source.name
             cachedReadStatus = "confirmed"
+            if (previous != source.name || event != "listener") {
+                recordEvent(event, source.name, reason)
+            }
         } else {
             cachedReadStatus = if (cachedSource != null) "stale" else "not_reported"
+            recordEvent(event, null, reason)
         }
     }
 
-    private fun markCachedSourceUnavailable() {
+    private fun markCachedSourceUnavailable(reason: String? = null) {
         cachedReadStatus = if (cachedSource != null) "stale" else "not_reported"
+        recordEvent("source-unavailable", cachedSource, reason)
     }
 
     @Synchronized
@@ -76,19 +130,23 @@ internal object CameraLiveSourceController {
 
         val sourceKey = key()
         sourceKey.listen(this) { source ->
-            updateCachedSource(source)
+            updateCachedSource(source, event = "listener", reason = "msdk-key-change")
+        }
+        CameraKey.KeyCameraMode.create(ComponentIndexType.LEFT_OR_MAIN).listen(this) { mode ->
+            recordEvent("camera-mode", mode?.name, "msdk-key-change")
         }
         trackingStarted = true
+        recordEvent("tracking-start")
 
         KeyManager.getInstance().getValue(
             sourceKey,
             object : CommonCallbacks.CompletionCallbackWithParam<CameraVideoStreamSourceType> {
                 override fun onSuccess(source: CameraVideoStreamSourceType?) {
-                    updateCachedSource(source)
+                    updateCachedSource(source, event = "seed-read", reason = "tracking-start")
                 }
 
                 override fun onFailure(error: IDJIError) {
-                    markCachedSourceUnavailable()
+                    markCachedSourceUnavailable("tracking-start:${error.description()}")
                 }
             }
         )
@@ -147,7 +205,9 @@ internal object CameraLiveSourceController {
 
             if (completed && success.get()) {
                 val current = value.get()
-                if (index == ComponentIndexType.LEFT_OR_MAIN) updateCachedSource(current)
+                if (index == ComponentIndexType.LEFT_OR_MAIN) {
+                    updateCachedSource(current, event = "read-ok", reason = "explicit-read")
+                }
                 return CameraLiveSourceReadback(
                     source = current?.name,
                     readStatus = "OK"
@@ -162,16 +222,20 @@ internal object CameraLiveSourceController {
                 }
             }
         }
-        if (index == ComponentIndexType.LEFT_OR_MAIN) markCachedSourceUnavailable()
+        if (index == ComponentIndexType.LEFT_OR_MAIN) markCachedSourceUnavailable("explicit-read")
         return CameraLiveSourceReadback(null, "UNAVAILABLE")
     }
 
     fun setAndReadback(
         rawSource: String,
-        index: ComponentIndexType = ComponentIndexType.LEFT_OR_MAIN
+        index: ComponentIndexType = ComponentIndexType.LEFT_OR_MAIN,
+        reason: String = "unspecified"
     ): CameraLiveSourceSetResult {
         if (index == ComponentIndexType.LEFT_OR_MAIN) ensureTracking()
         val requested = rawSource.trim().uppercase()
+        if (index == ComponentIndexType.LEFT_OR_MAIN) {
+            recordEvent("set-request", requested, reason)
+        }
         val source = CameraVideoStreamSourceType.values()
             .firstOrNull { it.name == requested }
             ?: run {
@@ -198,11 +262,21 @@ internal object CameraLiveSourceController {
                 source,
                 object : CommonCallbacks.CompletionCallback {
                     override fun onSuccess() {
+                        if (index == ComponentIndexType.LEFT_OR_MAIN) {
+                            recordEvent("set-callback-ok", requested, reason)
+                        }
                         success.set(true)
                         latch.countDown()
                     }
 
                     override fun onFailure(error: IDJIError) {
+                        if (index == ComponentIndexType.LEFT_OR_MAIN) {
+                            recordEvent(
+                                "set-callback-failed",
+                                requested,
+                                "$reason:${error.description()}"
+                            )
+                        }
                         errorText.set(error.description())
                         latch.countDown()
                     }
@@ -225,6 +299,13 @@ internal object CameraLiveSourceController {
 
             if (success.get()) {
                 val readback = readCurrent(index)
+                if (index == ComponentIndexType.LEFT_OR_MAIN) {
+                    recordEvent(
+                        "set-readback",
+                        readback.source,
+                        "$reason:requested=$requested,status=${readback.readStatus}"
+                    )
+                }
                 return CameraLiveSourceSetResult(
                     requested = requested,
                     setStatus = "OK",
@@ -251,6 +332,13 @@ internal object CameraLiveSourceController {
         }
 
         val readback = readCurrent(index)
+        if (index == ComponentIndexType.LEFT_OR_MAIN) {
+            recordEvent(
+                "set-final-readback",
+                readback.source,
+                "$reason:requested=$requested,setStatus=$lastStatus,status=${readback.readStatus}"
+            )
+        }
         return CameraLiveSourceSetResult(
             requested = requested,
             setStatus = lastStatus,
