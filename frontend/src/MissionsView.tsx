@@ -158,28 +158,30 @@ function plannerPointData(
 
 function plannerReferenceData(
   reference: MissionPlannerPoint | null,
+  returnReference: MissionPlannerPoint | null,
 ): FeatureCollection<Point> {
+  const references = [
+    reference ? { point: reference, kind: "start" } : null,
+    returnReference ? { point: returnReference, kind: "home" } : null,
+  ].filter((item): item is { point: MissionPlannerPoint; kind: string } => item !== null);
   return {
     type: "FeatureCollection",
-    features: reference
-      ? [{
-          type: "Feature",
-          geometry: {
-            type: "Point",
-            coordinates: [reference.longitude_deg, reference.latitude_deg],
-          },
-          properties: {},
-        }]
-      : [],
+    features: references.map(({ point, kind }) => ({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [point.longitude_deg, point.latitude_deg],
+      },
+      properties: { kind },
+    })),
   };
 }
 
 function plannerTransitData(
   items: MissionPlanItem[],
-  reference: MissionPlannerPoint | null,
-  returnToReference: boolean,
+  startReference: MissionPlannerPoint | null,
+  returnReference: MissionPlannerPoint | null,
 ): FeatureCollection<LineString> {
-  if (!reference) return { type: "FeatureCollection", features: [] };
   const waypoints = items
     .filter((item) => item.command === 16)
     .map((item) => [item.longitude_deg, item.latitude_deg]);
@@ -188,18 +190,22 @@ function plannerTransitData(
     return { type: "FeatureCollection", features: [] };
   }
 
-  const origin = [reference.longitude_deg, reference.latitude_deg];
-  const features: FeatureCollection<LineString>["features"] = [{
-    type: "Feature",
-    geometry: { type: "LineString", coordinates: [origin, waypoints[0]] },
-    properties: { leg: "ingress" },
-  }];
-  if (returnToReference) {
+  const features: FeatureCollection<LineString>["features"] = [];
+  if (startReference) {
+    const origin = [startReference.longitude_deg, startReference.latitude_deg];
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: [origin, waypoints[0]] },
+      properties: { leg: "ingress" },
+    });
+  }
+  if (returnReference) {
+    const destination = [returnReference.longitude_deg, returnReference.latitude_deg];
     features.push({
       type: "Feature",
       geometry: {
         type: "LineString",
-        coordinates: [waypoints[waypoints.length - 1], origin],
+        coordinates: [waypoints[waypoints.length - 1], destination],
       },
       properties: { leg: "return" },
     });
@@ -260,6 +266,17 @@ function planningStartReference(
   );
 }
 
+function planningHomeReference(
+  planning: MissionPlanningContext | null,
+): MissionPlannerPoint | null {
+  if (planning?.planner !== "M3_CLOUD_GRID") return null;
+  const parameters = planning.parameters ?? {};
+  return validPlannerPoint(
+    parameters.home_reference_latitude_deg,
+    parameters.home_reference_longitude_deg,
+  );
+}
+
 function missionCommandLabel(command: number): string {
   const names: Record<number, string> = {
     16: "WAYPOINT",
@@ -278,14 +295,14 @@ function MissionMap({
   plannerPolygon,
   plannerDrawing,
   plannerReference,
-  plannerReturnToReference,
+  plannerReturnReference,
   onPlannerClick,
 }: {
   items: MissionPlanItem[];
   plannerPolygon: MissionPlannerPoint[];
   plannerDrawing: boolean;
   plannerReference: MissionPlannerPoint | null;
-  plannerReturnToReference: boolean;
+  plannerReturnReference: MissionPlannerPoint | null;
   onPlannerClick?: (point: MissionPlannerPoint) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -301,12 +318,12 @@ function MissionMap({
   const plannerArea = useMemo(() => plannerAreaData(plannerPolygon), [plannerPolygon]);
   const plannerPoints = useMemo(() => plannerPointData(plannerPolygon), [plannerPolygon]);
   const plannerReferencePoint = useMemo(
-    () => plannerReferenceData(plannerReference),
-    [plannerReference],
+    () => plannerReferenceData(plannerReference, plannerReturnReference),
+    [plannerReference, plannerReturnReference],
   );
   const plannerTransit = useMemo(
-    () => plannerTransitData(items, plannerReference, plannerReturnToReference),
-    [items, plannerReference, plannerReturnToReference],
+    () => plannerTransitData(items, plannerReference, plannerReturnReference),
+    [items, plannerReference, plannerReturnReference],
   );
   const routeRef = useRef(route);
   const pointsRef = useRef(points);
@@ -315,6 +332,7 @@ function MissionMap({
   const plannerReferenceRef = useRef(plannerReferencePoint);
   const plannerTransitRef = useRef(plannerTransit);
   const plannerReferenceValueRef = useRef(plannerReference);
+  const plannerReturnReferenceValueRef = useRef(plannerReturnReference);
   routeRef.current = route;
   pointsRef.current = points;
   plannerAreaRef.current = plannerArea;
@@ -322,11 +340,13 @@ function MissionMap({
   plannerReferenceRef.current = plannerReferencePoint;
   plannerTransitRef.current = plannerTransit;
   plannerReferenceValueRef.current = plannerReference;
+  plannerReturnReferenceValueRef.current = plannerReturnReference;
 
   const fit = useCallback((
     map: Map,
     current: MissionPlanItem[],
     reference: MissionPlannerPoint | null,
+    returnReference: MissionPlannerPoint | null,
   ) => {
     const coordinates = current
       .filter((item) => item.command === 16)
@@ -342,6 +362,9 @@ function MissionMap({
       );
     if (reference) {
       coordinates.push([reference.longitude_deg, reference.latitude_deg]);
+    }
+    if (returnReference) {
+      coordinates.push([returnReference.longitude_deg, returnReference.latitude_deg]);
     }
 
     if (coordinates.length === 0) return;
@@ -469,7 +492,12 @@ function MissionMap({
           "circle-color": "#e8a93b",
         },
       });
-      fit(map, itemsRef.current, plannerReferenceValueRef.current);
+      fit(
+        map,
+        itemsRef.current,
+        plannerReferenceValueRef.current,
+        plannerReturnReferenceValueRef.current,
+      );
     });
 
     map.on("click", (event) => {
@@ -502,7 +530,7 @@ function MissionMap({
     (map.getSource(PLANNER_POINT_SOURCE) as GeoJSONSource | undefined)?.setData(plannerPoints);
     (map.getSource(PLANNER_REFERENCE_SOURCE) as GeoJSONSource | undefined)?.setData(plannerReferencePoint);
     (map.getSource(PLANNER_TRANSIT_SOURCE) as GeoJSONSource | undefined)?.setData(plannerTransit);
-    fit(map, items, plannerReference);
+    fit(map, items, plannerReference, plannerReturnReference);
   }, [
     fit,
     items,
@@ -510,6 +538,7 @@ function MissionMap({
     plannerPoints,
     plannerReference,
     plannerReferencePoint,
+    plannerReturnReference,
     plannerTransit,
     points,
     route,
@@ -762,12 +791,21 @@ export function MissionsView() {
         plannerReference
       )
     : null;
-  const mapPlannerReturnToReference =
+  const mapPlannerHomeReference = gridPlannerActive
+    ? (
+        plannerPreview?.input.home_reference ??
+        planningHomeReference(draftPlanning) ??
+        plannerHome
+      )
+    : null;
+  const mapPlannerReturnReference =
     gridPlannerActive &&
     (
       plannerPreview?.input.finish_action ??
       draftPlanning?.parameters?.finish_action
-    ) === "RTH";
+    ) === "RTH"
+      ? (mapPlannerHomeReference ?? mapPlannerReference)
+      : null;
 
   const availablePlannerProfiles = useMemo(
     () => plannerProfiles.filter((profile) => profile.platform === plannerPlatform),
@@ -1050,7 +1088,7 @@ export function MissionsView() {
                 plannerPolygon={plannerPoints}
                 plannerDrawing={plannerDrawing}
                 plannerReference={mapPlannerReference}
-                plannerReturnToReference={mapPlannerReturnToReference}
+                plannerReturnReference={mapPlannerReturnReference}
                 onPlannerClick={plannerDrawing
                   ? (point) => {
                       setPlannerPoints((current) => [...current, point]);
@@ -1423,8 +1461,8 @@ export function MissionsView() {
                 <small className="missionPlannerHint">
                   Enable drawing, click at least three polygon vertices on the map, then generate.
                   The preview replaces the editable draft only; Save plan creates the immutable
-                  revision. Auto direction minimizes planned travel and, when aircraft/home
-                  telemetry is available, chooses the nearer grid entry. Camera-specific planner
+                  revision. Auto direction minimizes planned travel and uses the current aircraft
+                  position for ingress while confirmed home telemetry anchors RTH/radius checks.
                   context is stored with that revision and preflight blocks a later M3E/M3T/M3M mismatch.
                 </small>
 
