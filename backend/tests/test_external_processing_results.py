@@ -135,7 +135,16 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
                 ),
                 "preview_png": "captures/00001_DJI_0001_deadbeef00/preview.png",
                 "thermal_json": "captures/00001_DJI_0001_deadbeef00/thermal.json",
+                "hotspot_mask_png": "captures/00001_DJI_0001_deadbeef00/hotspot-mask.png",
+                "hotspots_json": "captures/00001_DJI_0001_deadbeef00/hotspots.json",
                 "statistics": {"min_c": 20.0, "max_c": 42.5},
+                "hotspots": {
+                    "baseline_c": 22.0,
+                    "threshold_c": 32.0,
+                    "component_count": 1,
+                    "candidate_pixels": 6,
+                    "candidate_fraction": 0.001,
+                },
                 "width": 640,
                 "height": 512,
                 "sdk_label": "1.8_20251211",
@@ -159,6 +168,12 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     ]
     preview = details["captures/00001_DJI_0001_deadbeef00/preview.png"]
     metadata = details["captures/00001_DJI_0001_deadbeef00/thermal.json"]
+    hotspot_mask = details[
+        "captures/00001_DJI_0001_deadbeef00/hotspot-mask.png"
+    ]
+    hotspots = details[
+        "captures/00001_DJI_0001_deadbeef00/hotspots.json"
+    ]
 
     assert temperature["result_kind"] == "TEMPERATURE_RASTER"
     assert temperature["temperature_unit"] == "degree_Celsius"
@@ -170,6 +185,9 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert temperature["input_fingerprint"] == "a" * 64
     assert preview["result_kind"] == "THERMAL_PREVIEW"
     assert metadata["result_kind"] == "THERMAL_METADATA"
+    assert hotspot_mask["result_kind"] == "HOTSPOT_MASK"
+    assert hotspots["result_kind"] == "HOTSPOT_ANALYSIS"
+    assert hotspots["hotspots"]["component_count"] == 1
     assert details["result-manifest.json"]["result_kind"] == "THERMAL_MANIFEST"
 
 
