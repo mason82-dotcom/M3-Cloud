@@ -338,6 +338,7 @@ def build_grid_preview(
     speed_mps: float,
     gimbal_pitch_deg: float = -90.0,
     overshoot_m: float | None = None,
+    finish_action: str = "RTH",
 ) -> dict[str, Any]:
     profile = planning_profile(platform, capture_profile)
     vertices = _normalise_polygon(polygon)
@@ -362,6 +363,7 @@ def build_grid_preview(
     direction = _finite(direction_deg, "direction")
     requested_speed = _finite(speed_mps, "speed")
     pitch = _finite(gimbal_pitch_deg, "gimbal pitch")
+    finish = str(finish_action).strip().upper()
 
     if not 0.001 <= gsd_m <= 0.5:
         raise ValueError("GSD must be between 0.1 and 50 cm/px")
@@ -375,6 +377,8 @@ def build_grid_preview(
         raise ValueError("Requested speed must be between 0.1 and 25 m/s")
     if not -90.0 <= pitch <= 35.0:
         raise ValueError("Gimbal pitch must be between -90 and +35 degrees")
+    if finish not in {"RTH", "LAND", "NONE"}:
+        raise ValueError("Finish action must be one of RTH, LAND, or NONE")
 
     horizontal_half_tan = math.tan(math.radians(profile.horizontal_fov_deg) / 2.0)
     vertical_half_tan = math.tan(math.radians(profile.vertical_fov_deg) / 2.0)
@@ -497,6 +501,13 @@ def build_grid_preview(
         )
         route_xy.extend((start_xy, end_xy))
 
+    # The DJI-native compiler maps a trailing RTL/LAND command to the wayline finishAction.
+    # Keep RTH as the planner default so a generated survey never silently ends in NO_ACTION.
+    if finish == "RTH":
+        append_item(mavlink_common.MAV_CMD_NAV_RETURN_TO_LAUNCH)
+    elif finish == "LAND":
+        append_item(mavlink_common.MAV_CMD_NAV_LAND)
+
     if len(items) > MAX_MISSION_ITEMS:
         raise ValueError(
             f"Generated survey needs {len(items)} mission items; Lyrebird limit is "
@@ -528,6 +539,7 @@ def build_grid_preview(
             "requested_speed_mps": requested_speed,
             "gimbal_pitch_deg": pitch,
             "overshoot_m": effective_overshoot_m,
+            "finish_action": finish,
         },
         "derived": {
             "altitude_m": altitude_m,
@@ -556,6 +568,11 @@ def build_grid_preview(
             "M3T 12 MP planning dimensions are derived; verify actual PHOTO_NORMAL "
             "image dimensions on the target MSDK/firmware before field use."
         )
+    if finish == "NONE":
+        warnings.append(
+            "No terminal RTL/LAND action is selected; DJI-native execution will not receive "
+            "an explicit planner finish action."
+        )
 
     return {
         "schema_version": 1,
@@ -572,6 +589,7 @@ def build_grid_preview(
             "direction_deg": direction,
             "requested_speed_mps": requested_speed,
             "gimbal_pitch_deg": pitch,
+            "finish_action": finish,
         },
         "geometry": {
             "area_m2": area_m2,
