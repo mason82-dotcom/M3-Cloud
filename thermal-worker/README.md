@@ -147,6 +147,22 @@ The paths encoded in `external_path` and `result_drop_path` must be visible
 inside the worker under the same names, or use `--result-dir` and a locally
 prepared handoff path mapping.
 
+For the integrated M3-Cloud stack, place/extract the **Linux x86-64** DJI
+Thermal SDK at `DJI_TSDK_HOST_PATH` and start the optional Compose profile:
+
+```bash
+docker compose --profile thermal up -d thermal-worker
+```
+
+The worker then uses `http://backend:8000`, claims eligible M3T jobs
+atomically, processes them in FIFO order, publishes into the shared
+`processing-import` mount, and asks M3-Cloud to import the results. The normal
+stack does not start this service unless the `thermal` profile is enabled.
+
+Do not point the container profile at the Windows DJI SDK package. Run the
+Python worker natively on Windows for DLL-based processing, or install the
+Linux x86-64 TSDK for the container.
+
 ## Safety / data integrity
 
 - Source files are re-hashed before decode; changed frozen inputs fail closed.
