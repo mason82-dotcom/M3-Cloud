@@ -5,6 +5,7 @@ from fastapi import FastAPI, Response, status
 from app.api_devices import router as devices_router
 from app.api_dji import router as dji_router
 from app.api_dji_waylines import router as dji_wayline_router
+from app.api_dji_tsa import router as dji_tsa_router
 from app.api_flights import router as flights_router
 from app.api_media import router as media_router
 from app.api_missions import router as missions_router
@@ -12,6 +13,7 @@ from app.api_processing import router as processing_router
 from app.api_projects import router as projects_router
 from app.config import settings
 from app.database import session_factory
+from app.dji.pilot_ws import DJIPilotWebSocketHub
 from app.dji.service import DJIService
 from app.flights.router import FlightTelemetryRouter
 from app.flights.service import FlightRecorder
@@ -46,10 +48,15 @@ async def lifespan(app: FastAPI):
         redis_client,
         channel=settings.live_redis_channel,
     )
+    dji_pilot_ws_hub = DJIPilotWebSocketHub(
+        redis_client,
+        channel=settings.live_redis_channel,
+    )
     app.state.dji_service = dji_service
     app.state.flight_recorder = flight_recorder
     app.state.flight_router = flight_router
     app.state.live_hub = live_hub
+    app.state.dji_pilot_ws_hub = dji_pilot_ws_hub
     lyrebird_live = LyrebirdLiveBridge(
         redis_client,
         lyrebird_mavlink_collector,
@@ -98,6 +105,7 @@ async def lifespan(app: FastAPI):
         app.state.media_import_watcher = media_watcher
 
     await live_hub.start()
+    await dji_pilot_ws_hub.start()
     await processing_manager.start()
     await lyrebird_mavlink_collector.start()
     await lyrebird_live.start()
@@ -117,6 +125,7 @@ async def lifespan(app: FastAPI):
         await processing_manager.stop()
         await lyrebird_live.stop()
         await lyrebird_mavlink_collector.stop()
+        await dji_pilot_ws_hub.stop()
         await live_hub.stop()
 
 
@@ -128,6 +137,7 @@ app = FastAPI(
 app.include_router(devices_router)
 app.include_router(dji_router)
 app.include_router(dji_wayline_router)
+app.include_router(dji_tsa_router)
 app.include_router(flights_router)
 app.include_router(media_router)
 app.include_router(missions_router)
