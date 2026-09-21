@@ -538,3 +538,45 @@ def test_radiometry_integrity_warns_only_on_structural_decode_provenance_issues(
     ]
     assert "defect assessment" in quality["note"]
 
+def test_radiometry_integrity_flags_skipped_api_version_query():
+    from thermal_worker.processor import _radiometry_integrity
+
+    decoded = DecodeResult(
+        temperature_c=np.array([[20.0]], dtype=np.float32),
+        width=1,
+        height=1,
+        api_version={
+            "api": 0,
+            "magic": "UNKNOWN",
+            "query_status": "SKIPPED_UNCONFIRMED_ABI",
+        },
+        rjpeg_version={"rjpeg": 3, "header": 1, "curve": 1},
+        measurement_params=MeasurementParams(
+            distance_m=5.0,
+            humidity_pct=70.0,
+            emissivity=0.95,
+            reflection_c=23.0,
+            ambient_temp_c=21.0,
+        ),
+        measurement_ranges=None,
+        measurement_mode="sdk_native",
+        measurement_error_code=None,
+        sdk_label="headerless-sdk",
+        measurement_abi="AMBIENT_V2",
+    )
+
+    quality = _radiometry_integrity(
+        decoded,
+        {
+            "finite_pixels": 1,
+            "invalid_pixels": 0,
+        },
+    )
+
+    assert quality["status"] == "WARN"
+    assert quality["flags"] == ["API_VERSION_ABI_UNCONFIRMED"]
+    assert (
+        quality["api_version_query_status"]
+        == "SKIPPED_UNCONFIRMED_ABI"
+    )
+
