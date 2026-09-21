@@ -247,6 +247,8 @@ def _handoff_fingerprint(
                             "relative_path": item.get("relative_path"),
                             "size_bytes": item.get("size_bytes"),
                             "sha256": item.get("sha256"),
+                            "capture_time_utc": item.get("capture_time_utc"),
+                            "metadata": item.get("metadata"),
                         }
                     )
             normalized_files.sort(
@@ -350,6 +352,91 @@ def _existing_manifest(
     return manifest
 
 
+def _capture_point_feature(
+    *,
+    capture_group: str,
+    thermal_item: Mapping[str, Any],
+    wide_item: Mapping[str, Any],
+    statistics: Mapping[str, float | int],
+    hotspot_analysis: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    position_source = "THERMAL"
+    metadata = thermal_item.get("metadata")
+    if not isinstance(metadata, Mapping):
+        metadata = {}
+    gps = metadata.get("gps")
+    if not isinstance(gps, Mapping):
+        gps = {}
+
+    latitude = gps.get("latitude")
+    longitude = gps.get("longitude")
+    if not (
+        isinstance(latitude, (int, float))
+        and not isinstance(latitude, bool)
+        and math.isfinite(float(latitude))
+        and -90.0 <= float(latitude) <= 90.0
+        and isinstance(longitude, (int, float))
+        and not isinstance(longitude, bool)
+        and math.isfinite(float(longitude))
+        and -180.0 <= float(longitude) <= 180.0
+    ):
+        position_source = "WIDE"
+        metadata = wide_item.get("metadata")
+        if not isinstance(metadata, Mapping):
+            return None
+        gps = metadata.get("gps")
+        if not isinstance(gps, Mapping):
+            return None
+        latitude = gps.get("latitude")
+        longitude = gps.get("longitude")
+        if not (
+            isinstance(latitude, (int, float))
+            and not isinstance(latitude, bool)
+            and math.isfinite(float(latitude))
+            and -90.0 <= float(latitude) <= 90.0
+            and isinstance(longitude, (int, float))
+            and not isinstance(longitude, bool)
+            and math.isfinite(float(longitude))
+            and -180.0 <= float(longitude) <= 180.0
+        ):
+            return None
+
+    components = hotspot_analysis.get("components")
+    peak_delta_c = None
+    peak_temperature_c = None
+    if isinstance(components, list) and components:
+        first = components[0]
+        if isinstance(first, Mapping):
+            peak_delta_c = first.get("delta_max_c")
+            peak_temperature_c = first.get("max_c")
+
+    return {
+        "type": "Feature",
+        "geometry": {
+            "type": "Point",
+            "coordinates": [float(longitude), float(latitude)],
+        },
+        "properties": {
+            "capture_group": capture_group,
+            "position_source": position_source,
+            "position_scope": "CAPTURE_CENTER_ONLY",
+            "pixel_georeferenced": False,
+            "capture_time_utc": (
+                thermal_item.get("capture_time_utc")
+                or wide_item.get("capture_time_utc")
+            ),
+            "thermal_filename": thermal_item.get("filename"),
+            "wide_filename": wide_item.get("filename"),
+            "min_c": statistics.get("min_c"),
+            "max_c": statistics.get("max_c"),
+            "mean_c": statistics.get("mean_c"),
+            "hotspot_component_count": hotspot_analysis.get("component_count"),
+            "hotspot_peak_temperature_c": peak_temperature_c,
+            "hotspot_peak_delta_c": peak_delta_c,
+        },
+    }
+
+
 def _write_temperature_tiff(
     path: Path,
     temperature: np.ndarray,
@@ -441,6 +528,7 @@ def process_handoff(
     published = False
     try:
         results: list[dict[str, Any]] = []
+        capture_point_features: list[dict[str, Any]] = []
         for index, group in enumerate(groups, start=1):
             if not isinstance(group, dict):
                 raise TypeError("Invalid capture group entry")
@@ -590,6 +678,16 @@ def process_handoff(
                 encoding="utf-8",
             )
     
+            point_feature = _capture_point_feature(
+                capture_group=capture_group,
+                thermal_item=thermal_item,
+                wide_item=wide_item,
+                statistics=statistics,
+                hotspot_analysis=hotspot_analysis,
+            )
+            if point_feature is not None:
+                capture_point_features.append(point_feature)
+
             results.append(
                 {
                     "capture_group": capture_group,
@@ -619,6 +717,24 @@ def process_handoff(
                 }
             )
     
+        capture_points_path = staging / "capture-points.geojson"
+        capture_points = {
+            "type": "FeatureCollection",
+            "features": capture_point_features,
+            "metadata": {
+                "geometry_scope": "CAPTURE_CENTER_ONLY",
+                "temperature_pixels_georeferenced": False,
+                "note": (
+                    "Points use source-image GPS only. Thermal pixels and hotspot regions "
+                    "are not georeferenced or WIDE/THERMAL coregistered."
+                ),
+            },
+        }
+        capture_points_path.write_text(
+            json.dumps(capture_points, indent=2, sort_keys=True, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
         manifest = {
             "schema_version": 1,
             "contract": RESULT_CONTRACT,
@@ -629,6 +745,8 @@ def process_handoff(
             "input_fingerprint": input_fingerprint,
             "processing_options": processing_options,
             "capture_group_count": len(results),
+            "georeferenced_capture_count": len(capture_point_features),
+            "capture_points_geojson": "capture-points.geojson",
             "capture_groups": results,
         }
         manifest_path = staging / "result-manifest.json"
