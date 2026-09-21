@@ -1,5 +1,10 @@
 # DJI Pilot 2 → M3-Cloud
 
+
+> DJI Cloud API is a server protocol integration, not an installable Python/Gradle package.
+> For the official reference material and version notes, see `docs/dji-cloud-api.md` and run
+> `scripts/install-dji-cloud-api-reference.ps1` on Windows when an offline/reference checkout is useful.
+
 This is the first, intentionally narrow DJI Pilot 2 Cloud API integration stage.
 
 ## Scope
