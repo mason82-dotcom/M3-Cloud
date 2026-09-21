@@ -9,6 +9,7 @@ from app.dji.storage_sts import (
     _pilot_session_policy,
     issue_pilot_sts_credentials,
     pilot_storage_ready,
+    pilot_wayline_storage_ready,
 )
 
 
@@ -140,3 +141,20 @@ def test_issue_assume_role_remains_available(monkeypatch):
     assert result.access_key_id == "role-access"
     assert fake.federation_calls == []
     assert fake.assume_calls[0]["RoleArn"] == "arn:aws:iam::role/M3CloudPilot2"
+
+
+def test_wayline_storage_does_not_advertise_undocumented_minio_provider():
+    assert pilot_storage_ready(settings(dji_pilot_storage_provider="minio")) is True
+    assert (
+        pilot_wayline_storage_ready(
+            settings(dji_pilot_storage_provider="minio")
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize("provider", ["aws", "ali"])
+def test_wayline_storage_accepts_dji_documented_providers(provider):
+    assert pilot_wayline_storage_ready(
+        settings(dji_pilot_storage_provider=provider)
+    ) is True

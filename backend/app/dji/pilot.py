@@ -4,7 +4,7 @@ from typing import Any
 from uuid import UUID
 
 from app.config import Settings
-from app.dji.storage_sts import pilot_storage_ready
+from app.dji.storage_sts import pilot_storage_ready, pilot_wayline_storage_ready
 
 
 _REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
@@ -109,6 +109,6 @@ def build_pilot_bootstrap(
             "map": True,
             "tsa": True,
             "media": pilot_storage_ready(settings),
-            "mission": True,
+            "mission": pilot_wayline_storage_ready(settings),
         },
     }

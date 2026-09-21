@@ -161,13 +161,17 @@ def _pilot_session_policy(
     }
 
 
-def pilot_storage_ready(settings: Settings) -> bool:
+def _pilot_storage_ready_for(
+    settings: Settings,
+    *,
+    providers: set[str],
+) -> bool:
     endpoint = settings.dji_pilot_storage_endpoint.strip()
     provider = settings.dji_pilot_storage_provider.strip().lower()
     mode = _sts_mode(settings)
     base_ready = bool(
         endpoint.startswith(("http://", "https://"))
-        and provider in {"minio", "aws", "ali"}
+        and provider in providers
     )
     if not base_ready:
         return False
@@ -176,6 +180,31 @@ def pilot_storage_ready(settings: Settings) -> bool:
     if mode == "assume_role":
         return bool(settings.dji_pilot_storage_role_arn.strip())
     return False
+
+
+def pilot_storage_ready(settings: Settings) -> bool:
+    """Storage readiness for DJI Pilot media management.
+
+    DJI documents MinIO, AWS S3 and Aliyun OSS for Pilot media uploads.
+    """
+
+    return _pilot_storage_ready_for(
+        settings,
+        providers={"minio", "aws", "ali"},
+    )
+
+
+def pilot_wayline_storage_ready(settings: Settings) -> bool:
+    """Storage readiness for DJI Pilot wayline library uploads.
+
+    DJI's Pilot wayline STS contract currently documents only AWS S3 and
+    Aliyun OSS providers. Do not advertise the mission component for MinIO.
+    """
+
+    return _pilot_storage_ready_for(
+        settings,
+        providers={"aws", "ali"},
+    )
 
 
 def create_pilot_storage_client(settings: Settings):
