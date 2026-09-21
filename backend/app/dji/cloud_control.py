@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from app.config import Settings
+from app.dji.drc import DJIDRCSessionManager
 from app.dji.gateway import DJIGatewayService
 from app.dji.services import DJIServiceClient, DJIServiceResponse
 
@@ -119,10 +120,12 @@ class DJICloudControl:
         services: DJIServiceClient,
         gateways: DJIGatewayService,
         settings: Settings,
+        drc_sessions: DJIDRCSessionManager,
     ) -> None:
         self.services = services
         self.gateways = gateways
         self.settings = settings
+        self.drc_sessions = drc_sessions
 
     async def _gateway(self, gateway_sn: str):
         snapshot = await self.gateways.get(gateway_sn)
@@ -158,6 +161,7 @@ class DJICloudControl:
             "cloud_control_release",
             {"control_keys": ["flight"]},
         )
+        await self.drc_sessions.stop(gateway_sn)
         return _response(response)
 
     async def enter_drc(self, gateway_sn: str) -> dict[str, object]:
@@ -182,4 +186,5 @@ class DJICloudControl:
                 "hsi_frequency": self.settings.dji_drc_hsi_frequency_hz,
             },
         )
+        await self.drc_sessions.start(gateway_sn)
         return _response(response)

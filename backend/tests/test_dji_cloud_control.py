@@ -27,6 +27,18 @@ class FakeServices:
         )
 
 
+class FakeSessions:
+    def __init__(self):
+        self.started = []
+        self.stopped = []
+
+    async def start(self, gateway_sn):
+        self.started.append(gateway_sn)
+
+    async def stop(self, gateway_sn):
+        self.stopped.append(gateway_sn)
+
+
 class FakeGateways:
     def __init__(self, *, authorized=False, online=True):
         self.authorized = authorized
@@ -97,6 +109,7 @@ async def test_cloud_control_authorization_uses_documented_service_payload():
         services,
         FakeGateways(),
         drc_settings(),
+        FakeSessions(),
     )
 
     result = await control.request_authorization(
@@ -126,6 +139,7 @@ async def test_drc_enter_requires_reported_cloud_control_authority():
         services,
         FakeGateways(authorized=False),
         drc_settings(),
+        FakeSessions(),
     )
 
     with pytest.raises(DJICloudControlNotAuthorized):
@@ -137,10 +151,12 @@ async def test_drc_enter_requires_reported_cloud_control_authority():
 @pytest.mark.asyncio
 async def test_drc_enter_uses_dedicated_broker_and_documented_frequencies(monkeypatch):
     services = FakeServices()
+    sessions = FakeSessions()
     control = DJICloudControl(
         services,
         FakeGateways(authorized=True),
         drc_settings(),
+        sessions,
     )
     monkeypatch.setattr("app.dji.cloud_control.time.time", lambda: 1_700_000_000)
 
@@ -155,15 +171,18 @@ async def test_drc_enter_uses_dedicated_broker_and_documented_frequencies(monkey
     assert data["mqtt_broker"]["expire_time"] == 1_700_003_600
     assert data["osd_frequency"] == 10
     assert data["hsi_frequency"] == 1
+    assert sessions.started == ["RC123"]
 
 
 @pytest.mark.asyncio
 async def test_release_cloud_control_releases_only_flight_authority():
     services = FakeServices()
+    sessions = FakeSessions()
     control = DJICloudControl(
         services,
         FakeGateways(authorized=True),
         drc_settings(),
+        sessions,
     )
 
     await control.release("RC123")
@@ -175,3 +194,4 @@ async def test_release_cloud_control_releases_only_flight_authority():
             {"control_keys": ["flight"]},
         )
     ]
+    assert sessions.stopped == ["RC123"]

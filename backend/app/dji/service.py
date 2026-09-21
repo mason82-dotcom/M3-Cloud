@@ -7,7 +7,11 @@ from redis.asyncio import Redis
 from app.config import settings
 from app.dji.cloud_control import DJICloudControl
 from app.dji.devices import DJIDeviceService
-from app.dji.drc import DJIDRCStateStore
+from app.dji.drc import (
+    DJIDRCCommandChannel,
+    DJIDRCSessionManager,
+    DJIDRCStateStore,
+)
 from app.dji.events import DJIEventDispatcher, DJIEventStateStore
 from app.dji.gateway import DJIGatewayService
 from app.dji.mqtt import DJIMqttTransport
@@ -37,6 +41,8 @@ class DJIService:
     gateways: DJIGatewayService
     payloads: DJIPayloadControl
     drc_state: DJIDRCStateStore
+    drc_channel: DJIDRCCommandChannel
+    drc_sessions: DJIDRCSessionManager
     cloud_control: DJICloudControl
 
     @classmethod
@@ -68,10 +74,20 @@ class DJIService:
         )
         services = DJIServiceClient(transport, transactions)
         properties = DJIPropertyClient(transport, transactions)
+        drc_channel = DJIDRCCommandChannel(transport)
+        drc_sessions = DJIDRCSessionManager(
+            drc_channel,
+            heartbeat_interval_s=settings.dji_drc_heartbeat_interval_seconds,
+        )
         payloads = DJIPayloadControl(services)
         devices = DJIDeviceService(registry, telemetry, properties)
         gateways = DJIGatewayService(registry, telemetry)
-        cloud_control = DJICloudControl(services, gateways, settings)
+        cloud_control = DJICloudControl(
+            services,
+            gateways,
+            settings,
+            drc_sessions,
+        )
         router = DJIMessageRouter(
             registry,
             transport,
@@ -97,5 +113,7 @@ class DJIService:
             gateways=gateways,
             payloads=payloads,
             drc_state=drc_state,
+            drc_channel=drc_channel,
+            drc_sessions=drc_sessions,
             cloud_control=cloud_control,
         )

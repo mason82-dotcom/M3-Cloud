@@ -120,6 +120,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await dji_service.drc_sessions.stop_all()
         if settings.dji_mqtt_enabled:
             await dji_service.transport.stop()
         if media_watcher is not None:

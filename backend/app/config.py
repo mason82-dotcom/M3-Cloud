@@ -113,6 +113,11 @@ class Settings(BaseSettings):
         le=30,
         validation_alias="M3CLOUD_DJI_DRC_HSI_FREQUENCY_HZ",
     )
+    dji_drc_heartbeat_interval_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        validation_alias="M3CLOUD_DJI_DRC_HEARTBEAT_INTERVAL_SECONDS",
+    )
 
     # DJI Pilot 2 H5 / JSBridge bootstrap. These URLs must be reachable from
     # the RC Pro Enterprise; Docker-internal hostnames such as "emqx" are not.
