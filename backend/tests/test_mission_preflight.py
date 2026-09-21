@@ -271,3 +271,38 @@ def test_grid_preflight_uses_dji_remaining_time_and_power_thresholds():
     assert check["level"] == "BLOCK"
     assert "forced-landing" in check["message"]
 
+def test_grid_preflight_prefers_total_time_when_reference_transit_is_planned():
+    planned = mission(
+        preferred_executor="DJI_NATIVE",
+        plan_json={
+            **mission().plan_json,
+            "planning": {
+                "schema_version": 1,
+                "planner": "M3_CLOUD_GRID",
+                "platform": "M3E",
+                "capture_profile": "M3E_MAPPING",
+                "planning_sensor": "RGB_WIDE_20MP",
+                "derived": {
+                    "nominal_route_time_s": 400.0,
+                    "nominal_total_time_s": 700.0,
+                },
+            },
+        },
+    )
+
+    result = evaluate_preflight(
+        planned,
+        vehicle(
+            remain_flight_time_s=650,
+            return_home_power_percent=25,
+            landing_power_percent=10,
+        ),
+    )
+    check = next(
+        item for item in result["checks"]
+        if item["code"] == "planner_flight_time"
+    )
+    assert check["level"] == "BLOCK"
+    assert check["details"]["scope"] == "GRID_PLUS_REFERENCE_TRANSIT"
+    assert check["details"]["required_time_s"] == 700.0
+
