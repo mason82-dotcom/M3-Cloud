@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+import hmac
 import logging
 import os
 import platform
@@ -84,6 +85,7 @@ class DecodeResult:
     measurement_abi: str
     sdk_library_name: str | None = None
     sdk_library_sha256: str | None = None
+    sdk_helper_sha256: dict[str, str] | None = None
 
 
 class _DirpApiVersion(ctypes.Structure):
@@ -160,7 +162,13 @@ class DjiThermalSdk:
     The worker loads them from a user-provided TSDK release directory.
     """
 
-    def __init__(self, sdk_dir: str | os.PathLike[str], *, sdk_label: str | None = None):
+    def __init__(
+        self,
+        sdk_dir: str | os.PathLike[str],
+        *,
+        sdk_label: str | None = None,
+        expected_library_sha256: str | None = None,
+    ):
         if ctypes.sizeof(ctypes.c_void_p) != 8:
             raise RuntimeError("M3 thermal worker currently requires a 64-bit Python runtime")
 
@@ -173,6 +181,21 @@ class DjiThermalSdk:
         self._helper_libraries: list[ctypes.CDLL] = []
         self._library_path = self._dirp_library_path()
         self._library_sha256 = self._sha256_path(self._library_path)
+        expected = (
+            expected_library_sha256
+            if expected_library_sha256 is not None
+            else os.environ.get("DJI_TSDK_EXPECTED_SHA256")
+        )
+        self._expected_library_sha256 = self._normalize_expected_sha256(expected)
+        self._verify_expected_sha256(
+            self._library_sha256,
+            self._expected_library_sha256,
+        )
+        self._helper_paths = self._helper_binary_paths()
+        self._helper_sha256 = {
+            helper.name: self._sha256_path(helper)
+            for helper in self._helper_paths
+        }
         self._library = self._load_library()
         self._bind()
 
@@ -357,6 +380,46 @@ class DjiThermalSdk:
                 digest.update(chunk)
         return digest.hexdigest()
 
+    @staticmethod
+    def _normalize_expected_sha256(value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        normalized = value.strip().lower()
+        if re.fullmatch(r"[0-9a-f]{64}", normalized) is None:
+            raise ValueError(
+                "DJI_TSDK_EXPECTED_SHA256 must be exactly 64 hexadecimal characters"
+            )
+        return normalized
+
+    @staticmethod
+    def _verify_expected_sha256(actual: str, expected: str | None) -> None:
+        if expected is None:
+            return
+        if not hmac.compare_digest(actual.lower(), expected):
+            raise RuntimeError(
+                "DJI Thermal SDK libdirp SHA256 mismatch: "
+                f"expected {expected}, got {actual.lower()}"
+            )
+
+    def _helper_binary_paths(self) -> list[Path]:
+        system = platform.system()
+        if system == "Linux":
+            candidates = self.release_dir.glob("*.so*")
+        elif system == "Windows":
+            candidates = self.release_dir.glob("*.dll")
+        else:
+            return []
+
+        main = self._library_path.resolve()
+        return sorted(
+            (
+                path
+                for path in candidates
+                if path.is_file() and path.resolve() != main
+            ),
+            key=lambda path: path.name,
+        )
+
     def _load_library(self) -> ctypes.CDLL:
         system = platform.system()
         library_path = self._library_path
@@ -373,11 +436,7 @@ class DjiThermalSdk:
         # DJI packages helper libraries beside libdirp. Preload what can be loaded
         # globally so libdirp can resolve optional codec/IR processing symbols.
         mode = getattr(ctypes, "RTLD_GLOBAL", 0)
-        pending = [
-            helper
-            for helper in sorted(self.release_dir.glob("*.so*"))
-            if helper.name != "libdirp.so"
-        ]
+        pending = list(self._helper_paths)
         deferred: list[tuple[Path, OSError]] = []
         while pending:
             next_pending: list[Path] = []
@@ -802,6 +861,7 @@ class DjiThermalSdk:
                 measurement_abi=self._measurement_abi,
                 sdk_library_name=self._library_path.name,
                 sdk_library_sha256=self._library_sha256,
+                sdk_helper_sha256=dict(self._helper_sha256),
             )
         finally:
             if created and handle.value:
