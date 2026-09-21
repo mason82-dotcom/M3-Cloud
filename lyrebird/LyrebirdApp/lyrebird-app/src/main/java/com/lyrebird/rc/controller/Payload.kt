@@ -332,7 +332,8 @@ object Payload {
     private fun baseNameNoExt(name: String?): String =
         (name ?: "").substringBeforeLast('.').uppercase()
 
-    private fun isThermalName(name: String?): Boolean = baseNameNoExt(name).endsWith("_T")
+    private fun isThermalName(name: String?, platform: CameraPlatform): Boolean =
+        ThermalMediaNaming.isThermalFile(platform, name)
 
     private fun isWideName(name: String?): Boolean =
         baseNameNoExt(name).let { it.endsWith("_W") || it.endsWith("_V") }
@@ -342,9 +343,8 @@ object Payload {
     // The co-exposed lens files of one shutter share a DCF base name and differ only by the lens
     // suffix (e.g. DJI_20260613223116_0001_T / _W / _Z). Stripping that suffix groups the siblings
 
-    private val lensSuffixRegex = Regex("_[TWVZ]$")
-    private fun lensGroupBase(name: String?): String =
-        lensSuffixRegex.replace(baseNameNoExt(name), "")
+    private fun lensGroupBase(name: String?, platform: CameraPlatform): String =
+        ThermalMediaNaming.captureGroupBase(platform, name)
 
     // Fire one shutter and return the thermal, wide-visual (RGB) and zoom MediaFiles from it.
     // Internal helper for captureThermal. Blocking, call from a worker thread.
@@ -373,9 +373,13 @@ object Payload {
         // blindly trusting the first-reported file.
         // Never infer "thermal" from file size. That heuristic can mislabel an M3M band or
         // another sidecar as thermal. Legacy hybrid thermal capture requires an explicit _T asset.
-        val thermal = all.firstOrNull { isThermalName(it.fileName) }
+        val thermal = all.firstOrNull { isThermalName(it.fileName, caps.platform) }
         if (thermal == null) {
-            Log.w(TAG, "Thermal-capable camera produced no explicit _T media asset")
+            Log.w(
+                TAG,
+                "Thermal-capable camera produced no explicit thermal media asset " +
+                    "for platform ${caps.platform}"
+            )
             return ThermalCapture(null, null, null)
         }
         // Wide visual (RGB) and zoom siblings, distinguished by the legacy hybrid suffix scheme.
@@ -484,9 +488,20 @@ object Payload {
             collectingEvents = false
             Log.i(TAG, "Events after shutter in ${events.elapsedMs}ms: indices=${events.indices}")
 
-            resolveFromSinglePull(mediaVM, baselineIndex, events.indices)?.let { return it }
+            val platform = profile?.platform ?: cameraCapabilities().platform
+            resolveFromSinglePull(
+                mediaVM,
+                baselineIndex,
+                events.indices,
+                platform
+            )?.let { return it }
 
-            return resolveByPullLoop(mediaVM, baselineIndex, overallDeadline)
+            return resolveByPullLoop(
+                mediaVM,
+                baselineIndex,
+                overallDeadline,
+                platform
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Error taking thermal image: ${e.message}", e)
             return emptyList()
@@ -599,7 +614,8 @@ object Payload {
     private fun resolveFromSinglePull(
         mediaVM: MediaVM,
         baselineIndex: Int?,
-        seenIndices: Set<Int>
+        seenIndices: Set<Int>,
+        platform: CameraPlatform
     ): List<MediaFile>? {
         if (seenIndices.isNotEmpty()) {
             val data = if (narrowPullSupported)
@@ -614,9 +630,9 @@ object Payload {
                 .maxByOrNull { it.fileIndex }
                 ?: data.filter { it.fileIndex in seenIndices }.maxByOrNull { it.fileIndex }
             if (anchor != null) {
-                val groupBase = lensGroupBase(anchor.fileName)
+                val groupBase = lensGroupBase(anchor.fileName, platform)
                 val group = data.filter {
-                    lensGroupBase(it.fileName) == groupBase ||
+                    lensGroupBase(it.fileName, platform) == groupBase ||
                         (baselineIndex != null && it.fileIndex > baselineIndex) ||
                         it.fileIndex in seenIndices
                 }.distinctBy { it.fileName }.ifEmpty { listOf(anchor) }
@@ -639,7 +655,8 @@ object Payload {
     private fun resolveByPullLoop(
         mediaVM: MediaVM,
         baselineIndex: Int?,
-        overallDeadline: Long
+        overallDeadline: Long,
+        platform: CameraPlatform
     ): List<MediaFile> {
         var bestGroup: List<MediaFile> = emptyList()
         var prevGroupNames: Set<String> = emptySet()
@@ -678,8 +695,10 @@ object Payload {
                 // Baseline/index grouping is the primary generic rule and works for one-file M3E,
                 // M3T and multi-asset M3M exposures. The legacy DCF base-name rule is only a
                 // supplementary way to recover same-shutter H20-family siblings.
-                val groupBase = lensGroupBase(anchor.fileName)
-                val byLegacyBase = data.filter { lensGroupBase(it.fileName) == groupBase }
+                val groupBase = lensGroupBase(anchor.fileName, platform)
+                val byLegacyBase = data.filter {
+                    lensGroupBase(it.fileName, platform) == groupBase
+                }
                 val group = (aboveBaseline + byLegacyBase)
                     .distinctBy { it.fileName }
                     .ifEmpty { listOf(anchor) }

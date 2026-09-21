@@ -26,6 +26,12 @@ class CameraCaptureConfiguratorTest {
                 CameraPlatformCapabilities.fromCameraTypeName("M3M")
             )
         )
+        assertEquals(
+            CameraCaptureProfile.M4T_WIDE,
+            CameraCapturePolicy.defaultDirectProfile(
+                CameraPlatformCapabilities.fromCameraTypeName("M4T")
+            )
+        )
     }
 
     @Test
@@ -41,11 +47,25 @@ class CameraCaptureConfiguratorTest {
     }
 
     @Test
-    fun thermalProfileExistsOnlyForM3t() {
+    fun m4tSurveyDefaultsToWideStorageUntilPairedCaptureIsFieldValidated() {
+        val profile = CameraCapturePolicy.defaultSurveyProfile(
+            CameraPlatformCapabilities.fromCameraTypeName("M4T")
+        )
+        assertEquals(CameraCaptureProfile.M4T_WIDE, profile)
+    }
+
+    @Test
+    fun thermalProfilesArePlatformSpecific() {
         assertEquals(
             CameraCaptureProfile.M3T_THERMAL,
             CameraCapturePolicy.thermalProfile(
                 CameraPlatformCapabilities.fromCameraTypeName("M3T")
+            )
+        )
+        assertEquals(
+            CameraCaptureProfile.M4T_THERMAL,
+            CameraCapturePolicy.thermalProfile(
+                CameraPlatformCapabilities.fromCameraTypeName("M4T")
             )
         )
         assertNull(

@@ -3,14 +3,15 @@ package com.lyrebird.rc.controller
 /**
  * Product-level camera capabilities Lyrebird can assert without guessing from filenames.
  *
- * This layer deliberately keeps the M3E, M3T and M3M separate. A shared "Mavic 3 Enterprise"
- * bucket is not sufficient for capture configuration: M3T has thermal, M3M has multispectral
- * storage, and M3E has neither.
+ * Keep integrated enterprise-camera platforms separate. M3T and M4T are both thermal-capable,
+ * but they are not interchangeable: M4T adds a different visual camera stack and RC Plus 2
+ * deployment target, while M3M owns multispectral storage.
  */
 internal enum class CameraPlatform {
     M3E,
     M3T,
     M3M,
+    M4T,
     LEGACY_HYBRID,
     OTHER
 }
@@ -26,6 +27,9 @@ internal data class CameraPlatformCapabilities(
         get() = platform == CameraPlatform.M3E ||
             platform == CameraPlatform.M3T ||
             platform == CameraPlatform.M3M
+
+    val isIntegratedThermalPlatform: Boolean
+        get() = platform == CameraPlatform.M3T || platform == CameraPlatform.M4T
 
     companion object {
         /**
@@ -56,6 +60,13 @@ internal data class CameraPlatformCapabilities(
                     supportsMultispectralCapture = true,
                     supportsM3mRgbOnlyProfile = true,
                     supportsM3mRgbMultispectralProfile = true
+                )
+                "M4T" -> CameraPlatformCapabilities(
+                    platform = CameraPlatform.M4T,
+                    supportsThermalCapture = true,
+                    supportsMultispectralCapture = false,
+                    supportsM3mRgbOnlyProfile = false,
+                    supportsM3mRgbMultispectralProfile = false
                 )
                 "ZENMUSE_H20T", "ZENMUSE_H20N", "ZENMUSE_H30T" ->
                     CameraPlatformCapabilities(

@@ -223,3 +223,32 @@ def test_provider_reads_identity_before_tcp(monkeypatch):
     monkeypatch.setattr("app.vehicles.lyrebird.settings.lyrebird_hosts", "192.168.178.45")
     asyncio.run(run())
     assert events == ["config", "camera", "settings", "tcp"]
+
+
+def test_camera_capability_probe_provides_explicit_m4t_identity():
+    vehicle = normalize_config(
+        "192.168.1.44",
+        {"droneName": "m4t-field"},
+        {},
+        {
+            "componentIndex": "LEFT_OR_MAIN",
+            "connected": True,
+            "cameraType": "M4T",
+            "firmwareVersion": "01.00",
+            "cameraMode": "PHOTO_NORMAL",
+            "cameraModeRange": ["PHOTO_NORMAL"],
+            "liveViewSource": "WIDE_CAMERA",
+            "liveViewSourceRange": ["WIDE_CAMERA", "ZOOM_CAMERA", "INFRARED_CAMERA"],
+            "captureStoredSources": ["WIDE_CAMERA"],
+            "captureStorageReadStatus": "OK",
+        },
+    )
+    assert vehicle.model == "M4T"
+    assert vehicle.telemetry["payload"]["platform"] == "M4T"
+    assert vehicle.telemetry["payload"]["thermal"] is True
+    assert vehicle.telemetry["payload"]["wide"] is True
+    assert vehicle.telemetry["payload"]["zoom"] is True
+    assert vehicle.telemetry["payload"]["lrf"] is True
+    assert vehicle.telemetry["payload"]["multispectral"] is False
+    assert "M4T_WIDE" in vehicle.telemetry["payload"]["capture_profiles"]
+    assert "INFRARED_CAMERA" in vehicle.telemetry["payload"]["camera"]["live_view_source_range"]

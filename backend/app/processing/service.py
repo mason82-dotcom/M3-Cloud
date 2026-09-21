@@ -45,19 +45,42 @@ REMOTE_STATUS = {
 THERMOGRAM_REQUIRED_KINDS = ("THERMAL",)
 THERMOGRAM_OPTIONAL_KINDS = ("WIDE",)
 THERMOGRAM_KINDS = ("WIDE", "THERMAL")
+THERMOGRAM_PLATFORMS = frozenset({"M3T", "M4T"})
 THERMOGRAM_HANDOFF_SCHEMA = 4
-THERMOGRAM_WORKER_CONTRACT = "M3T_RJPEG_V2"
+THERMOGRAM_WORKER_CONTRACTS = {
+    "M3T": "M3T_RJPEG_V2",
+    "M4T": "M4T_RJPEG_V1",
+}
+THERMOGRAM_RESULT_CONTRACTS = {
+    "M3T": "M3T_THERMAL_RESULTS_V1",
+    "M4T": "M4T_THERMAL_RESULTS_V1",
+}
 M3M_DRONEDB_KINDS = ("RGB", "MS_GREEN", "MS_RED", "MS_RED_EDGE", "MS_NIR")
 M3M_DRONEDB_HANDOFF_SCHEMA = 1
 
 
 def select_thermogram_assets(assets: list[MediaAsset]) -> list[MediaAsset]:
-    """Freeze M3T thermal captures and optional Wide companions."""
+    """Freeze one supported thermal platform's captures and optional Wide companions."""
+
+    platforms = {
+        asset.platform
+        for asset in assets
+        if asset.platform in THERMOGRAM_PLATFORMS
+        and asset.media_kind in THERMOGRAM_KINDS
+        and asset.capture_group
+    }
+    if len(platforms) > 1:
+        raise ValueError("Thermogram input prefix resolves to multiple thermal platforms")
+    if not platforms:
+        raise ValueError(
+            "Thermogram requires at least one supported DJI thermal R-JPEG capture"
+        )
+    platform = next(iter(platforms))
 
     by_group: dict[str, list[MediaAsset]] = {}
     for asset in assets:
         if (
-            asset.platform != "M3T"
+            asset.platform != platform
             or asset.media_kind not in THERMOGRAM_KINDS
             or not asset.capture_group
         ):
@@ -85,7 +108,7 @@ def select_thermogram_assets(assets: list[MediaAsset]) -> list[MediaAsset]:
 
     if not selected:
         raise ValueError(
-            "Thermogram requires at least one M3T thermal R-JPEG capture"
+            f"Thermogram requires at least one {platform} thermal R-JPEG capture"
         )
     return selected
 
@@ -233,8 +256,12 @@ def build_thermogram_handoff(
     handoff_root: str,
     metadata_by_id: dict[str, dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    if job.kind != "THERMOGRAM" or job.platform != "M3T":
-        raise ValueError("Processing job is not an M3T Thermogram handoff")
+    if job.kind != "THERMOGRAM" or job.platform not in THERMOGRAM_PLATFORMS:
+        raise ValueError("Processing job is not a supported DJI Thermogram handoff")
+    platform = str(job.platform)
+    worker_contract = THERMOGRAM_WORKER_CONTRACTS[platform]
+    if any(asset.platform != platform for asset in assets):
+        raise ValueError("Thermogram handoff assets do not match the job platform")
 
     grouped: dict[str, list[MediaAsset]] = {}
     for asset in assets:
@@ -291,13 +318,13 @@ def build_thermogram_handoff(
         )
 
     if not groups:
-        raise ValueError("Thermogram job contains no M3T thermal captures")
+        raise ValueError(f"Thermogram job contains no {platform} thermal captures")
 
     return {
         "schema_version": THERMOGRAM_HANDOFF_SCHEMA,
         "workflow": "THERMOGRAM",
-        "worker_contract": THERMOGRAM_WORKER_CONTRACT,
-        "platform": "M3T",
+        "worker_contract": worker_contract,
+        "platform": platform,
         "job_id": str(job.id),
         "flight_id": str(job.flight_id) if job.flight_id else None,
         "input_prefix": job.input_prefix,
@@ -417,18 +444,20 @@ def thermal_result_manifest_details(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
-    if (
-        not isinstance(manifest, dict)
-        or manifest.get("contract") != "M3T_THERMAL_RESULTS_V1"
-        or manifest.get("workflow") != "THERMOGRAM"
-        or manifest.get("platform") != "M3T"
-    ):
+    if not isinstance(manifest, dict) or manifest.get("workflow") != "THERMOGRAM":
+        return {}
+    platform = manifest.get("platform")
+    if not isinstance(platform, str):
+        return {}
+    expected_contract = THERMOGRAM_RESULT_CONTRACTS.get(platform)
+    if expected_contract is None or manifest.get("contract") != expected_contract:
         return {}
     if expected_job_id is not None and manifest.get("job_id") != str(expected_job_id):
         return {}
 
     manifest_common: dict[str, object] = {
-        "thermal_contract": "M3T_THERMAL_RESULTS_V1",
+        "thermal_contract": expected_contract,
+        "platform": platform,
     }
     for key in (
         "input_fingerprint",
@@ -915,7 +944,7 @@ class ProcessingManager:
                     .where(
                         MediaAsset.present.is_(True),
                         MediaAsset.duplicate_of.is_(None),
-                        MediaAsset.platform == "M3T",
+                        MediaAsset.platform.in_(THERMOGRAM_PLATFORMS),
                         (
                             (MediaAsset.relative_path == normalized_prefix)
                             | MediaAsset.relative_path.startswith(normalized_prefix + "/")
@@ -926,11 +955,12 @@ class ProcessingManager:
             ).all()
 
             assets = select_thermogram_assets(candidates)
+            platform = assets[0].platform
 
             dataset_records = (
                 await session.scalars(
                     select(MediaDatasetRecord).where(
-                        MediaDatasetRecord.platform == "M3T",
+                        MediaDatasetRecord.platform == platform,
                         MediaDatasetRecord.prefix == normalized_prefix,
                     )
                 )
@@ -943,7 +973,7 @@ class ProcessingManager:
                 status="WAITING_EXTERNAL",
                 name=name.strip() or normalized_prefix.split("/")[-1],
                 input_prefix=normalized_prefix,
-                platform="M3T",
+                platform=platform,
                 flight_id=dataset_record.flight_id if dataset_record else None,
                 survey_id=dataset_record.survey_id if dataset_record else None,
                 media_kinds=[
@@ -952,7 +982,7 @@ class ProcessingManager:
                     if any(asset.media_kind == kind for asset in assets)
                 ],
                 options=[
-                    {"name": "workflow", "value": "THERMOGRAM_M3T"},
+                    {"name": "workflow", "value": f"THERMOGRAM_{platform}"},
                     {
                         "name": "handoff_root",
                         "value": self.media_handoff_root,
@@ -1048,8 +1078,8 @@ class ProcessingManager:
             )
             if job is None:
                 raise LookupError("Processing job not found")
-            if job.kind != "THERMOGRAM" or job.platform != "M3T":
-                raise ValueError("External claim is only supported for M3T Thermogram jobs")
+            if job.kind != "THERMOGRAM" or job.platform not in THERMOGRAM_PLATFORMS:
+                raise ValueError("External claim is only supported for DJI Thermogram jobs")
             if job.status not in claimable:
                 raise RuntimeError(
                     f"Thermogram job is not claimable from {job.status}"
@@ -1089,8 +1119,8 @@ class ProcessingManager:
             job = await session.get(ProcessingJob, job_id)
             if job is None:
                 raise LookupError("Processing job not found")
-            if job.kind != "THERMOGRAM" or job.platform != "M3T":
-                raise ValueError("External status is only supported for M3T Thermogram jobs")
+            if job.kind != "THERMOGRAM" or job.platform not in THERMOGRAM_PLATFORMS:
+                raise ValueError("External status is only supported for DJI Thermogram jobs")
             # Network clients may retry after the server committed a transition but the
             # response was lost. Repeating the exact current state is therefore a no-op.
             if job.status == new_status:
@@ -1126,8 +1156,8 @@ class ProcessingManager:
             job = await session.get(ProcessingJob, job_id)
             if job is None:
                 raise LookupError("Processing job not found")
-            if job.kind != "THERMOGRAM" or job.platform != "M3T":
-                raise ValueError("External result import is only supported for M3T Thermogram jobs")
+            if job.kind != "THERMOGRAM" or job.platform not in THERMOGRAM_PLATFORMS:
+                raise ValueError("External result import is only supported for DJI Thermogram jobs")
 
         root = self.external_result_root / str(job_id)
         files = await asyncio.to_thread(self._external_result_files, root)
@@ -1148,8 +1178,8 @@ class ProcessingManager:
             job = await session.get(ProcessingJob, job_id)
             if job is None:
                 raise LookupError("Processing job not found")
-            if job.kind != "THERMOGRAM" or job.platform != "M3T":
-                raise ValueError("External result import is only supported for M3T Thermogram jobs")
+            if job.kind != "THERMOGRAM" or job.platform not in THERMOGRAM_PLATFORMS:
+                raise ValueError("External result import is only supported for DJI Thermogram jobs")
             if job.status not in {"COMPLETED_EXTERNAL", "RESULT_IMPORT_FAILED"}:
                 raise ValueError(
                     "Thermogram job must be COMPLETED_EXTERNAL before importing results"

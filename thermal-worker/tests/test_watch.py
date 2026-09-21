@@ -254,3 +254,32 @@ def test_process_failure_marks_job_failed(tmp_path, monkeypatch):
         ("job-2", "FAILED_EXTERNAL", "RuntimeError: decode failed")
     ]
     assert api.imported == []
+
+
+def test_claim_next_thermogram_accepts_m4t():
+    class M4Api(FakeApi):
+        def claim(self, job_id, *, retry_failed=False):
+            self.claims.append((job_id, retry_failed))
+            return {
+                "id": job_id,
+                "kind": "THERMOGRAM",
+                "platform": "M4T",
+                "status": "RUNNING_EXTERNAL",
+            }
+
+    api = M4Api(
+        [
+            {
+                "id": "m4t",
+                "kind": "THERMOGRAM",
+                "platform": "M4T",
+                "status": "WAITING_EXTERNAL",
+            }
+        ]
+    )
+
+    claimed = claim_next_thermogram(api)
+
+    assert claimed["id"] == "m4t"
+    assert claimed["platform"] == "M4T"
+    assert api.claims == [("m4t", False)]

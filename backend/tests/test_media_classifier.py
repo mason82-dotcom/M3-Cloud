@@ -46,13 +46,32 @@ def test_m3t_group_is_inferred_from_thermal_member() -> None:
     }
 
 
+def test_m4t_folder_hint_keeps_rjpeg_and_wide_on_m4t() -> None:
+    paths = [
+        PurePosixPath("M4T/inspection/DJI_0001_W.JPG"),
+        PurePosixPath("M4T/inspection/DJI_0001_R.JPG"),
+        PurePosixPath("M4T/inspection/DJI_0001_Z.JPG"),
+    ]
+    items = [(path, classify_media(path)) for path in paths]
+    reconciled = reconcile_group_platforms(items)
+
+    assert {item.platform for item in reconciled.values()} == {"M4T"}
+    assert {item.media_kind for item in reconciled.values()} == {
+        "WIDE",
+        "THERMAL",
+        "ZOOM",
+    }
+    assert {item.capture_group for item in reconciled.values()} == {
+        "M4T/inspection/DJI_0001"
+    }
+
+
 def test_folder_hint_keeps_m3e_wide_and_zoom_unambiguous() -> None:
     wide = classify_media(PurePosixPath("M3E/site/DJI_0002_W.JPG"))
     zoom = classify_media(PurePosixPath("M3E/site/DJI_0002_Z.JPG"))
 
     assert wide.platform == "M3E"
     assert zoom.platform == "M3E"
-
 
 
 def test_dji_filename_capture_time_uses_configured_timezone() -> None:
@@ -75,6 +94,7 @@ def test_filename_without_dji_timestamp_has_no_capture_time() -> None:
         timezone_name="UTC",
     ) is None
 
+
 def test_m3t_rjpeg_r_suffix_is_thermal_and_groups_with_wide() -> None:
     paths = [
         PurePosixPath("flight/DJI_0001_W.JPG"),
@@ -93,7 +113,7 @@ def test_m3t_rjpeg_r_suffix_is_thermal_and_groups_with_wide() -> None:
     }
 
 
-def test_m3m_red_band_is_not_confused_with_m3t_rjpeg_suffix() -> None:
+def test_m3m_red_band_is_not_confused_with_thermal_rjpeg_suffix() -> None:
     classified = classify_media(
         PurePosixPath("M3M/flight/DJI_0002_MS_R.TIF")
     )
@@ -101,4 +121,3 @@ def test_m3m_red_band_is_not_confused_with_m3t_rjpeg_suffix() -> None:
     assert classified.platform == "M3M"
     assert classified.media_kind == "MS_RED"
     assert classified.capture_group == "M3M/flight/DJI_0002"
-
