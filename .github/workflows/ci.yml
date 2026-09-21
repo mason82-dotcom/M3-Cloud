@@ -85,6 +85,24 @@ jobs:
       - name: Spotless, compile, and unit tests
         run: ./gradlew --no-daemon :app:spotlessKotlinCheck :app:compileCurrentDebugKotlin :app:testCurrentDebugUnitTest
 
+      - name: Verify optional release signing path
+        run: |
+          KEYSTORE="$RUNNER_TEMP/lyrebird-ci-signing.jks"
+          keytool -genkeypair \
+            -keystore "$KEYSTORE" \
+            -storepass changeit \
+            -keypass changeit \
+            -alias ci-signing \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 1 \
+            -dname "CN=Lyrebird CI"
+          STORE_FILE="$KEYSTORE" \
+          STORE_PASSWORD=changeit \
+          KEY_ALIAS=ci-signing \
+          KEY_PASSWORD=changeit \
+            ./gradlew --no-daemon :app:validateSigningCurrentRelease
+
       - name: Assemble and inventory Android APK
         run: |
           REPORT_DIR="build/reports/binary"

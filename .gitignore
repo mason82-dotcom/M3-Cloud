@@ -11,3 +11,6 @@ build/
 .DS_Store
 .idea/
 .vscode/
+local.properties
+*.jks
+*.keystore
