@@ -80,6 +80,7 @@ EP_RC_PAIRING_STOP = "/send/rcPairing/stop"
 EP_GET_SETTINGS = "/config/settings"
 EP_GET_LATEST_SURVEY = "/get/survey/latest"
 EP_GET_LATEST_MISSION_TRACE = "/get/mavlink/mission/latest"
+EP_GET_PREFLIGHT = "/get/preflight"
 
 # Maps the webapp/dashboard setting key to the phone HTTP endpoint that writes it.
 # Every value is sent as the raw request body, which is what the phone parses.
@@ -912,6 +913,21 @@ class DJIInterface:
             f.write(response.content)
         print(f"{file_name} saved to: {save_path} ({len(response.content)} bytes)")
         return save_path
+
+    def getPreflightStatus(self) -> dict[str, Any] | None:
+        """Read the RC's side-effect-free Phase-10 preflight snapshot."""
+        if self.IP_RC == "":
+            return None
+        try:
+            response = requests.get(
+                f"{self.baseCommandUrl}{EP_GET_PREFLIGHT}",
+                timeout=5,
+            )
+            response.raise_for_status()
+            return dict(response.json())
+        except (requests.RequestException, ValueError) as exc:
+            print(f"Preflight status query failed: {exc}")
+            return None
 
     def getLatestMissionTrace(self) -> dict[str, Any] | None:
         """Exact MAVLink mission currently accepted by Lyrebird, for wiretap comparison."""
