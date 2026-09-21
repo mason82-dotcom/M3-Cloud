@@ -224,6 +224,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.abs
+import org.json.JSONObject
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 
@@ -1664,6 +1665,123 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
     override fun readMavlinkMissionTraceJson(): String =
         mavlinkEndpoint?.latestMissionTraceJson()
             ?: """{"available":false,"count":0,"missionDigest":"","items":[]}"""
+
+    /**
+     * Side-effect-free Phase-10 snapshot. It reports MSDK facts/current Lyrebird state only;
+     * operator thresholds live in the ground-station preflight policy.
+     */
+    override fun readSurveyPreflightJson(): String {
+        val storageInfos = KeyManager.getInstance().getValue(cameraStorageInfosKey)
+        val selectedStorage = KeyManager.getInstance().getValue(cameraStorageLocationKey)
+        val sdInfo = storageInfos?.cameraStorageInfoList
+            ?.firstOrNull { it.storageType == CameraStorageLocation.SDCARD }
+
+        val rawGimbal = getRawGimbalAttitude()
+        val rtk = rtkTelemetryMonitor.snapshot()
+        val home = getHomeLocation()
+        val camera = CameraCapabilityProbe.snapshot()
+        val cameraCapabilities =
+            CameraPlatformCapabilities.fromCameraTypeName(camera.cameraType)
+        val surveyProfile =
+            CameraCaptureConfigurator.defaultSurveyProfile(cameraCapabilities)
+        val availableSources = camera.liveViewSourceRange.toSet()
+        val profileSupported = surveyProfile != null &&
+            surveyProfile.storedSourceNames.all(availableSources::contains)
+
+        fun nullableNumber(value: Number?): Any = value ?: JSONObject.NULL
+
+        return JSONObject().apply {
+            put("schemaVersion", 1)
+            put("timestampEpochMs", System.currentTimeMillis())
+            put("droneName", droneName)
+            put("aircraftSerialNumber", droneSerialNumber)
+
+            put("aircraftConnected", flightControllerConnectionKey.get(false))
+            put("cameraConnected", cameraConnectionKey.get(false))
+            put("airborne", isFlyingKey.get(false))
+            // Diagnostic only: KeyAreMotorsOn is not a hard gate because M3-family standby can
+            // report it inconsistently. Airborne + DJI ready-to-takeoff are the flight-state gates.
+            put("motorsOnRaw", areMotorsOnKey.get(false))
+            put("failsafe", isFailSafeKey.get(false))
+            put("compassHealthy", !compassHasErrorKey.get(false))
+            put("mavlinkFlightAllowed", isMavlinkFlightAllowed())
+            put("manualOverrideActive", DroneController.isManualOverrideActive)
+            put("readyToTakeoff", isReadyToTakeoff())
+            put("takeoffBlockReason", getTakeoffBlockReason())
+
+            put("batteryPercent", getBatteryLevel())
+            put("satelliteCount", getSatelliteCount())
+            put("gnssSignalLevel", getGpsSignalLevel())
+            put("homeSet", isHomeSet())
+            put(
+                "home",
+                JSONObject()
+                    .put("latitude", home.latitude)
+                    .put("longitude", home.longitude)
+            )
+
+            put("rcConnected", DroneController.getRcConnected())
+            put("airLinkConnected", DroneController.getAirLinkConnected())
+            put(
+                "airLinkQualityPercent",
+                DroneController.getAirLinkSignalQualityPercent()
+            )
+
+            put(
+                "storage",
+                JSONObject()
+                    .put("sdInserted", isSdCardInserted(storageInfos))
+                    .put("selected", selectedStorage?.name ?: "UNKNOWN")
+                    .put("state", sdInfo?.storageState?.name ?: "UNKNOWN")
+                    .put("freeMb", sdInfo?.getStorageLeftCapacity() ?: -1)
+                    .put("availablePhotoCount", sdInfo?.getAvailablePhotoCount() ?: -1)
+            )
+
+            put(
+                "camera",
+                JSONObject()
+                    .put("cameraType", camera.cameraType)
+                    .put("platform", camera.platform)
+                    .put("mode", camera.cameraMode)
+                    .put("liveViewSource", camera.liveViewSource)
+                    .put("sourceRange", org.json.JSONArray(camera.liveViewSourceRange))
+                    .put(
+                        "captureStoredSources",
+                        org.json.JSONArray(camera.captureStoredSources)
+                    )
+                    .put("captureStorageReadStatus", camera.captureStorageReadStatus)
+                    .put("surveyProfile", surveyProfile?.name ?: JSONObject.NULL)
+                    .put("surveyProfileSupported", profileSupported)
+            )
+
+            put(
+                "gimbal",
+                JSONObject()
+                    .put("valid", rawGimbal != null)
+                    .put("rollDeg", rawGimbal?.roll ?: JSONObject.NULL)
+                    .put("pitchDeg", rawGimbal?.pitch ?: JSONObject.NULL)
+                    .put("yawDeg", rawGimbal?.yaw ?: JSONObject.NULL)
+            )
+
+            put(
+                "rtk",
+                JSONObject()
+                    .put("enabled", rtk.enabled)
+                    .put("connected", rtk.connected)
+                    .put("healthy", rtk.healthy)
+                    .put("fix", rtk.fix.name)
+                    .put("rawFix", rtk.rawFix.name)
+                    .put(
+                        "ageMs",
+                        if (rtk.ageMs == Long.MAX_VALUE) JSONObject.NULL else rtk.ageMs
+                    )
+                    .put("source", rtk.source)
+                    .put("stdLatitudeM", nullableNumber(rtk.stdLatitudeM))
+                    .put("stdLongitudeM", nullableNumber(rtk.stdLongitudeM))
+                    .put("stdAltitudeM", nullableNumber(rtk.stdAltitudeM))
+            )
+        }.toString()
+    }
 
     override fun readSettingsJson(): String {
         return buildString {
