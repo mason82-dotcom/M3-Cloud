@@ -310,6 +310,31 @@ def thermal_result_manifest_details(
             }
 
     aggregate_summary = manifest.get("summary")
+
+    registration_audit = manifest.get("registration_audit_json")
+    if isinstance(registration_audit, str) and registration_audit:
+        try:
+            relative = _external_relative_path(registration_audit)
+        except ValueError:
+            relative = ""
+        if relative:
+            registration_summary: dict[str, object] = {}
+            if isinstance(aggregate_summary, dict):
+                for key in (
+                    "registration_status",
+                    "capture_count",
+                    "pair_capture_time_evidence_count",
+                    "pair_gps_evidence_count",
+                ):
+                    value = aggregate_summary.get(key)
+                    if value is not None:
+                        registration_summary[key] = value
+            details[relative] = {
+                **manifest_common,
+                "result_kind": "THERMAL_REGISTRATION_AUDIT",
+                "registration_summary": registration_summary,
+            }
+
     for field, result_kind in (
         ("summary_json", "THERMAL_SUMMARY"),
         ("summary_csv", "THERMAL_SUMMARY_CSV"),
