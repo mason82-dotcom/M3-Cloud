@@ -384,6 +384,9 @@ def test_existing_manifest_rejects_intermediate_symlink_escape(tmp_path):
     outside.mkdir()
     (outside / "artifact.bin").write_bytes(b"external")
 
+    for name in ("capture-points.geojson", "thermal-summary.json", "thermal-summary.csv"):
+        (destination / name).write_bytes(b"root-artifact")
+
     captures = destination / "captures"
     captures.symlink_to(outside, target_is_directory=True)
     artifact_path = "captures/artifact.bin"
@@ -391,6 +394,9 @@ def test_existing_manifest_rejects_intermediate_symlink_escape(tmp_path):
         "contract": RESULT_CONTRACT,
         "job_id": "job",
         "input_fingerprint": "f" * 64,
+        "capture_points_geojson": "capture-points.geojson",
+        "summary_json": "thermal-summary.json",
+        "summary_csv": "thermal-summary.csv",
         "capture_groups": [
             {
                 "temperature_tif": artifact_path,
@@ -441,4 +447,56 @@ def test_capture_point_falls_back_to_wide_gps_without_georeferencing_pixels():
     assert feature["properties"]["position_scope"] == "CAPTURE_CENTER_ONLY"
     assert feature["properties"]["pixel_georeferenced"] is False
     assert feature["properties"]["hotspot_peak_delta_c"] == 18.0
+
+def test_existing_manifest_rejects_root_artifact_parent_symlink_escape(tmp_path):
+    destination = tmp_path / "results"
+    destination.mkdir()
+    outside = tmp_path / "outside-root"
+    outside.mkdir()
+    (outside / "capture-points.geojson").write_bytes(b"external")
+
+    linked = destination / "linked"
+    linked.symlink_to(outside, target_is_directory=True)
+    (destination / "thermal-summary.json").write_bytes(b"{}")
+    (destination / "thermal-summary.csv").write_bytes(b"header\n")
+
+    captures = destination / "captures"
+    captures.mkdir()
+    for name in (
+        "temperature.tif",
+        "preview.png",
+        "thermal.json",
+        "hotspot-mask.png",
+        "hotspots.json",
+    ):
+        (captures / name).write_bytes(b"artifact")
+
+    manifest = {
+        "contract": RESULT_CONTRACT,
+        "job_id": "job-root",
+        "input_fingerprint": "e" * 64,
+        "capture_points_geojson": "linked/capture-points.geojson",
+        "summary_json": "thermal-summary.json",
+        "summary_csv": "thermal-summary.csv",
+        "capture_groups": [
+            {
+                "temperature_tif": "captures/temperature.tif",
+                "preview_png": "captures/preview.png",
+                "thermal_json": "captures/thermal.json",
+                "hotspot_mask_png": "captures/hotspot-mask.png",
+                "hotspots_json": "captures/hotspots.json",
+            }
+        ],
+    }
+    (destination / "result-manifest.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileExistsError, match="escapes result folder"):
+        _existing_manifest(
+            destination,
+            expected_job_id="job-root",
+            expected_fingerprint="e" * 64,
+        )
 
