@@ -261,7 +261,9 @@ export interface MissionGridPreview {
     expected_media_assets_upper_bound: number;
     stored_assets_per_exposure: number;
     nominal_route_time_s: number;
+    nominal_transit_time_s: number;
     nominal_total_time_s: number;
+    transit_speed_mps: number;
     nominal_capture_time_s: number;
   };
   optimization: {
