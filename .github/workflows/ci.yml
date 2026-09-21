@@ -84,17 +84,9 @@ jobs:
 
       - name: Generate Gradle dependency lockfiles
         run: |
-          ./gradlew --no-daemon --write-locks \
-            :app:spotlessKotlinCheck \
-            :app:testCurrentDebugUnitTest \
-            :app:assembleCurrentDebug \
-            :app:assembleCurrentRelease \
-            :app:assembleDemoBiomassDebug \
-            :app:assembleDemoBiomassRelease \
-            :app:lintCurrentDebug \
-            :uxsdk:assembleDebug \
-            :uxsdk:assembleRelease \
-            :uxsdk:lintDebug
+          ./gradlew --no-daemon --no-configuration-cache --write-locks \
+            :app:resolveProductionLockState \
+            :uxsdk:resolveProductionLockState
 
       - name: Upload Gradle dependency lockfiles
         uses: actions/upload-artifact@v6
