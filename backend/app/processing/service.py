@@ -116,6 +116,11 @@ def build_thermogram_handoff(
                     {
                         "id": str(asset.id),
                         "relative_path": asset.relative_path,
+                        "path_relative_to_input": (
+                            PurePosixPath(asset.relative_path)
+                            .relative_to(PurePosixPath(job.input_prefix))
+                            .as_posix()
+                        ),
                         "filename": asset.filename,
                         "media_kind": asset.media_kind,
                         "size_bytes": asset.size_bytes,
@@ -143,8 +148,9 @@ def build_thermogram_handoff(
         raise ValueError("Thermogram job contains no complete M3T capture pairs")
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "workflow": "THERMOGRAM",
+        "worker_contract": "M3T_RJPEG_V1",
         "platform": "M3T",
         "job_id": str(job.id),
         "flight_id": str(job.flight_id) if job.flight_id else None,
