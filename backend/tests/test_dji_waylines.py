@@ -1,6 +1,7 @@
 import pytest
 from pymavlink.dialects.v20 import common as mavlink_common
 
+from app.api_dji_waylines import WaylineUploadCallback
 from app.dji.waylines import (
     compile_mission_wayline,
     inspect_native_wayline_bytes,
@@ -129,3 +130,13 @@ def test_native_kmz_callback_cannot_swap_payload_family():
             payload_model_keys=["1-67-0"],
             template_types=[0],
         )
+
+
+
+def test_wayline_upload_callback_accepts_spec_optional_fields():
+    body = WaylineUploadCallback(
+        object_key="pilot2/workspace/native-field.kmz",
+    )
+
+    assert body.name is None
+    assert body.metadata is None
