@@ -12,7 +12,7 @@ import dji.v5.ux.mapkit.core.models.annotations.DJIMarker;
 import dji.v5.ux.mapkit.core.models.annotations.DJIMarkerOptions;
 import dji.v5.ux.mapkit.maplibre.map.MaplibreMapDelegate;
 import dji.v5.ux.mapkit.maplibre.utils.MaplibreUtils;
-import com.mapbox.geojson.Point;
+import org.maplibre.geojson.Point;
 import org.maplibre.android.annotations.Icon;
 import org.maplibre.android.annotations.Marker;
 import org.maplibre.android.maps.MapLibreMap;
