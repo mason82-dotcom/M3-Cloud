@@ -164,3 +164,67 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert preview["result_kind"] == "THERMAL_PREVIEW"
     assert metadata["result_kind"] == "THERMAL_METADATA"
     assert details["result-manifest.json"]["result_kind"] == "THERMAL_MANIFEST"
+
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_external_status_retries_are_idempotent(tmp_path: Path) -> None:
+    job_id = __import__("uuid").uuid4()
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        session.add(
+            ProcessingJob(
+                id=job_id,
+                kind="THERMOGRAM",
+                status="WAITING_EXTERNAL",
+                name="M3T idempotency",
+                input_prefix="M3T/idempotency",
+                platform="M3T",
+                flight_id=None,
+                media_kinds=["WIDE", "THERMAL"],
+                options=[],
+                image_count=2,
+                uploaded_count=0,
+                progress=0.0,
+                remote_project_id=None,
+                remote_task_id=None,
+                remote_status=None,
+                available_assets=[],
+                error=None,
+                created_at=now,
+                started_at=None,
+                updated_at=now,
+                finished_at=None,
+            )
+        )
+        await session.commit()
+
+    manager = ProcessingManager(
+        session_factory,
+        media_root=str(tmp_path / "media"),
+        external_result_root=str(tmp_path / "processing-import"),
+        webodm_enabled=False,
+        webodm_url="",
+    )
+
+    running = await manager.update_external_job(
+        job_id,
+        new_status="RUNNING_EXTERNAL",
+    )
+    running_retry = await manager.update_external_job(
+        job_id,
+        new_status="RUNNING_EXTERNAL",
+    )
+    assert running.status == "RUNNING_EXTERNAL"
+    assert running_retry.status == "RUNNING_EXTERNAL"
+
+    completed = await manager.update_external_job(
+        job_id,
+        new_status="COMPLETED_EXTERNAL",
+    )
+    completed_retry = await manager.update_external_job(
+        job_id,
+        new_status="COMPLETED_EXTERNAL",
+    )
+    assert completed.status == "COMPLETED_EXTERNAL"
+    assert completed_retry.status == "COMPLETED_EXTERNAL"
