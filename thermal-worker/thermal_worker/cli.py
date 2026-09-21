@@ -63,6 +63,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--humidity-pct", type=float)
     parser.add_argument("--emissivity", type=float)
     parser.add_argument("--reflection-c", type=float)
+    parser.add_argument("--ambient-temp-c", type=float)
     parser.add_argument(
         "--api-base",
         help="Optional M3-Cloud base URL for external job status callbacks.",
@@ -101,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
             "humidity_pct": args.humidity_pct,
             "emissivity": args.emissivity,
             "reflection_c": args.reflection_c,
+            "ambient_temp_c": args.ambient_temp_c,
         }.items()
         if value is not None
     }
