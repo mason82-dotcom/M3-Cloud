@@ -116,6 +116,8 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     temperature_path = output / result["temperature_tif"]
     preview_path = output / result["preview_png"]
     metadata_path = output / result["thermal_json"]
+    hotspot_mask_path = output / result["hotspot_mask_png"]
+    hotspots_path = output / result["hotspots_json"]
 
     temperature_data = tifffile.imread(temperature_path)
     assert temperature_data.dtype == np.float32
@@ -132,6 +134,13 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     with Image.open(preview_path) as preview:
         assert preview.mode == "L"
         assert preview.size == (3, 2)
+    with Image.open(hotspot_mask_path) as mask:
+        assert mask.mode == "L"
+        assert mask.size == (3, 2)
+    hotspots = json.loads(hotspots_path.read_text(encoding="utf-8"))
+    assert hotspots["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
+    assert hotspots["component_count"] == 0
+    assert hotspots["candidate_pixels"] == 1
 
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["radiometry"]["unit"] == "degree_Celsius"
@@ -143,13 +152,19 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     }
     assert metadata["radiometry"]["api_version"] == {"api": 8, "magic": "DIRP"}
     assert manifest["capture_groups"][0]["api_version"] == {"api": 8, "magic": "DIRP"}
+    assert metadata["analysis"]["hotspots"]["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
     assert metadata["registration"]["wide_thermal_coregistered"] is False
     assert metadata["registration"]["georeferenced_temperature_raster"] is False
     assert (output / "result-manifest.json").is_file()
     assert len(manifest["input_fingerprint"]) == 64
 
     retry_decoder = FakeDecoder()
-    retried = process_handoff(handoff_path, output, retry_decoder)
+    retried = process_handoff(
+        handoff_path,
+        output,
+        retry_decoder,
+        measurement_overrides={"emissivity": 0.95},
+    )
     assert retried == manifest
     assert retry_decoder.paths == []
 
@@ -200,3 +215,85 @@ def test_process_handoff_rejects_changed_frozen_input(tmp_path):
 
     assert not output.exists()
     assert not list(tmp_path.glob(".out.staging-*"))
+
+def test_hotspot_analysis_reports_connected_candidate_regions():
+    from thermal_worker.processor import _hotspot_analysis
+
+    temperature = np.full((6, 8), 20.0, dtype=np.float32)
+    temperature[2:4, 3:6] = np.array(
+        [[31.0, 33.0, 32.0], [30.5, 42.0, 31.5]],
+        dtype=np.float32,
+    )
+
+    analysis, mask = _hotspot_analysis(
+        temperature,
+        delta_c=10.0,
+        min_pixels=4,
+    )
+
+    assert analysis["baseline_c"] == 20.0
+    assert analysis["threshold_c"] == 30.0
+    assert analysis["component_count"] == 1
+    candidate = analysis["components"][0]
+    assert candidate["pixel_count"] == 6
+    assert candidate["max_c"] == 42.0
+    assert candidate["peak_x_px"] == 4
+    assert candidate["peak_y_px"] == 3
+    assert np.count_nonzero(mask) == 6
+
+
+def test_changed_processing_options_do_not_reuse_existing_results(tmp_path):
+    source = tmp_path / "input"
+    source.mkdir()
+    wide = source / "DJI_0001_W.JPG"
+    thermal = source / "DJI_0001_T.JPG"
+    wide.write_bytes(b"wide")
+    thermal.write_bytes(b"thermal")
+    handoff = {
+        "schema_version": 3,
+        "worker_contract": "M3T_RJPEG_V1",
+        "workflow": "THERMOGRAM",
+        "platform": "M3T",
+        "job_id": "job-options",
+        "input_prefix": "M3T/site",
+        "external_path": str(source),
+        "capture_groups": [
+            {
+                "capture_group": "M3T/site/DJI_0001",
+                "files": [
+                    {
+                        "media_kind": "WIDE",
+                        "path_relative_to_input": wide.name,
+                        "filename": wide.name,
+                        "size_bytes": wide.stat().st_size,
+                        "sha256": _sha(wide),
+                    },
+                    {
+                        "media_kind": "THERMAL",
+                        "path_relative_to_input": thermal.name,
+                        "filename": thermal.name,
+                        "size_bytes": thermal.stat().st_size,
+                        "sha256": _sha(thermal),
+                    },
+                ],
+            }
+        ],
+    }
+    handoff_path = tmp_path / "handoff.json"
+    handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+    output = tmp_path / "out"
+
+    process_handoff(
+        handoff_path,
+        output,
+        FakeDecoder(),
+        hotspot_delta_c=10.0,
+    )
+    with pytest.raises(FileExistsError, match="do not match"):
+        process_handoff(
+            handoff_path,
+            output,
+            FakeDecoder(),
+            hotspot_delta_c=5.0,
+        )
+
