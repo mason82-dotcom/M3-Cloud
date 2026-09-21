@@ -1,6 +1,5 @@
 package com.lyrebird.rc.telemetry
 
-import kotlin.math.PI
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

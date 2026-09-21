@@ -1,7 +1,5 @@
 package com.lyrebird.rc.telemetry
 
-import kotlin.math.PI
-
 internal data class AttitudeRates(
     val rollRadS: Double = 0.0,
     val pitchRadS: Double = 0.0,
@@ -17,7 +15,7 @@ internal data class AttitudeRates(
  * estimator differentiates the actual samples with angle wrapping and a small low-pass filter.
  */
 internal class AttitudeRateEstimator(
-    private val monotonicNs: () -> Long = System::nanoTime,
+    private val monotonicNs: () -> Long = { System.nanoTime() },
     private val minSampleNs: Long = 10_000_000L,
     private val maxSampleNs: Long = 1_000_000_000L,
     private val alpha: Double = 0.35
