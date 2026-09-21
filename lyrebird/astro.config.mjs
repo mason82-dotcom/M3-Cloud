@@ -80,6 +80,7 @@ export default defineConfig({
 					items: [
 						{ label: 'MAVLink 2', slug: 'mavlink' },
 						{ label: 'HTTP API', slug: 'http-api' },
+						{ label: 'Enterprise Cameras', slug: 'camera-platforms' },
 						{ label: 'Telemetry', slug: 'telemetry' },
 						{ label: 'Missions', slug: 'missions' },
 						{ label: 'ROS 2', slug: 'ros' },

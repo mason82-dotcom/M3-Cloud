@@ -39,7 +39,7 @@ The lyrebird is Australia's most famous mimic — it can reproduce almost any so
 ## Key features
 
 - 🛰️ **MAVLink 2 on by default, reporting as PX4** — every aircraft is a full MAVLink 2 vehicle from boot: QGroundControl, MAVSDK, and `pymavlink` connect and fly it, Fly View and Plan view both light up, no plugin or fleet-specific handling required
-- ✈️ **Full QGroundControl mission support** — build a plan in QGC and Lyrebird flies it: take-off, land/RTL, speed, heading, camera, gimbal and region-of-interest items are all translated, either onto Lyrebird's own PID sequencer or DJI's native wayline engine. [How it works](https://SDU-UAS-Center.github.io/lyrebird/missions/)
+- ✈️ **Full QGroundControl mission support** — build a plan in QGC and Lyrebird flies it: take-off, land/RTL, speed, heading, camera, gimbal and region-of-interest items are all translated, either onto Lyrebird's own PID sequencer or DJI's native wayline engine. M3E, M3T and M3M survey camera profiles are kept separate and read back before native survey launch. [How it works](https://SDU-UAS-Center.github.io/lyrebird/missions/)
 - 🌐 **HTTP + TCP alongside it, also on by default** — REST commands and streaming JSON telemetry, kept for compatibility with WildBridge-era ground stations, as the API for what MAVLink doesn't cover yet (AI detections, live settings), and as the fast path for big transfers: HTTP saturates the Wi-Fi link for media and video, where MAVLink FTP stays deliberately slow and lightweight so it doesn't crowd the radio spectrum a whole swarm depends on
 - 🎥 **A complete video & dashboard pipeline, not just an SDK** — WHIP/WHEP through MediaMTX plus a browser dashboard for multi-drone video, telemetry, health, and settings
 - 🛡️ **Two-computer safety** — a Safety Computer can seize command authority at any time, and only it can hand control back
@@ -49,7 +49,7 @@ The lyrebird is Australia's most famous mimic — it can reproduce almost any so
 
 ## Supported hardware
 
-DJI Mini 3 / Mini 4 Pro · Mavic 3 Enterprise · Matrice 30 / 300 RTK / 350 RTK / 4 Thermal — flown from the DJI RC Pro, RC Plus, or RC-N3.
+DJI Mini 3 / Mini 4 Pro · Mavic 3 Enterprise (M3E / M3T) · Mavic 3 Multispectral (M3M) · Matrice 30 / 300 RTK / 350 RTK / 4 Thermal — flown from the DJI RC Pro, RC Pro Enterprise / RC Plus, or RC-N3 as applicable.
 [Full list](https://developer.dji.com/doc/mobile-sdk-tutorial/en/)
 
 ## In the field

@@ -35,6 +35,44 @@ Flight commands are gated twice: `lb_mav_0_allow_flight` must be on, and the com
 | **File transfer** | Read-only MAVLink FTP for listing and reading the SD card |
 | **Signing** | MAVLink 2 packet signing identifies the Safety Computer, mirroring `X-Safety-Token` on the HTTP surface |
 
+### Aircraft, GNSS, battery, and RC telemetry mapping
+
+The MAVLink stream deliberately keeps DJI source meanings separate instead of flattening every
+number into one generic status.
+
+| MAVLink message | Lyrebird source/mapping |
+|---|---|
+| `GPS_RAW_INT` | Resolved aircraft lat/lon, AMSL altitude, ground speed, **course over ground from N/E velocity**, GNSS/RTK fix type, satellite count |
+| `GLOBAL_POSITION_INT` | Resolved lat/lon, AMSL altitude, take-off-relative altitude, DJI NED velocity, compass heading |
+| `ALTITUDE` | AMSL plus take-off-relative/local altitude; terrain and bottom clearance are sent as unknown because no terrain/range source is asserted |
+| `HOME_POSITION` | Sent only after DJI `KeyIsHomeLocationSet` is true and coordinates are valid |
+| `SYS_STATUS` | Flight-controller, compass, GPS, RC receiver and battery health derived from the corresponding DJI states |
+| `BATTERY_STATUS` | Battery percentage, voltage, discharge current, temperature, available cell voltages, consumed capacity estimate and remaining-flight-time estimate |
+| `RC_CHANNELS` | Four **physical** DJI stick axes plus DJI AirLink quality; channels are not renamed to roll/pitch/yaw because RC control mode can be USA/JP/CH/CUSTOM |
+| `EXTENDED_SYS_STATE` | Landed/in-air state uses DJI flying/motor state; the M3E/M3T/M3M are reported with `MAV_VTOL_STATE_UNDEFINED`, not as transition-capable VTOL aircraft |
+
+For position resolution, Lyrebird always reads the flight-controller position. A fresh, enabled,
+connected and healthy RTK `FLOAT`/`FIXED` solution may replace **horizontal** latitude/longitude
+with DJI `RTKLocationInfo.real3DLocation`. Vertical MAVLink altitude remains tied to the
+flight-controller/take-off reference path so different altitude datums are not silently mixed.
+The raw FC position, raw RTK mobile-station position and RTK-fused position remain separate in survey
+metadata.
+
+Normal GNSS fix quality uses DJI `GPSSignalLevel`; satellite-count thresholds are only a fallback
+for an unavailable/unknown signal-level value. `GPS_RAW_INT.satellites_visible` is `255` when the
+count is unknown. HDOP/VDOP remain unknown because the DJI data consumed here does not provide them.
+
+`GPS_RAW_INT.cog` is **not** compass heading. It is calculated from north/east velocity and becomes
+MAVLink's unknown sentinel while the aircraft is effectively stationary.
+
+Battery discharge current uses DJI's negative-mA convention internally and is converted to positive
+centiamps on the MAVLink wire. Missing voltage/current/temperature/cell values use MAVLink's
+documented unknown sentinels rather than plausible-looking zeroes.
+
+`RC_CHANNELS` maps DJI's nominal `-660..+660` physical stick travel linearly to `1000..2000`.
+Its `rssi` field is DJI **AirLink quality** scaled from 0–100% into MAVLink's 0–254 range; it is
+not Android Wi-Fi RSSI. The Android Wi-Fi value remains a separate TCP/HTTP diagnostic.
+
 ### Why bulk media stays on HTTP
 
 MAVLink FTP moves data in small chunks by design — a deliberately slow, lightweight transfer so one aircraft downloading a photo doesn't crowd out the telemetry and command traffic the rest of a swarm is sharing the same radio spectrum for. HTTP has no such restraint: it uses as much of the Wi-Fi link's capacity as it can get, which is exactly what a multi-megabyte thermal capture or a video file needs. That trade-off is why `/send/listMedia` and `/send/downloadMediaByName` stay on HTTP rather than moving to MAVLink FTP — see [HTTP API](/http-api/). MAVLink FTP remains the fallback for small reads on a MAVLink-only link.

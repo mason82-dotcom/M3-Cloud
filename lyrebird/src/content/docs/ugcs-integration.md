@@ -136,6 +136,28 @@ heading (`param4`) per waypoint — perpendicular or parallel to the corridor ax
 heading for the whole grid. That is already handled per-waypoint (see the heading table above); the
 distance trigger itself is heading-independent and needs no special-casing for corridors.
 
+## M3E, M3T, and M3M survey camera policy
+
+UgCS mission geometry stays MAVLink/WPML-driven, but the camera setup before launch is
+platform-specific. Lyrebird reads the MSDK camera type and keeps the three Mavic 3 payloads separate:
+
+| Camera | Native-survey profile | Stored sources prepared before launch |
+|---|---|---|
+| M3E | `M3E_MAPPING` | `WIDE_CAMERA` |
+| M3T | `M3T_WIDE` | `WIDE_CAMERA` |
+| M3M | `M3M_RGB_MULTISPECTRAL` | `RGB_CAMERA`, `NDVI_CAMERA`, `MS_G_CAMERA`, `MS_R_CAMERA`, `MS_RE_CAMERA`, `MS_NIR_CAMERA` |
+
+The profile is applied only after the runtime camera reports every requested source, and the stored
+source set is read back from MSDK before the wayline starts. A mismatch blocks launch. This prevents
+a shared "Mavic 3 Enterprise" label from accidentally applying M3E camera assumptions to an M3T or
+M3M.
+
+The current default M3T survey profile is wide/RGB; the separately capability-gated
+`M3T_THERMAL` profile exists for thermal capture but is not silently selected for a normal
+photogrammetry grid. The current policy also does not claim a separate M3T 48 MP survey profile.
+
+See [Enterprise Camera Platforms](/camera-platforms/) for the implementation contract.
+
 ## RTK: resolved aircraft position and fix type
 
 `GPS_RAW_INT` and `GLOBAL_POSITION_INT` use Lyrebird's **resolved aircraft position**. The raw

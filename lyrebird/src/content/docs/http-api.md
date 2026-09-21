@@ -95,5 +95,15 @@ safety.requestReleaseSafetyControl()           # hand authority back to the Pilo
 | <span class="http-method get">GET</span>`/get/isManualOverrideActive` | JSON/text | Manual override state |
 | <span class="http-method get">GET</span>`/get/autoSensing/status` | JSON | AI detection status and target count |
 | <span class="http-method get">GET</span>`/get/autoSensing/targets` | JSON | Current detected targets with bounding boxes |
+| <span class="http-method get">GET</span>`/get/camera/capabilities` | JSON | Read-only MSDK camera characterization: detected M3E/M3T/M3M platform, mode/source ranges, stored capture/record sources, thermal/multispectral flags, and Vision Assist state |
+| <span class="http-method get">GET</span>`/get/camera/vision-assist` | JSON | Read-only Vision Assist capability/state probe |
+| <span class="http-method get">GET</span>`/get/survey/latest` | JSON | Metadata for the latest completed per-mission survey report, including filenames, byte counts and artifact URLs |
+| <span class="http-method get">GET</span>`/get/survey/latest/captures.csv` | CSV file | Reconciled per-capture survey metadata for the latest completed survey |
+| <span class="http-method get">GET</span>`/get/survey/latest/summary.json` | JSON file | RTK/media quality summary for the latest completed survey |
 
-> All other flight state data is available via the TCP telemetry stream on port 8081. Use `GET /config` for connection metadata and auto-discovery.
+The survey endpoints expose the **latest completed per-mission** report; they do not aggregate a
+calendar day. The CSV/summary pair is also recoverable after an app restart when the matching files
+are still present in the current flight-log directory.
+
+> Continuous flight state remains available via the TCP telemetry stream on port 8081. Use
+> `GET /config` for connection metadata and auto-discovery.

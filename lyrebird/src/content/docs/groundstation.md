@@ -35,6 +35,46 @@ Two related environment variables matter once MAVLink is in play:
 | `LB_MAVLINK_PEER_PORT` | `14550` | UDP port the *aircraft* listens on for commands. Only needs to differ from `LB_MAVLINK_PORT` when this ground station's own listen port has been moved. |
 | `LB_MAVLINK_SIGNING_KEY` | *(unset)* | 64 hex characters. When set, every outbound command is MAVLink-2-signed with it, so the aircraft treats this ground station as the Safety Computer — the MAVLink equivalent of the HTTP `X-Safety-Token` header. |
 
+## Survey export and WebODM
+
+The Python package installs a dedicated survey exporter:
+
+```bash
+lyrebird-survey-export --rc <RC-IP> --output ./lyrebird-surveys
+```
+
+It reads the RC's **latest completed per-mission** survey via:
+
+```text
+GET /get/survey/latest
+GET /get/survey/latest/captures.csv
+GET /get/survey/latest/summary.json
+```
+
+The exporter uses the reconciled CSV's `file_name`, `media_resolved` and
+`file_size_bytes` fields, downloads only resolved DJI media, and validates file size when the
+expected size is known. RTK quality comes from the survey summary JSON
+(`rtkFixed`, `rtkFloat`, `rtkStale`, `rtkMissing`) rather than being reconstructed from an
+older/different CSV schema.
+
+Original DJI image files are passed through unchanged so their EXIF/XMP metadata is preserved. The
+current path does **not** fabricate a daily `geo.txt` file or merge all flights from one calendar
+day into a single survey.
+
+To submit the package directly to WebODM:
+
+```bash
+lyrebird-survey-export \
+  --rc <RC-IP> \
+  --output ./lyrebird-surveys \
+  --webodm http://<WEBODM-HOST>:8000 \
+  --profile m3e-ortho
+```
+
+The current WebODM processing presets are `m3e-ortho`, `m3e-3d-building` and
+`m3e-fast-check`. They are processing profiles for M3E RGB datasets; the M3T/M3M capture
+capability work is separate and does not imply equivalent WebODM presets yet.
+
 ## Python interface (`DJIInterface`)
 
 `GroundStation/Python/lyrebird_groundstation/dji_client.py` provides one class that wraps every command, every telemetry field, and both wires behind the same API — a script written against `DJIInterface` doesn't change when the transport underneath it does. It runs its telemetry reader (TCP, MAVLink, or both) on a background thread and hands back thread-safe snapshots, so a caller reading telemetry never blocks on the network and never sees a half-written update.

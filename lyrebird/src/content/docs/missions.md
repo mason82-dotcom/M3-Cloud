@@ -122,6 +122,42 @@ This groups separately from the per-waypoint `REACH_POINT` action groups the res
 builds — a `MULTIPLE_DISTANCE` group is not tied to any single waypoint's arrival, so it cannot be
 folded into them.
 
+### Camera profile is verified before a native survey starts
+
+A distance-triggered mission does not assume that every Mavic 3 camera stores the same sources.
+Immediately before the KMZ is launched, Lyrebird identifies the attached MSDK camera type and
+selects the platform-specific default survey profile:
+
+| Platform | Survey profile | Stored sources |
+|---|---|---|
+| M3E | `M3E_MAPPING` | `WIDE_CAMERA` |
+| M3T | `M3T_WIDE` | `WIDE_CAMERA` |
+| M3M | `M3M_RGB_MULTISPECTRAL` | RGB, NDVI, G, R, red-edge and NIR MSDK sources |
+
+The app switches to `PHOTO_NORMAL`, writes `KeyCaptureCameraStreamSettings`, performs a fresh
+readback, and only launches the native mission if the returned source set matches the requested
+profile. A camera/profile mismatch or missing source therefore fails before take-off rather than
+silently flying a survey with the wrong dataset.
+
+The wayline action itself continues to use DJI payload position `0`. This is independent of which
+lens/source set is stored. `DO_SET_CAM_TRIGG_DIST.param4` is preserved for diagnostics but is not
+reinterpreted as a DJI payload selector.
+
+See [Enterprise Camera Platforms](/camera-platforms/) for the full M3E/M3T/M3M policy.
+
+### Survey completion and report finalization
+
+MSDK 5.18 can report a native wayline as `FINISHED` both after a natural completion and after
+`stopMission()`. Lyrebird therefore tracks its own finish reason instead of treating every
+`FINISHED` state as success. Survey reports distinguish `mission_finished`,
+`mission_stopped`, `mission_interrupted`, disconnect/start/upload failures and other terminal
+reasons.
+
+After a survey ends, generated-media events are still accepted until the camera has been quiet long
+enough (with a hard maximum wait) before media reconciliation begins. The resulting
+`*_captures.csv` and `*_survey-summary.json` files are registered as the latest completed survey
+and can be downloaded through the [HTTP API](/http-api/).
+
 ## Onboard, for comparison
 
 The `onboard` executor is the simpler of the two conceptually: a loop in the app walks the item list

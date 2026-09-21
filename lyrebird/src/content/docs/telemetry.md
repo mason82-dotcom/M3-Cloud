@@ -17,7 +17,7 @@ Continuous newline-delimited JSON stream. Connect and read; the app pushes updat
 | `heading` | `float` | Compass heading (degrees) |
 | `attitude` | `{pitch, roll, yaw}` | Aircraft attitude (degrees) |
 | `location` | `{latitude, longitude, altitude}` | GPS position |
-| `phoneLocation` | `{latitude, longitude, heading, pressure, battery, wifiRssi}` | Operator phone/RC location and sensor data |
+| `phoneLocation` | `{latitude, longitude, heading, pressure, battery, wifiRssi}` | Operator Android/RC-device location and sensor data. `wifiRssi` is the device's Wi-Fi RSSI, **not** the DJI aircraft AirLink quality used by MAVLink `RC_CHANNELS.rssi` |
 | `gimbalAttitude` | `{pitch, roll, yaw}` | Gimbal orientation (degrees) |
 | `gimbalJointAttitude` | `{pitch, roll, yaw}` | Gimbal joint angles (degrees) |
 | `zoomRatio` | `float` | Camera zoom ratio |
@@ -51,6 +51,16 @@ Continuous newline-delimited JSON stream. Connect and read; the app pushes updat
 | `autoSensingActive` | `bool` | On-device target detection running |
 | `detectedTargets` | `array` | Detected targets from auto-sensing |
 | `webRtc` | `object` | WHIP/WebRTC sender state, FPS, processing, drop, error, bitrate, and recovery metrics when video is active; `activeCamera` and `scaleMode` identify the surface path |
+
+### TCP vs. MAVLink controller/link telemetry
+
+The legacy TCP JSON remains focused on the WildBridge-compatible telemetry contract. DJI RC stick
+channels, RC battery and DJI AirLink quality are currently carried by the MAVLink/system-settings
+path instead of being overloaded into `phoneLocation`.
+
+In particular, do not treat `phoneLocation.wifiRssi` as the aircraft control-link strength.
+MAVLink `RC_CHANNELS.rssi` is derived from DJI AirLink quality, while Android Wi-Fi RSSI describes
+the RC/phone's separate IP network connection.
 
 ### Reading video metrics
 
