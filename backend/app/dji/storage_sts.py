@@ -52,6 +52,30 @@ def pilot_storage_ready(settings: Settings) -> bool:
     )
 
 
+def create_pilot_storage_client(settings: Settings):
+    endpoint = (
+        settings.dji_pilot_storage_sts_endpoint.strip()
+        or settings.s3_endpoint.strip()
+    )
+    access_key = (
+        settings.dji_pilot_storage_access_key.strip()
+        or settings.s3_access_key.strip()
+    )
+    secret_key = (
+        settings.dji_pilot_storage_secret_key.strip()
+        or settings.s3_secret_key.strip()
+    )
+    region = settings.dji_pilot_storage_region.strip() or "us-east-1"
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name=region,
+        config=Config(signature_version="s3v4"),
+    )
+
+
 def issue_pilot_sts_credentials(
     settings: Settings,
     *,
