@@ -287,6 +287,7 @@ def thermal_result_manifest_details(
         "source_handoff_schema",
         "processing_options",
         "decoder_provenance",
+        "source_identity",
     ):
         value = manifest.get(key)
         if value is not None:
@@ -393,6 +394,7 @@ def thermal_result_manifest_details(
             "measurement_abi",
             "measurement_ranges",
             "radiometry_integrity",
+            "source_identity",
             "registration",
             "statistics",
             "hotspots",
