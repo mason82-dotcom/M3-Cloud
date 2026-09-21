@@ -178,3 +178,83 @@ async def test_telemetry_update_publishes_live_event() -> None:
     assert event["type"] == "telemetry"
     assert event["device_sn"] == "M3E123"
     assert event["state"]["relative_altitude_m"] == 12.0
+
+
+
+def test_complete_thing_model_is_preserved() -> None:
+    raw = {
+        "height_limit": 120,
+        "obstacle_avoidance": {"horizon": 1, "upside": 1, "downside": 1},
+        "firmware_version": "09.01.00.00",
+        "future_dji_property": {"nested": [1, 2, 3]},
+        "cameras": [
+            {
+                "payload_index": "67-0-0",
+                "wide_exposure_mode": 4,
+                "wide_iso": 7,
+                "wide_shutter_speed": 12,
+                "zoom_focus_mode": 1,
+                "zoom_focus_value": 47,
+                "ir_metering_area": {
+                    "aver_temperature": 31.5,
+                    "max_temperature_point": {
+                        "x": 0.4,
+                        "y": 0.3,
+                        "temperature": 52.1,
+                    },
+                },
+                "future_camera_property": "kept",
+            }
+        ],
+    }
+
+    state = normalize_telemetry(
+        raw,
+        source_sn="M3T123",
+        gateway_sn="RC123",
+        source_timestamp_ms=1000,
+        received_at_ms=1100,
+    )
+
+    assert state["height_limit"] == 120
+    assert state["obstacle_avoidance"]["horizon"] == 1
+    assert state["firmware_version"] == "09.01.00.00"
+    assert state["cameras"][0]["wide_exposure_mode"] == 4
+    assert state["cameras"][0]["zoom_focus_value"] == 47
+    assert (
+        state["cameras"][0]["ir_metering_area"]["max_temperature_point"]["temperature"]
+        == 52.1
+    )
+    assert state["cameras"][0]["future_camera_property"] == "kept"
+    assert state["dji_properties"]["future_dji_property"] == {"nested": [1, 2, 3]}
+
+
+def test_rc_pro_thing_model_fields_are_preserved() -> None:
+    state = normalize_telemetry(
+        {
+            "capacity_percent": 73,
+            "firmware_version": "02.01.05.00",
+            "wireless_link": {
+                "dongle_number": 1,
+                "4g_link_state": 1,
+                "sdr_link_state": 1,
+                "link_workmode": 1,
+                "sdr_quality": 4,
+                "4g_quality": 5,
+            },
+            "live_capacity": {
+                "available_video_number": 2,
+                "coexist_video_number_max": 1,
+                "device_list": [],
+            },
+        },
+        source_sn="RC123",
+        gateway_sn="RC123",
+        source_timestamp_ms=1000,
+        received_at_ms=1100,
+    )
+
+    assert state["capacity_percent"] == 73
+    assert state["wireless_link"]["4g_link_state"] == 1
+    assert state["firmware_version"] == "02.01.05.00"
+    assert state["live_capacity"]["available_video_number"] == 2
