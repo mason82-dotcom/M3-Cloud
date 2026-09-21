@@ -147,6 +147,8 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
         "job_id": "job",
         "source_handoff_schema": 3,
         "input_fingerprint": "a" * 64,
+        "georeferenced_capture_count": 1,
+        "capture_points_geojson": "capture-points.geojson",
         "capture_groups": [
             {
                 "capture_group": "M3T/site/DJI_0001",
@@ -183,6 +185,7 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
 
     details = thermal_result_manifest_details(root, expected_job_id="job")
 
+    capture_points = details["capture-points.geojson"]
     temperature = details[
         "captures/00001_DJI_0001_deadbeef00/temperature.tif"
     ]
@@ -195,6 +198,10 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
         "captures/00001_DJI_0001_deadbeef00/hotspots.json"
     ]
 
+    assert capture_points["result_kind"] == "THERMAL_CAPTURE_POINTS"
+    assert capture_points["geometry_scope"] == "CAPTURE_CENTER_ONLY"
+    assert capture_points["temperature_pixels_georeferenced"] is False
+    assert capture_points["feature_count"] == 1
     assert temperature["result_kind"] == "TEMPERATURE_RASTER"
     assert temperature["temperature_unit"] == "degree_Celsius"
     assert temperature["georeferenced"] is False
