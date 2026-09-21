@@ -90,6 +90,14 @@ export interface Telemetry {
     rtk_satellites?: number | null;
   };
   battery?: BatteryState;
+  limits?: {
+    max_flight_height_m?: number | null;
+    max_flight_distance_m?: number | null;
+    distance_limit_enabled?: boolean | null;
+    rth_altitude_m?: number | null;
+    rth_altitude_effective_m?: number | null;
+    rth_altitude_status?: string | null;
+  };
   attitude?: {
     yaw_deg?: number | null;
     roll_deg?: number | null;
