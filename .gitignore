@@ -11,7 +11,6 @@ build/
 .DS_Store
 .idea/
 .vscode/
-# Local Android signing and machine-specific configuration
 local.properties
 *.jks
 *.keystore
