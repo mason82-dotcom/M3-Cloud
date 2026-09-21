@@ -94,6 +94,16 @@ class M3CloudApi:
             raise TypeError("M3-Cloud processing jobs response must be a list")
         return [item for item in value if isinstance(item, dict)]
 
+    def claim(self, job_id: str, *, retry_failed: bool = False) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            f"/api/v1/processing/jobs/{job_id}/external-claim",
+            {"retry_failed": bool(retry_failed)},
+        )
+        if not isinstance(value, dict):
+            raise TypeError("M3-Cloud claim response must be an object")
+        return value
+
     def thermogram_handoff(self, job_id: str) -> dict[str, Any]:
         value = self._request(
             "GET",
