@@ -54,7 +54,7 @@ data class WebRTCStreamMetrics(
         val networkLabel = networkLabel()
         val hostLabel = whipHost?.let { " host $it" }.orEmpty()
         val listenersLabel = readerCount?.let { " listeners $it" }.orEmpty()
-            return buildString {
+        return buildString {
                 append("WHIP $status$saturationLabel$hostLabel$listenersLabel out $resolutionLabel")
                 append(" req ${requestedLabel()} src ${sourceLabel()}")
                 append(" fps ${fpsLabel()} drop ${droppedFps.format1()}")
