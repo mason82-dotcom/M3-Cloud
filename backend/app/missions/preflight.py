@@ -260,16 +260,143 @@ def evaluate_preflight(
         if isinstance(telemetry.get("battery"), dict)
         else {}
     )
-    if battery.get("capacity_percent") is not None:
+    capacity_percent = battery.get("capacity_percent")
+    remain_flight_time_s = battery.get("remain_flight_time_s")
+    return_home_power_percent = battery.get("return_home_power_percent")
+    landing_power_percent = battery.get("landing_power_percent")
+
+    if capacity_percent is not None:
         add(
             "battery",
             "INFO",
             "Aircraft battery telemetry is available.",
             {
-                "capacity_percent": battery.get("capacity_percent"),
-                "remain_flight_time_s": battery.get("remain_flight_time_s"),
+                "capacity_percent": capacity_percent,
+                "remain_flight_time_s": remain_flight_time_s,
+                "return_home_power_percent": return_home_power_percent,
+                "landing_power_percent": landing_power_percent,
             },
         )
+
+    if planning is not None and planning.get("planner") == "M3_CLOUD_GRID":
+        derived = (
+            planning.get("derived")
+            if isinstance(planning.get("derived"), dict)
+            else {}
+        )
+        nominal_route_time_s = derived.get("nominal_route_time_s")
+        if (
+            isinstance(nominal_route_time_s, (int, float))
+            and not isinstance(nominal_route_time_s, bool)
+            and nominal_route_time_s > 0
+        ):
+            if (
+                isinstance(remain_flight_time_s, (int, float))
+                and not isinstance(remain_flight_time_s, bool)
+                and remain_flight_time_s > 0
+            ):
+                margin_s = float(remain_flight_time_s) - float(nominal_route_time_s)
+                recommended_reserve_s = max(120.0, float(nominal_route_time_s) * 0.20)
+                details = {
+                    "nominal_route_time_s": float(nominal_route_time_s),
+                    "remain_flight_time_s": float(remain_flight_time_s),
+                    "margin_s": margin_s,
+                    "recommended_reserve_s": recommended_reserve_s,
+                    "scope": "GRID_ROUTE_ONLY",
+                }
+                if margin_s < 0:
+                    add(
+                        "planner_flight_time",
+                        "BLOCK",
+                        "DJI remaining-flight-time estimate is shorter than the nominal grid route.",
+                        details,
+                    )
+                elif margin_s < recommended_reserve_s:
+                    add(
+                        "planner_flight_time",
+                        "WARN",
+                        "Nominal grid fits the current DJI remaining-flight-time estimate, but "
+                        "the remaining margin is below the planner reserve for takeoff, ingress, "
+                        "final RTH/landing and wind.",
+                        details,
+                    )
+                else:
+                    add(
+                        "planner_flight_time",
+                        "PASS",
+                        "Nominal grid fits the current DJI remaining-flight-time estimate with "
+                        "the planner reserve still available.",
+                        details,
+                    )
+            elif vehicle is not None:
+                add(
+                    "planner_flight_time",
+                    "INFO",
+                    "Grid duration is known, but DJI remaining-flight-time telemetry is unavailable.",
+                    {
+                        "nominal_route_time_s": float(nominal_route_time_s),
+                        "scope": "GRID_ROUTE_ONLY",
+                    },
+                )
+
+        numeric_capacity = (
+            float(capacity_percent)
+            if isinstance(capacity_percent, (int, float))
+            and not isinstance(capacity_percent, bool)
+            else None
+        )
+        numeric_rth = (
+            float(return_home_power_percent)
+            if isinstance(return_home_power_percent, (int, float))
+            and not isinstance(return_home_power_percent, bool)
+            else None
+        )
+        numeric_landing = (
+            float(landing_power_percent)
+            if isinstance(landing_power_percent, (int, float))
+            and not isinstance(landing_power_percent, bool)
+            else None
+        )
+        if numeric_capacity is not None and numeric_landing is not None and numeric_capacity <= numeric_landing:
+            add(
+                "battery_power_margin",
+                "BLOCK",
+                "Battery is at or below DJI's forced-landing power threshold.",
+                {
+                    "capacity_percent": numeric_capacity,
+                    "return_home_power_percent": numeric_rth,
+                    "landing_power_percent": numeric_landing,
+                },
+            )
+        elif numeric_capacity is not None and numeric_rth is not None:
+            rth_margin = numeric_capacity - numeric_rth
+            details = {
+                "capacity_percent": numeric_capacity,
+                "return_home_power_percent": numeric_rth,
+                "landing_power_percent": numeric_landing,
+                "margin_above_return_home_percent": rth_margin,
+            }
+            if rth_margin <= 0:
+                add(
+                    "battery_power_margin",
+                    "BLOCK",
+                    "Battery is at or below DJI's estimated power required to return home.",
+                    details,
+                )
+            elif rth_margin < 10:
+                add(
+                    "battery_power_margin",
+                    "WARN",
+                    "Battery margin above DJI's current return-home requirement is below 10 percentage points.",
+                    details,
+                )
+            else:
+                add(
+                    "battery_power_margin",
+                    "PASS",
+                    "Battery remains more than 10 percentage points above DJI's current return-home requirement.",
+                    details,
+                )
 
     runtime = (
         telemetry.get("mission")
