@@ -119,7 +119,13 @@ def merge_transport_telemetry(mavlink: dict[str, Any] | None, tcp: dict[str, Any
     }
     return merged
 
-def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any] | None = None, camera_capabilities: dict[str, Any] | None = None) -> VehicleSnapshot:
+def normalize_config(
+    host: str,
+    config: dict[str, Any],
+    telemetry: dict[str, Any] | None = None,
+    camera_capabilities: dict[str, Any] | None = None,
+    settings_snapshot: dict[str, Any] | None = None,
+) -> VehicleSnapshot:
     name = str(config.get("droneName") or host)
     caps = camera_capabilities or {}
     # Lyrebird exposes both the raw DJI CameraType and its normalized platform.
@@ -131,6 +137,19 @@ def normalize_config(host: str, config: dict[str, Any], telemetry: dict[str, Any
         platform = platform_from_camera_type(caps.get("platform"))
     model = platform.value if platform != AircraftPlatform.UNKNOWN else "LYREBIRD_AIRCRAFT"
     enriched = attach_payload_capabilities(normalize_aircraft_state(telemetry, source="lyrebird"), platform)
+    if enriched is not None and isinstance(settings_snapshot, dict):
+        enriched["limits"] = {
+            "max_flight_height_m": _finite(settings_snapshot.get("maxFlightHeight")),
+            "max_flight_distance_m": _finite(settings_snapshot.get("maxFlightDistance")),
+            "distance_limit_enabled": (
+                settings_snapshot.get("distanceLimitEnabled")
+                if isinstance(settings_snapshot.get("distanceLimitEnabled"), bool)
+                else None
+            ),
+            "rth_altitude_m": _finite(settings_snapshot.get("rthAltitude")),
+            "rth_altitude_effective_m": _finite(settings_snapshot.get("rthAltitudeEffective")),
+            "rth_altitude_status": settings_snapshot.get("rthAltitudeStatus"),
+        }
     if enriched is not None and caps:
         enriched["payload"]["camera"] = {
             "component_index": caps.get("componentIndex"),
@@ -255,7 +274,13 @@ class LyrebirdVehicleProvider:
             config = merge_identity_config(config, identity_settings)
             mavlink = self._mavlink_collector.snapshot(host) if self._mavlink_collector is not None else None
             telemetry = merge_transport_telemetry(mavlink, tcp)
-            return normalize_config(host, config, telemetry, camera_caps)
+            return normalize_config(
+                host,
+                config,
+                telemetry,
+                camera_caps,
+                identity_settings,
+            )
         except (httpx.HTTPError, ValueError):
             return None
 
