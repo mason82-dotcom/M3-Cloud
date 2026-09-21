@@ -137,6 +137,7 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
                 "width": 640,
                 "height": 512,
                 "sdk_label": "1.8_20251211",
+                "api_version": {"api": 8, "magic": "DIRP"},
                 "measurement_mode": "sdk_native",
             }
         ],
@@ -159,6 +160,7 @@ def test_native_thermal_result_manifest_is_classified(tmp_path: Path) -> None:
     assert temperature["georeferenced"] is False
     assert temperature["statistics"]["max_c"] == 42.5
     assert temperature["sdk_label"] == "1.8_20251211"
+    assert temperature["api_version"] == {"api": 8, "magic": "DIRP"}
     assert preview["result_kind"] == "THERMAL_PREVIEW"
     assert metadata["result_kind"] == "THERMAL_METADATA"
     assert details["result-manifest.json"]["result_kind"] == "THERMAL_MANIFEST"
