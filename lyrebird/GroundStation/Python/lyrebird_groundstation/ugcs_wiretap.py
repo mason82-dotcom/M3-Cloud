@@ -8,9 +8,9 @@ This is a bench-validation guard, not an authentication boundary. MAVLink signin
 aircraft-side trust mechanism.
 """
 
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
-import argparse  # noqa: I001
+import argparse
 import contextlib
 import hashlib
 import json
