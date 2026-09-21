@@ -65,6 +65,19 @@ in thermal-sensor pixel space. `capture-points.geojson` contains only the
 source image position (`CAPTURE_CENTER_ONLY`). WIDE/THERMAL coregistration and
 pixel-level map georeferencing are separate processing stages.
 
+`registration-audit.json` is deliberately an **evidence artifact**, not a
+registration result. For every frozen WIDE/THERMAL pair it records the evidence
+that is actually present: capture-time delta, GPS separation, gimbal and flight
+attitude deltas, DJI/GPS altitude deltas, image dimensions/focal-length
+metadata, and raw DJI calibration hints. Job-level `evidence_counts` report how
+many pairs contain each evidence class.
+
+Those counts are presence/completeness facts only. They are not a quality score,
+do not imply that two images are optically aligned, and never change
+`status: NOT_REGISTERED`. A later registration stage must provide a separately
+validated camera-model-specific intrinsic/extrinsic transform before any thermal
+pixel or hotspot can be projected into WIDE imagery or map coordinates.
+
 ## Install
 
 ```bash
