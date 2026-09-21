@@ -54,12 +54,12 @@ android {
     def signingStorePassword = resolveSecret("STORE_PASSWORD")
     def signingKeyAlias = resolveSecret("KEY_ALIAS")
     def signingKeyPassword = resolveSecret("KEY_PASSWORD")
-    def releaseSigningConfigured = [
+    def hasReleaseSigning = [
         signingStoreFile,
         signingStorePassword,
         signingKeyAlias,
         signingKeyPassword,
-    ].every { value -> value != null && value.trim() }
+    ].every { it }
 
     namespace = 'com.lyrebird.rc'
     compileSdk = Integer.parseInt(project.ANDROID_COMPILE_SDK_VERSION)
@@ -97,8 +97,9 @@ android {
         }
     }
 
+    // Configure release signing only when all credentials are provided externally.
     signingConfigs {
-        if (releaseSigningConfigured) {
+        if (hasReleaseSigning) {
             release {
                 storeFile rootProject.file(signingStoreFile)
                 storePassword signingStorePassword
@@ -112,7 +113,7 @@ android {
         release {
             minifyEnabled = true
             shrinkResources = false
-            if (releaseSigningConfigured) {
+            if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }
         }
