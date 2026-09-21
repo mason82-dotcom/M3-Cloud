@@ -38,7 +38,11 @@ LYREBIRD_UPLOAD_COMMANDS = frozenset(
 )
 
 
-def normalize_plan(items: list[dict[str, Any]]) -> dict[str, object]:
+def normalize_plan(
+    items: list[dict[str, Any]],
+    *,
+    planning: dict[str, Any] | None = None,
+) -> dict[str, object]:
     if len(items) > MAX_MISSION_ITEMS:
         raise ValueError(f"Mission exceeds {MAX_MISSION_ITEMS} items")
 
@@ -94,6 +98,15 @@ def normalize_plan(items: list[dict[str, Any]]) -> dict[str, object]:
         "protocol": "MAVLINK_MISSION",
         "items": normalized,
     }
+    if planning is not None:
+        try:
+            encoded = json.dumps(planning, allow_nan=False, separators=(",", ":"))
+            copied = json.loads(encoded)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Mission planning context must be finite JSON data") from exc
+        if not isinstance(copied, dict):
+            raise ValueError("Mission planning context must be an object")
+        payload["planning"] = copied
     return payload
 
 
@@ -139,8 +152,9 @@ def compatibility(plan: dict[str, object]) -> dict[str, object]:
         "lyrebird_unsupported_frames": unsupported_frames,
         "dji_native_execution_compatible": None,
         "note": (
-            "Planning/handoff only. New M3-Cloud revisions persist MAV_FRAME explicitly, "
-            "but M3-Cloud still exposes no mission upload or execution action."
+            "Planning/handoff only. New M3-Cloud revisions persist MAV_FRAME explicitly. "
+            "M3-Cloud may upload a sealed package when the server upload gate is enabled; "
+            "mission execution actions remain disabled."
         ),
     }
 

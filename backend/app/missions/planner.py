@@ -498,7 +498,32 @@ def build_grid_preview(
         for current, following in zip(route_xy, route_xy[1:])
     )
 
-    plan = normalize_plan(items)
+    planning_context = {
+        "schema_version": 1,
+        "planner": "M3_CLOUD_GRID",
+        "platform": profile.platform,
+        "capture_profile": profile.capture_profile,
+        "planning_sensor": profile.planning_sensor,
+        "geometry_source": profile.geometry_source,
+        "parameters": {
+            "gsd_cm": gsd_cm,
+            "forward_overlap_pct": forward_overlap_pct,
+            "side_overlap_pct": side_overlap_pct,
+            "direction_deg": direction,
+            "requested_speed_mps": requested_speed,
+            "gimbal_pitch_deg": pitch,
+            "overshoot_m": effective_overshoot_m,
+        },
+        "derived": {
+            "altitude_m": altitude_m,
+            "trigger_distance_m": trigger_distance_m,
+            "line_spacing_m": actual_line_spacing_m,
+            "effective_speed_mps": effective_speed_mps,
+            "capture_segment_count": len(segments_xy),
+            "expected_photos_upper_bound": expected_photos,
+        },
+    }
+    plan = normalize_plan(items, planning=planning_context)
     compat = compatibility(plan)
     if not compat["wire_ready"]:
         raise ValueError("Generated survey is not compatible with the Lyrebird upload surface")

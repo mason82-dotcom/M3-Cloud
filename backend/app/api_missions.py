@@ -50,6 +50,7 @@ class MissionCreate(BaseModel):
     aircraft_sn: str | None = Field(default=None, max_length=128)
     preferred_executor: Literal["DJI_NATIVE", "ONBOARD"] | None = None
     items: list[MissionItemInput] = Field(default_factory=list)
+    planning: dict[str, Any] | None = None
 
 
 class MissionUpdate(BaseModel):
@@ -59,6 +60,7 @@ class MissionUpdate(BaseModel):
     preferred_executor: Literal["DJI_NATIVE", "ONBOARD"] | None = None
     status: Literal["DRAFT", "READY", "ARCHIVED"] | None = None
     items: list[MissionItemInput] | None = None
+    planning: dict[str, Any] | None = None
 
 
 class GridPlannerPoint(BaseModel):
@@ -173,7 +175,10 @@ async def _validate_survey(session, survey_id: uuid.UUID | None) -> None:
         )
 
 
-def _input_plan(items: list[MissionItemInput]) -> dict[str, object]:
+def _input_plan(
+    items: list[MissionItemInput],
+    planning: dict[str, Any] | None = None,
+) -> dict[str, object]:
     try:
         return normalize_plan(
             [
@@ -182,7 +187,8 @@ def _input_plan(items: list[MissionItemInput]) -> dict[str, object]:
                     "seq": item.seq if item.seq is not None else index,
                 }
                 for index, item in enumerate(items)
-            ]
+            ],
+            planning=planning,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -296,7 +302,7 @@ async def mission_detail(
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_mission(body: MissionCreate) -> dict[str, Any]:
-    plan = _input_plan(body.items)
+    plan = _input_plan(body.items, body.planning)
     now = datetime.now(timezone.utc)
     mission = Mission(
         survey_id=body.survey_id,
@@ -372,8 +378,14 @@ async def update_mission(
         if "preferred_executor" in values:
             mission.preferred_executor = body.preferred_executor
 
+        if "planning" in values and body.items is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Planning context can only be changed together with mission items",
+            )
+
         if body.items is not None:
-            plan = _input_plan(body.items)
+            plan = _input_plan(body.items, body.planning)
             mission.plan_json = plan
             mission.plan_sha256 = plan_sha256(plan)
             mission.item_count = len(body.items)
