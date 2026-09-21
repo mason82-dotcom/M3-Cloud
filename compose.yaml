@@ -62,6 +62,29 @@ services:
       retries: 30
       start_period: 5s
 
+  dronedb:
+    image: ${DRONEDB_IMAGE:-dronedb/registry:v2.6.6}
+    restart: unless-stopped
+    environment:
+      AppSettings__Secret: ${DRONEDB_SECRET:-change-me-dronedb-secret-please-rotate}
+      AppSettings__DefaultAdmin__Email: ${DRONEDB_ADMIN_EMAIL:-admin@example.com}
+      AppSettings__DefaultAdmin__UserName: ${DRONEDB_ADMIN_USERNAME:-admin}
+      AppSettings__DefaultAdmin__Password: ${DRONEDB_ADMIN_PASSWORD:-change-me-dronedb}
+      CPL_TMPDIR: /data/temp
+      TMPDIR: /data/temp
+      TEMP: /data/temp
+      QT_LOGGING_RULES: "*.warning=false"
+    volumes:
+      - dronedb_data:/data
+    ports:
+      - "${DRONEDB_PORT:-5000}:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5000/quickhealth"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   backend:
     build:
       context: ./backend
@@ -104,6 +127,13 @@ services:
       M3CLOUD_MEDIA_AUTO_MATCH_MAX_SAMPLE_TIME_DELTA_SECONDS: ${M3CLOUD_MEDIA_AUTO_MATCH_MAX_SAMPLE_TIME_DELTA_SECONDS:-5}
       M3CLOUD_PROCESSING_IMPORT_ROOT: /processing-import
       M3CLOUD_PROCESSING_IMPORT_HANDOFF_ROOT: ${M3CLOUD_PROCESSING_IMPORT_HANDOFF_ROOT:-}
+      M3CLOUD_DRONEDB_ENABLED: ${M3CLOUD_DRONEDB_ENABLED:-true}
+      M3CLOUD_DRONEDB_URL: ${M3CLOUD_DRONEDB_URL:-http://dronedb:5000}
+      M3CLOUD_DRONEDB_PUBLIC_URL: ${M3CLOUD_DRONEDB_PUBLIC_URL:-http://localhost:5000}
+      M3CLOUD_DRONEDB_USERNAME: ${DRONEDB_ADMIN_USERNAME:-admin}
+      M3CLOUD_DRONEDB_PASSWORD: ${DRONEDB_ADMIN_PASSWORD:-change-me-dronedb}
+      M3CLOUD_DRONEDB_ORG: ${M3CLOUD_DRONEDB_ORG:-m3cloud}
+      M3CLOUD_DRONEDB_TIMEOUT_SECONDS: ${M3CLOUD_DRONEDB_TIMEOUT_SECONDS:-300}
       M3CLOUD_WEBODM_ENABLED: ${M3CLOUD_WEBODM_ENABLED:-false}
       M3CLOUD_WEBODM_URL: ${M3CLOUD_WEBODM_URL:-}
       M3CLOUD_WEBODM_TOKEN: ${M3CLOUD_WEBODM_TOKEN:-}
@@ -120,6 +150,8 @@ services:
       redis:
         condition: service_healthy
       seaweedfs:
+        condition: service_healthy
+      dronedb:
         condition: service_healthy
       emqx:
         condition: service_started
@@ -147,3 +179,4 @@ volumes:
   emqx_data:
   emqx_log:
   object_storage_data:
+  dronedb_data:
