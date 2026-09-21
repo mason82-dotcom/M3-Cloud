@@ -122,6 +122,9 @@ def _write_temperature_tiff(
     *,
     source_sha256: str | None,
     sdk_label: str,
+    api_version: Mapping[str, int | str],
+    rjpeg_version: Mapping[str, int],
+    measurement_abi: str,
 ) -> None:
     description = {
         "schema_version": 1,
@@ -130,6 +133,9 @@ def _write_temperature_tiff(
         "source_sha256": source_sha256,
         "decoder": "DJI_DIRP",
         "sdk_label": sdk_label,
+        "api_version": dict(api_version),
+        "rjpeg_version": dict(rjpeg_version),
+        "measurement_abi": measurement_abi,
         "georeferenced": False,
     }
     tifffile.imwrite(
@@ -242,6 +248,9 @@ def process_handoff(
                     else None
                 ),
                 sdk_label=decoded.sdk_label,
+                api_version=decoded.api_version,
+                rjpeg_version=decoded.rjpeg_version,
+                measurement_abi=decoded.measurement_abi,
             )
             preview = _preview(temperature, statistics)
             preview.save(preview_path, format="PNG")
