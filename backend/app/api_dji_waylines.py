@@ -142,6 +142,7 @@ def _matches_filters(
     template_type: list[int] | None,
     drone_model_keys: list[str] | None,
     payload_model_key: list[str] | None,
+    action_type: int | None,
     key: str | None,
 ) -> bool:
     if favorited is not None and bool(item.get("favorited")) is not favorited:
@@ -159,6 +160,9 @@ def _matches_filters(
         actual_payloads = set(item.get("payload_model_keys") or [])
         if not actual_payloads.intersection(payload_model_key):
             return False
+
+    if action_type is not None and int(item.get("action_type") or 0) != action_type:
+        return False
 
     if key and key.casefold() not in str(item.get("name") or "").casefold():
         return False
@@ -201,6 +205,7 @@ async def list_waylines(
     template_type: list[int] | None = Query(default=None),
     drone_model_keys: list[str] | None = Query(default=None),
     payload_model_key: list[str] | None = Query(default=None),
+    action_type: int | None = Query(default=None, ge=0),
 ) -> dict[str, object]:
     _validate_workspace(workspace_id)
     _validate_token(x_auth_token)
@@ -237,6 +242,7 @@ async def list_waylines(
             template_type=template_type,
             drone_model_keys=drone_model_keys,
             payload_model_key=payload_model_key,
+            action_type=action_type,
             key=key,
         ):
             items.append(item)
@@ -257,6 +263,7 @@ async def list_waylines(
             template_type=template_type,
             drone_model_keys=drone_model_keys,
             payload_model_key=payload_model_key,
+            action_type=action_type,
             key=key,
         ):
             items.append(item)
