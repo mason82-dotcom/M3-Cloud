@@ -287,7 +287,7 @@ DRONEDB_PORT=5000
 DRONEDB_PUBLIC_URL=http://localhost:5000
 DRONEDB_SECRET=change-me-dronedb-secret-please-rotate
 DRONEDB_ADMIN_USERNAME=admin
-DRONEDB_ADMIN_PASSWORD=change-me-dronedb
+DRONEDB_ADMIN_PASSWORD=change-me-dronedb-1
 DRONEDB_DB_ROOT_PASSWORD=change-me-dronedb-root
 DRONEDB_DB_PASSWORD=change-me-dronedb-db
 
