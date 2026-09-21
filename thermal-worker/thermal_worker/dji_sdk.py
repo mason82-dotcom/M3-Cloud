@@ -172,33 +172,72 @@ class DjiThermalSdk:
         self._bind()
 
     def _header_sources(self) -> list[str]:
+        search_roots: list[Path] = []
+        release_dir = getattr(self, "release_dir", None)
+        if isinstance(release_dir, Path):
+            search_roots.extend(
+                [release_dir, *list(release_dir.parents)[:5]]
+            )
+        search_roots.extend(
+            [self.sdk_dir, *list(self.sdk_dir.parents)[:5]]
+        )
+
         candidates: list[Path] = []
-        search_roots = [self.sdk_dir, *list(self.sdk_dir.parents)[:4]]
+        seen_roots: set[Path] = set()
         for root in search_roots:
+            try:
+                resolved_root = root.resolve()
+            except OSError:
+                resolved_root = root
+            if resolved_root in seen_roots:
+                continue
+            seen_roots.add(resolved_root)
             candidates.extend(
                 [
                     root / "tsdk-core" / "api" / "dirp_api.h",
                     root / "api" / "dirp_api.h",
+                    root / "include" / "dirp_api.h",
+                    root / "dirp_api.h",
                 ]
             )
-        if self.sdk_dir.is_dir():
-            candidates.extend(self.sdk_dir.glob("**/dirp_api.h"))
 
         sources: list[str] = []
-        seen: set[Path] = set()
+        seen_headers: set[Path] = set()
         for header in candidates:
             try:
                 resolved = header.resolve()
             except OSError:
                 resolved = header
-            if resolved in seen or not header.is_file():
+            if resolved in seen_headers or not header.is_file():
                 continue
-            seen.add(resolved)
+            seen_headers.add(resolved)
             try:
-                sources.append(header.read_text(encoding="utf-8", errors="ignore"))
+                sources.append(
+                    header.read_text(
+                        encoding="utf-8",
+                        errors="ignore",
+                    )
+                )
             except OSError:
                 continue
         return sources
+
+    @staticmethod
+    def _single_confirmed_abi(
+        values: set[str],
+        *,
+        label: str,
+    ) -> str:
+        if len(values) == 1:
+            return next(iter(values))
+        if len(values) > 1:
+            logger.warning(
+                "Conflicting DJI DIRP %s declarations found; "
+                "treating ABI as UNKNOWN: %s",
+                label,
+                sorted(values),
+            )
+        return "UNKNOWN"
 
     def _detect_api_version_abi(self) -> str:
         handle_signature = re.compile(
@@ -211,21 +250,56 @@ class DjiThermalSdk:
             r"dirp_api_version_t\s*\*\s*\w+\s*\)",
             re.MULTILINE,
         )
+        detected: set[str] = set()
         for source in self._header_sources():
             if handle_signature.search(source):
-                return "HANDLE_V2"
-            if global_signature.search(source):
-                return "GLOBAL_V1"
-        return "UNKNOWN"
+                detected.add("HANDLE_V2")
+            elif global_signature.search(source):
+                detected.add("GLOBAL_V1")
+        return self._single_confirmed_abi(
+            detected,
+            label="dirp_get_api_version ABI",
+        )
 
     def _detect_measurement_abi(self) -> str:
+        struct_pattern = re.compile(
+            r"typedef\s+struct(?:\s+\w+)?\s*\{"
+            r"(?P<body>.*?)"
+            r"\}\s*dirp_measurement_params_t\s*;",
+            re.DOTALL,
+        )
+        field_patterns = {
+            field: re.compile(rf"\bfloat\s+{field}\s*;")
+            for field in (
+                "distance",
+                "humidity",
+                "emissivity",
+                "reflection",
+            )
+        }
+        ambient_pattern = re.compile(
+            r"\bfloat\s+ambient_temp\s*;"
+        )
+        detected: set[str] = set()
         for source in self._header_sources():
-            return (
+            match = struct_pattern.search(source)
+            if match is None:
+                continue
+            body = match.group("body")
+            if not all(
+                pattern.search(body)
+                for pattern in field_patterns.values()
+            ):
+                continue
+            detected.add(
                 "AMBIENT_V2"
-                if "ambient_temp" in source
+                if ambient_pattern.search(body)
                 else "LEGACY_V1"
             )
-        return "UNKNOWN"
+        return self._single_confirmed_abi(
+            detected,
+            label="measurement ABI",
+        )
 
     @staticmethod
     def _resolve_release_dir(root: Path) -> Path:
@@ -238,16 +312,26 @@ class DjiThermalSdk:
         if direct.is_file():
             return root
 
-        candidates = [
-            path.parent
-            for path in root.rglob(library_name)
-            if "x64" in path.parent.name.lower() or "x86_64" in path.parent.name.lower()
-        ]
+        candidates = sorted(
+            {
+                path.parent.resolve()
+                for path in root.rglob(library_name)
+                if (
+                    "x64" in path.parent.name.lower()
+                    or "x86_64" in path.parent.name.lower()
+                )
+            },
+            key=lambda item: (len(item.parts), str(item)),
+        )
         if not candidates:
             raise FileNotFoundError(
                 f"{library_name} x64 release not found below DJI Thermal SDK directory: {root}"
             )
-        candidates.sort(key=lambda item: (len(item.parts), str(item)))
+        if len(candidates) > 1:
+            raise ValueError(
+                "Multiple DJI Thermal SDK x64 releases found below "
+                f"{root}; provide the exact SDK release directory"
+            )
         return candidates[0]
 
     def _load_library(self) -> ctypes.CDLL:
