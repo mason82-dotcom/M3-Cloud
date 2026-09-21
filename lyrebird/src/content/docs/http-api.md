@@ -70,7 +70,7 @@ safety.requestReleaseSafetyControl()           # hand authority back to the Pilo
 | <span class="http-method post">POST</span>`/send/gotoYaw` | `yaw_degrees` | Rotate to heading |
 | <span class="http-method post">POST</span>`/send/gimbal/rel_pitch` | `roll,pitch,yaw` | Gimbal pitch **relative** to current angle (degrees) |
 | <span class="http-method post">POST</span>`/send/gimbal/rel_yaw` | `roll,pitch,yaw` | Gimbal yaw **relative** to current angle (degrees) |
-| <span class="http-method post">POST</span>`/send/captureThermalImage` | — | Capture on the thermal lens. Returns a JSON capture descriptor |
+| <span class="http-method post">POST</span>`/send/captureThermalImage` | — | Capture on a declared thermal-capable payload. M3T/legacy hybrid thermal paths are allowed; M3E and M3M are rejected instead of guessing from file size/name. Returns a JSON capture descriptor |
 | <span class="http-method post">POST</span>`/send/captureTemperature` | — | Read the thermal max temperature. Returns `{"thermalMaxTemp": <float or null>}` |
 | <span class="http-method post">POST</span>`/send/listMedia` | — | List every file on the SD card as JSON |
 | <span class="http-method post">POST</span>`/send/downloadMediaByName` | `<fileName>` | Download one media file by name; responds with the raw file bytes |
@@ -96,6 +96,8 @@ safety.requestReleaseSafetyControl()           # hand authority back to the Pilo
 | <span class="http-method get">GET</span>`/get/autoSensing/status` | JSON | AI detection status and target count |
 | <span class="http-method get">GET</span>`/get/autoSensing/targets` | JSON | Current detected targets with bounding boxes |
 | <span class="http-method get">GET</span>`/get/camera/capabilities` | JSON | Read-only MSDK camera characterization: detected M3E/M3T/M3M platform, mode/source ranges, stored capture/record sources, thermal/multispectral flags, and Vision Assist state |
+| <span class="http-method get">GET</span>`/get/camera/live-source` | JSON | Current DJI live-view source plus read status |
+| <span class="http-method get">GET</span>`/get/camera/live-source/history` | JSON | Recent live-source changes recorded by the camera source controller |
 | <span class="http-method get">GET</span>`/get/camera/vision-assist` | JSON | Read-only Vision Assist capability/state probe |
 | <span class="http-method get">GET</span>`/get/survey/latest` | JSON | Metadata for the latest completed per-mission survey report, including filenames, byte counts and artifact URLs |
 | <span class="http-method get">GET</span>`/get/survey/latest/captures.csv` | CSV file | Reconciled per-capture survey metadata for the latest completed survey |

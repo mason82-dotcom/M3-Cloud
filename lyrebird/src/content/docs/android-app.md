@@ -4,7 +4,7 @@ description: What the Lyrebird Android app is, everything it can do on the aircr
 breadcrumb: Start here
 ---
 
-The Android app is the part of Lyrebird that actually runs in the field: a Kotlin app (DJI Mobile SDK V5) that runs on Android, not on a separate ground-station computer. Which Android device that is depends on the controller — the DJI RC Pro and RC Plus have Android built in, so Lyrebird installs directly on the controller; the RC-N3 has no display or OS of its own, so Lyrebird instead runs on the Android phone connected to it. Either way, launch it and that device becomes a networked drone server — every other piece of Lyrebird (the Python client, ROS 2, QGroundControl, the video dashboard) talks to *this* app over Wi-Fi.
+The Android app is the part of Lyrebird that actually runs in the field: a Kotlin app (DJI Mobile SDK V5.18.0) that runs on Android, not on a separate ground-station computer. Which Android device that is depends on the controller — the DJI RC Pro and RC Plus have Android built in, so Lyrebird installs directly on the controller; the RC-N3 has no display or OS of its own, so Lyrebird instead runs on the Android phone connected to it. Either way, launch it and that device becomes a networked drone server — every other piece of Lyrebird (the Python client, ROS 2, QGroundControl, the video dashboard) talks to *this* app over Wi-Fi.
 
 ## Architecture: what actually runs on the RC
 
@@ -33,6 +33,17 @@ A ground station (QGroundControl, MAVSDK, or the HTTP `navigateTrajectoryDJINati
 ### Camera, gimbal, and payload
 
 Zoom (absolute ratio), start/stop recording, gimbal pitch and yaw control (both absolute and relative to the current angle), thermal image capture and max-temperature readout on thermal-equipped airframes, laser-rangefinder measurement (distance plus a geo-referenced target when the laser locks with a GPS fix), and payload release on airframes with a drop port configured in their active control profile. Media (photos, thermal captures, videos) can be listed and downloaded from the SD card over HTTP — deliberately kept off MAVLink FTP, which is too slow for multi-megabyte files by design; see [why](/mavlink/#why-bulk-media-stays-on-http).
+
+For the Mavic 3 Enterprise-family payloads, camera behavior is selected from the MSDK **camera
+type**, not from one generic product-family label. M3E, M3T and M3M therefore have separate capture
+policies. Before a native distance-triggered survey starts, the app prepares and read-back-verifies
+the platform's default survey source set; M3M uses its RGB+multispectral source set, while M3E/M3T
+use their wide mapping profiles. Direct M3M capture preserves the full multi-file exposure instead
+of assuming one shutter equals one file.
+
+Use `GET /get/camera/capabilities` for a read-only view of the attached camera's MSDK-reported
+type, mode/source ranges and stored sources. See [Enterprise Camera Platforms](/camera-platforms/)
+for the exact profiles and failure behavior.
 
 ### Detection
 
