@@ -150,14 +150,6 @@ private class PeriodicKeyframeEncoder(
 
     override fun isHardwareEncoder(): Boolean = delegate.isHardwareEncoder
 
-    /**
-     * Deliberately not delegated. Returning the delegate's native encoder would hand libwebrtc a
-     * pointer that bypasses this wrapper entirely, and the forced keyframes would silently stop
-     * happening. Returning 0 keeps the Java path, which is what [HardwareVideoEncoder] uses
-     * anyway.
-     */
-    override fun createNativeVideoEncoder(): Long = 0
-
     private companion object {
         const val TAG = "PeriodicKeyframe"
         const val NANOS_PER_MILLI = 1_000_000L

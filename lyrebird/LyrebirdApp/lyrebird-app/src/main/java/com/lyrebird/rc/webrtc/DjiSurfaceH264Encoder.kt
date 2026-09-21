@@ -443,9 +443,6 @@ internal class DjiSurfaceH264Encoder(
 
     override fun isHardwareEncoder(): Boolean = true
 
-    /** Deliberately not delegated to the real MediaCodec — this class already owns and drains
-     * it directly; returning a native pointer here would let libwebrtc bypass that entirely. */
-    override fun createNativeVideoEncoder(): Long = 0
 }
 
 /**
@@ -464,8 +461,8 @@ internal class DjiSurfaceH264EncoderFactory(
 
     override fun getSupportedCodecs(): Array<VideoCodecInfo> =
         arrayOf(
-            VideoCodecInfo("H264", h264Params("640c1f")),
-            VideoCodecInfo("H264", h264Params("42e01f"))
+            VideoCodecInfo("H264", h264Params("640c1f"), emptyList()),
+            VideoCodecInfo("H264", h264Params("42e01f"), emptyList())
         )
 
     override fun getImplementations(): Array<VideoCodecInfo> = supportedCodecs
