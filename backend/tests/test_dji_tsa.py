@@ -1,3 +1,8 @@
+from types import SimpleNamespace
+
+from starlette.datastructures import QueryParams
+
+from app.api_dji_tsa import _websocket_token
 from app.dji.tsa import build_topologies, live_event_to_pilot
 
 
@@ -86,3 +91,14 @@ def test_topology_transitions_use_dji_biz_codes():
     assert live_event_to_pilot({"type": "device_online"})["biz_code"] == "device_online"
     assert live_event_to_pilot({"type": "device_offline"})["biz_code"] == "device_offline"
     assert live_event_to_pilot({"type": "topology"})["biz_code"] == "device_update_topo"
+
+
+
+def test_websocket_token_accepts_dji_case_variants():
+    lower = SimpleNamespace(query_params=QueryParams("x-auth-token=abc"))
+    mixed = SimpleNamespace(query_params=QueryParams("x-Auth-token=def"))
+    upper = SimpleNamespace(query_params=QueryParams("X-AUTH-TOKEN=ghi"))
+
+    assert _websocket_token(lower) == "abc"
+    assert _websocket_token(mixed) == "def"
+    assert _websocket_token(upper) == "ghi"
