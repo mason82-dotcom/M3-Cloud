@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response, status
 
 from app.api_devices import router as devices_router
+from app.api_dji_pilot import router as dji_pilot_router
 from app.api_flights import router as flights_router
 from app.api_media import router as media_router
 from app.api_missions import router as missions_router
@@ -124,6 +125,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(devices_router)
+app.include_router(dji_pilot_router)
 app.include_router(flights_router)
 app.include_router(media_router)
 app.include_router(missions_router)

@@ -73,6 +73,58 @@ class Settings(BaseSettings):
         default=86400,
         validation_alias="M3CLOUD_DJI_STATE_CACHE_TTL_SECONDS",
     )
+
+    # DJI Pilot 2 Open Platform bootstrap. These values are returned only from the
+    # authenticated bootstrap endpoint and are not compiled into the frontend bundle.
+    dji_pilot_enabled: bool = Field(
+        default=False,
+        validation_alias="M3CLOUD_DJI_PILOT_ENABLED",
+    )
+    dji_pilot_bootstrap_token: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_BOOTSTRAP_TOKEN",
+    )
+    dji_cloud_app_id: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_CLOUD_APP_ID",
+    )
+    dji_cloud_app_key: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_CLOUD_APP_KEY",
+    )
+    dji_cloud_app_license: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_CLOUD_APP_LICENSE",
+    )
+    dji_pilot_mqtt_url: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_MQTT_URL",
+    )
+    dji_pilot_mqtt_username: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_MQTT_USERNAME",
+    )
+    dji_pilot_mqtt_password: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_PILOT_MQTT_PASSWORD",
+    )
+    dji_workspace_id: str = Field(
+        default="",
+        validation_alias="M3CLOUD_DJI_WORKSPACE_ID",
+    )
+    dji_platform_name: str = Field(
+        default="M3-Cloud",
+        validation_alias="M3CLOUD_DJI_PLATFORM_NAME",
+    )
+    dji_workspace_name: str = Field(
+        default="M3-Cloud",
+        validation_alias="M3CLOUD_DJI_WORKSPACE_NAME",
+    )
+    dji_workspace_description: str = Field(
+        default="M3-Cloud DJI Pilot 2 workspace",
+        validation_alias="M3CLOUD_DJI_WORKSPACE_DESCRIPTION",
+    )
+
     live_redis_channel: str = Field(
         default="m3:live",
         validation_alias="M3CLOUD_LIVE_REDIS_CHANNEL",
