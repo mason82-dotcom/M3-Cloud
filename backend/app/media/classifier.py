@@ -21,6 +21,8 @@ _M3M_BANDS = {
     "NIR": "MS_NIR",
 }
 
+_THERMAL_PLATFORMS = {"M3T", "M4T"}
+
 
 @dataclass(frozen=True)
 class MediaClassification:
@@ -36,7 +38,7 @@ def supported_image(path: PurePosixPath) -> bool:
 def platform_hint(path: PurePosixPath) -> str:
     for part in path.parts[:-1]:
         value = part.upper()
-        if value in {"M3E", "M3T", "M3M"}:
+        if value in {"M3E", "M3T", "M3M", "M4T"}:
             return value
     return "UNKNOWN"
 
@@ -66,8 +68,22 @@ def classify_media(path: PurePosixPath) -> MediaClassification:
             capture_group=_group_path(path, rgb.group("base")),
         )
 
+    thermal = re.match(
+        r"^(?P<base>.+)_(?:T|R)\.(?:JPG|JPEG|RJPEG)$",
+        upper,
+    )
+    if thermal:
+        # Older M3T imports without a platform directory retain the historical
+        # M3T fallback. M4T imports must preserve their platform directory so
+        # an R-JPEG is never silently promoted from M3T to M4T by filename.
+        platform = hint if hint in _THERMAL_PLATFORMS else "M3T"
+        return MediaClassification(
+            platform=platform,
+            media_kind="THERMAL",
+            capture_group=_group_path(path, thermal.group("base")),
+        )
+
     suffix_patterns = (
-        (r"^(?P<base>.+)_(?:T|R)\.(?:JPG|JPEG|RJPEG)$", "THERMAL", "M3T"),
         (r"^(?P<base>.+)_W\.(?:JPG|JPEG|DNG)$", "WIDE", hint),
         (r"^(?P<base>.+)_Z\.(?:JPG|JPEG|DNG)$", "ZOOM", hint),
     )
@@ -96,11 +112,11 @@ def _group_path(path: PurePosixPath, base: str) -> str:
 def reconcile_group_platforms(
     items: list[tuple[PurePosixPath, MediaClassification]],
 ) -> dict[PurePosixPath, MediaClassification]:
-    """Upgrade group members when a definitive M3M/M3T member identifies the platform."""
+    """Upgrade group members when a definitive platform member identifies the capture."""
 
     by_group: dict[str, str] = {}
     for _, item in items:
-        if item.capture_group and item.platform in {"M3M", "M3T"}:
+        if item.capture_group and item.platform in {"M3M", "M3T", "M4T"}:
             current = by_group.get(item.capture_group)
             if current is None or item.platform == "M3M":
                 by_group[item.capture_group] = item.platform

@@ -63,6 +63,37 @@ def test_m3t_dataset_reports_webodm_and_thermal_readiness() -> None:
     assert workflow(dataset, "THERMOGRAM")["complete_groups"] == 2
 
 
+def test_m4t_dataset_reports_thermal_readiness() -> None:
+    items = [
+        asset(
+            "M4T/site/DJI_0001_R.JPG",
+            platform="M4T",
+            kind="THERMAL",
+            group="M4T/site/DJI_0001",
+        ),
+        asset(
+            "M4T/site/DJI_0002_W.JPG",
+            platform="M4T",
+            kind="WIDE",
+            group="M4T/site/DJI_0002",
+        ),
+        asset(
+            "M4T/site/DJI_0002_R.JPG",
+            platform="M4T",
+            kind="THERMAL",
+            group="M4T/site/DJI_0002",
+        ),
+    ]
+
+    dataset = build_media_datasets(items)[0]
+    thermogram = workflow(dataset, "THERMOGRAM")
+
+    assert dataset["platform"] == "M4T"
+    assert thermogram["ready"] is True
+    assert thermogram["complete_groups"] == 2
+    assert thermogram["eligible_assets"] == 3
+
+
 def test_m3t_thermal_only_group_is_thermogram_ready() -> None:
     items = [
         asset(
@@ -125,26 +156,25 @@ def test_duplicates_and_missing_files_do_not_make_dataset_ready() -> None:
     assert workflow(dataset, "WEBODM")["ready"] is False
 
 
-
-def test_m3t_manifest_keeps_original_paths_and_thermal_completeness() -> None:
+def test_thermal_manifest_keeps_original_paths_and_completeness() -> None:
     items = [
-        asset("M3T/site/DJI_0001_W.JPG", platform="M3T", kind="WIDE", group="M3T/site/DJI_0001"),
-        asset("M3T/site/DJI_0001_T.JPG", platform="M3T", kind="THERMAL", group="M3T/site/DJI_0001"),
-        asset("M3T/site/DJI_0002_W.JPG", platform="M3T", kind="WIDE", group="M3T/site/DJI_0002"),
-        asset("M3T/site/DJI_0003_R.JPG", platform="M3T", kind="THERMAL", group="M3T/site/DJI_0003"),
+        asset("M4T/site/DJI_0001_W.JPG", platform="M4T", kind="WIDE", group="M4T/site/DJI_0001"),
+        asset("M4T/site/DJI_0001_R.JPG", platform="M4T", kind="THERMAL", group="M4T/site/DJI_0001"),
+        asset("M4T/site/DJI_0002_W.JPG", platform="M4T", kind="WIDE", group="M4T/site/DJI_0002"),
+        asset("M4T/site/DJI_0003_R.JPG", platform="M4T", kind="THERMAL", group="M4T/site/DJI_0003"),
     ]
 
     from app.media.datasets import build_dataset_manifest
 
     manifest = build_dataset_manifest(
         items,
-        prefix="M3T/site",
+        prefix="M4T/site",
         import_root="/media-import",
     )
 
     assert manifest["schema_version"] == 2
-    assert manifest["platform"] == "M3T"
-    assert manifest["external_path"] == "/media-import/M3T/site"
+    assert manifest["platform"] == "M4T"
+    assert manifest["external_path"] == "/media-import/M4T/site"
 
     groups = manifest["capture_groups"]
     assert isinstance(groups, list)
@@ -153,8 +183,7 @@ def test_m3t_manifest_keeps_original_paths_and_thermal_completeness() -> None:
     assert groups[2]["complete"] is True
     assert groups[0]["required_kinds"] == ["THERMAL"]
     assert groups[2]["required_kinds"] == ["THERMAL"]
-    assert groups[0]["files"][0]["relative_path"].startswith("M3T/site/")
-
+    assert groups[0]["files"][0]["relative_path"].startswith("M4T/site/")
 
 
 def test_m3m_multispectral_becomes_ready_with_two_complete_groups() -> None:

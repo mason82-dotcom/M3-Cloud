@@ -9,8 +9,9 @@ from app.models import MediaAsset
 
 
 WEBODM_KINDS = frozenset({"RGB", "WIDE"})
-M3T_THERMOGRAM_REQUIRED = frozenset({"THERMAL"})
-M3T_REGISTRATION_PAIR = frozenset({"WIDE", "THERMAL"})
+THERMOGRAM_PLATFORMS = frozenset({"M3T", "M4T"})
+THERMOGRAM_REQUIRED = frozenset({"THERMAL"})
+THERMAL_REGISTRATION_PAIR = frozenset({"WIDE", "THERMAL"})
 M3M_COMPLETE = frozenset(
     {"RGB", "MS_GREEN", "MS_RED", "MS_RED_EDGE", "MS_NIR"}
 )
@@ -82,16 +83,16 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
             )
         ]
 
-        if platform == "M3T":
+        if platform in THERMOGRAM_PLATFORMS:
             thermal_groups = sum(
                 1
                 for kinds in by_capture.values()
-                if M3T_THERMOGRAM_REQUIRED.issubset(kinds)
+                if THERMOGRAM_REQUIRED.issubset(kinds)
             )
             paired_groups = sum(
                 1
                 for kinds in by_capture.values()
-                if M3T_REGISTRATION_PAIR.issubset(kinds)
+                if THERMAL_REGISTRATION_PAIR.issubset(kinds)
             )
             wide_only_groups = sum(
                 1
@@ -99,7 +100,7 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
                 if "WIDE" in kinds and "THERMAL" not in kinds
             )
             eligible_assets = sum(
-                len(kinds & M3T_REGISTRATION_PAIR)
+                len(kinds & THERMAL_REGISTRATION_PAIR)
                 for kinds in by_capture.values()
                 if "THERMAL" in kinds
             )
@@ -181,7 +182,6 @@ def build_media_datasets(assets: Iterable[MediaAsset]) -> list[dict[str, object]
     )
 
 
-
 def build_dataset_manifest(
     assets: Iterable[MediaAsset],
     *,
@@ -218,8 +218,8 @@ def build_dataset_manifest(
         kinds = {asset.media_kind for asset in members}
         complete = True
         required: set[str] = set()
-        if platform == "M3T":
-            required = set(M3T_THERMOGRAM_REQUIRED)
+        if platform in THERMOGRAM_PLATFORMS:
+            required = set(THERMOGRAM_REQUIRED)
             complete = required.issubset(kinds)
         elif platform == "M3M":
             required = set(M3M_COMPLETE)
