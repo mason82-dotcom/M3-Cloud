@@ -63,6 +63,34 @@ def test_m3t_dataset_reports_webodm_and_thermal_readiness() -> None:
     assert workflow(dataset, "THERMOGRAM")["complete_groups"] == 2
 
 
+def test_m3t_thermal_only_group_is_thermogram_ready() -> None:
+    items = [
+        asset(
+            "M3T/site/DJI_0001_R.JPG",
+            platform="M3T",
+            kind="THERMAL",
+            group="M3T/site/DJI_0001",
+        ),
+        asset(
+            "M3T/site/DJI_0002_W.JPG",
+            platform="M3T",
+            kind="WIDE",
+            group="M3T/site/DJI_0002",
+        ),
+    ]
+
+    dataset = build_media_datasets(items)[0]
+    thermogram = workflow(dataset, "THERMOGRAM")
+
+    assert thermogram["ready"] is True
+    assert thermogram["complete_groups"] == 1
+    assert thermogram["incomplete_groups"] == 1
+    assert thermogram["eligible_assets"] == 1
+    assert thermogram["reason"] == (
+        "1 thermal capture groups (0 with Wide companions)"
+    )
+
+
 def test_m3m_dataset_requires_all_four_bands_plus_rgb() -> None:
     complete_group = "M3M/field/DJI_0001"
     partial_group = "M3M/field/DJI_0002"
@@ -98,11 +126,12 @@ def test_duplicates_and_missing_files_do_not_make_dataset_ready() -> None:
 
 
 
-def test_m3t_manifest_keeps_original_paths_and_pair_completeness() -> None:
+def test_m3t_manifest_keeps_original_paths_and_thermal_completeness() -> None:
     items = [
         asset("M3T/site/DJI_0001_W.JPG", platform="M3T", kind="WIDE", group="M3T/site/DJI_0001"),
         asset("M3T/site/DJI_0001_T.JPG", platform="M3T", kind="THERMAL", group="M3T/site/DJI_0001"),
         asset("M3T/site/DJI_0002_W.JPG", platform="M3T", kind="WIDE", group="M3T/site/DJI_0002"),
+        asset("M3T/site/DJI_0003_R.JPG", platform="M3T", kind="THERMAL", group="M3T/site/DJI_0003"),
     ]
 
     from app.media.datasets import build_dataset_manifest
@@ -121,7 +150,9 @@ def test_m3t_manifest_keeps_original_paths_and_pair_completeness() -> None:
     assert isinstance(groups, list)
     assert groups[0]["complete"] is True
     assert groups[1]["complete"] is False
-    assert groups[0]["required_kinds"] == ["THERMAL", "WIDE"]
+    assert groups[2]["complete"] is True
+    assert groups[0]["required_kinds"] == ["THERMAL"]
+    assert groups[2]["required_kinds"] == ["THERMAL"]
     assert groups[0]["files"][0]["relative_path"].startswith("M3T/site/")
 
 
