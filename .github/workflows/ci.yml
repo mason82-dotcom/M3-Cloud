@@ -218,6 +218,9 @@ jobs:
       - name: Compile backend
         run: PYTHONPATH=backend python -m compileall -q backend/app
 
+      - name: Validate integrated Compose stack
+        run: docker compose config >/dev/null
+
       - name: Apply database migrations
         env:
           M3CLOUD_POSTGRES_DSN: postgresql+asyncpg://m3cloud:m3cloud@localhost:5432/m3cloud
