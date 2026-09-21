@@ -5,6 +5,7 @@ from fastapi import FastAPI, Response, status
 from app.api_devices import router as devices_router
 from app.api_dji import router as dji_router
 from app.api_dji_media import router as dji_media_router
+from app.api_dji_map import router as dji_map_router
 from app.api_dji_waylines import router as dji_wayline_router
 from app.api_dji_tsa import router as dji_tsa_router
 from app.api_flights import router as flights_router
@@ -138,6 +139,7 @@ app = FastAPI(
 app.include_router(devices_router)
 app.include_router(dji_router)
 app.include_router(dji_media_router)
+app.include_router(dji_map_router)
 app.include_router(dji_wayline_router)
 app.include_router(dji_tsa_router)
 app.include_router(flights_router)
