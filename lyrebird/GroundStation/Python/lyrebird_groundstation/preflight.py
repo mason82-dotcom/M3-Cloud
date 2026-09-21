@@ -382,8 +382,7 @@ def _wiretap_checks(
             if result.get("ok")
             else _fail(
                 "wiretap",
-                "; ".join(result.get("differences", [])[:5])
-                or "Wiretap/RC comparison failed",
+                "; ".join(result.get("differences", [])[:5]) or "Wiretap/RC comparison failed",
             )
         )
     ]
