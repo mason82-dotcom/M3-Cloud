@@ -1,7 +1,10 @@
 from app.config import Settings
 from app.dji.media import classify_pilot_media, platform_from_model_key
-from app.dji.storage_sts import DJIPilotStorageCredentials, pilot_storage_ready
-from app.api_dji_media import _object_key_allowed
+from app.dji.storage_sts import (
+    DJIPilotStorageCredentials,
+    pilot_object_key_allowed,
+    pilot_storage_ready,
+)
 
 
 def test_m3_model_keys_stay_separate_in_media_classification():
@@ -62,15 +65,15 @@ def test_dji_sts_response_shape_matches_pilot_contract():
 
 def test_upload_callback_object_key_must_stay_inside_workspace_prefix():
     workspace = "e3dea0f5-37f2-4d79-ae58-490af3228069"
-    assert _object_key_allowed(
+    assert pilot_object_key_allowed(
         workspace,
         f"pilot2/{workspace}/DJI_0001.JPG",
     )
-    assert not _object_key_allowed(
+    assert not pilot_object_key_allowed(
         workspace,
         "pilot2/other-workspace/DJI_0001.JPG",
     )
-    assert not _object_key_allowed(
+    assert not pilot_object_key_allowed(
         workspace,
         f"pilot2/{workspace}/../other/DJI_0001.JPG",
     )
