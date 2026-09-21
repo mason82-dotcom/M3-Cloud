@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     handoff_path = Path(args.handoff)
     handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
     if not isinstance(handoff, dict):
-        raise ValueError("Thermogram handoff must be a JSON object")
+        raise TypeError("Thermogram handoff must be a JSON object")
 
     job_id = handoff.get("job_id")
     if not isinstance(job_id, str) or not job_id:
