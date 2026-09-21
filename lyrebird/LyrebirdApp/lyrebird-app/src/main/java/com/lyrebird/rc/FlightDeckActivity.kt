@@ -77,6 +77,7 @@ import androidx.core.content.res.ResourcesCompat
 import com.lyrebird.rc.controller.CameraCaptureConfigurator
 import com.lyrebird.rc.controller.CameraCapabilityProbe
 import com.lyrebird.rc.controller.CameraLiveSourceController
+import com.lyrebird.rc.controller.CameraPlatformCapabilities
 import com.lyrebird.rc.controller.CameraFocalLensPolicy
 import com.lyrebird.rc.controller.CameraFocalLensRole
 import com.lyrebird.rc.controller.ControlAuthority
@@ -1617,8 +1618,20 @@ class FlightDeckActivity : DefaultLayoutActivity(), LyrebirdCommandHost {
 
     private fun armThermalMeasurement() {
         if (thermalArmed) return
-        thermalArmed = true
+
         val idx = thermalCameraIndex()
+        val cameraType = CameraKey.KeyCameraType.create(idx).get(CameraType.NOT_SUPPORTED)
+        val capabilities = CameraPlatformCapabilities.fromCameraTypeName(cameraType?.name)
+        if (!capabilities.supportsThermalCapture) {
+            Log.i(
+                TAG_THERMAL,
+                "Thermal measurement not armed: index=$idx cameraType=${cameraType?.name} " +
+                    "platform=${capabilities.platform}"
+            )
+            return
+        }
+
+        thermalArmed = true
         val lens = CameraLensType.CAMERA_LENS_THERMAL
         Log.i(TAG_THERMAL, "Arming thermal measurement on camera index=$idx lens=THERMAL")
 
