@@ -18,7 +18,7 @@ import dji.v5.ux.mapkit.maplibre.annotations.MaplibreMarker
 import dji.v5.ux.mapkit.maplibre.annotations.MaplibrePolygon
 import dji.v5.ux.mapkit.maplibre.annotations.MaplibrePolyline
 import dji.v5.ux.mapkit.maplibre.utils.*
-import com.mapbox.geojson.Feature
+import org.maplibre.geojson.Feature
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
