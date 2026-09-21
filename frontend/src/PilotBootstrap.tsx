@@ -129,6 +129,41 @@ async function waitForWs(bridge: DjiBridge): Promise<void> {
   throw new Error("DJI Pilot 2 WebSocket connection did not become ready");
 }
 
+async function waitForBackendDji(): Promise<void> {
+  let lastStatus = "unknown";
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      const response = await fetch("/api/v1/system/health", {
+        cache: "no-store",
+      });
+      if (response.ok) {
+        const value = (await response.json()) as {
+          components?: {
+            dji?: {
+              ok?: boolean;
+              status?: string;
+              last_reason?: string;
+            };
+          };
+        };
+        const dji = value.components?.dji;
+        if (dji?.ok === true) return;
+        lastStatus = dji?.last_reason
+          ? `${dji.status ?? "disconnected"}: ${dji.last_reason}`
+          : dji?.status ?? "disconnected";
+      } else {
+        lastStatus = `HTTP ${response.status}`;
+      }
+    } catch (error) {
+      lastStatus = error instanceof Error ? error.message : String(error);
+    }
+    await sleep(500);
+  }
+  throw new Error(
+    `M3-Cloud DJI MQTT consumer did not become ready (${lastStatus})`,
+  );
+}
+
 export function PilotBootstrap() {
   const [status, setStatus] = useState("Loading M3-Cloud configuration…");
   const [detail, setDetail] = useState("");
@@ -226,6 +261,9 @@ export function PilotBootstrap() {
         });
         await waitForWs(bridge);
       }
+
+      setStatus("Verifying M3-Cloud DJI MQTT consumer…");
+      await waitForBackendDji();
 
       if (config.components.map) {
         setStatus("Loading DJI map elements…");
