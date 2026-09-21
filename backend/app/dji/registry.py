@@ -241,6 +241,25 @@ class DeviceRegistry:
         raw = await self.redis.get(self.device_key(sn))
         return json.loads(raw) if raw else None
 
+    async def list_children(self, gateway_sn: str) -> list[dict[str, Any]]:
+        serials = sorted(
+            item.decode() if isinstance(item, bytes) else str(item)
+            for item in await self.redis.smembers(self.children_key(gateway_sn))
+        )
+        if not serials:
+            return []
+
+        values = await self.redis.mget(
+            *(self.device_key(sn) for sn in serials)
+        )
+        children = [
+            json.loads(raw)
+            for raw in values
+            if raw
+        ]
+        children.sort(key=lambda item: str(item.get("sn") or ""))
+        return children
+
     async def list_devices(self) -> list[dict[str, Any]]:
         devices: list[dict[str, Any]] = []
         async for key in self.redis.scan_iter(match="dji:device:*"):
