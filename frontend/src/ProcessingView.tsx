@@ -104,6 +104,29 @@ function thermalRegistrationParts(
   return parts;
 }
 
+function thermalSourceIdentityParts(
+  details: Record<string, unknown>,
+): string[] {
+  const identity =
+    details.source_identity && typeof details.source_identity === "object"
+      ? details.source_identity as Record<string, unknown>
+      : null;
+  const status =
+    identity && typeof identity.status === "string"
+      ? identity.status
+      : null;
+  if (status === "CONFIRMED") {
+    return ["M3T model metadata confirmed"];
+  }
+  if (status === "UNCONFIRMED") {
+    return ["M3T model metadata unconfirmed"];
+  }
+  if (status) {
+    return [`M3T model metadata ${status}`];
+  }
+  return [];
+}
+
 function thermalDecoderProvenanceParts(
   details: Record<string, unknown>,
 ): string[] {
@@ -138,6 +161,7 @@ function withThermalContext(
   details: Record<string, unknown>,
 ): string {
   const extras = [
+    ...thermalSourceIdentityParts(details),
     ...thermalRegistrationParts(details),
     ...thermalDecoderProvenanceParts(details),
   ];
@@ -255,12 +279,27 @@ function thermalResultSummary(result: ProcessingResult): string | null {
       summary && typeof summary.registration_status === "string"
         ? summary.registration_status
         : null;
+    const identityConfirmed =
+      summary && typeof summary.m3t_identity_confirmed_count === "number"
+        ? summary.m3t_identity_confirmed_count
+        : null;
+    const identityUnconfirmed =
+      summary && typeof summary.m3t_identity_unconfirmed_count === "number"
+        ? summary.m3t_identity_unconfirmed_count
+        : null;
     const parts = ["Thermal summary"];
     if (captures !== null) parts.push(`${captures} captures`);
     if (hotspots !== null) parts.push(`${hotspots} hotspot candidates`);
     if (maxC !== null) parts.push(`${maxC.toFixed(1)} °C max`);
     if (radiometryWarnings !== null && radiometryWarnings > 0) {
       parts.push(`${radiometryWarnings} radiometry warnings`);
+    }
+    if (identityConfirmed !== null || identityUnconfirmed !== null) {
+      const confirmed = identityConfirmed ?? 0;
+      const unconfirmed = identityUnconfirmed ?? 0;
+      parts.push(
+        `M3T model metadata ${confirmed} confirmed / ${unconfirmed} unconfirmed`,
+      );
     }
     if (registrationStatus === "NOT_REGISTERED") {
       parts.push("WIDE↔THERMAL not registered");
