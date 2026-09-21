@@ -225,10 +225,7 @@ def split_mavlink2_frames(datagram: bytes) -> tuple[list[MavlinkFrame], bytes]:
         incompat_flags = datagram[offset + 2]
         signed = bool(incompat_flags & 0x01)
         frame_len = (
-            MAVLINK2_HEADER_BYTES
-            + payload_len
-            + 2
-            + (MAVLINK2_SIGNATURE_BYTES if signed else 0)
+            MAVLINK2_HEADER_BYTES + payload_len + 2 + (MAVLINK2_SIGNATURE_BYTES if signed else 0)
         )
         if offset + frame_len > len(datagram):
             noise.extend(datagram[offset:])
