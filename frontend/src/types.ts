@@ -233,6 +233,7 @@ export interface MissionGridPreview {
     direction_deg: number;
     requested_speed_mps: number;
     gimbal_pitch_deg: number;
+    finish_action: "RTH" | "LAND" | "NONE";
   };
   geometry: {
     area_m2: number;
