@@ -97,11 +97,15 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
                         "sha256": _sha(thermal),
                         "capture_time_utc": "2026-09-21T01:02:03+00:00",
                         "metadata": {
+                            "image": {
+                                "width": 3,
+                                "height": 2,
+                            },
                             "gps": {
                                 "latitude": 49.123456,
                                 "longitude": 8.654321,
                                 "altitude_m": 145.2,
-                            }
+                            },
                         },
                     },
                 ],
@@ -166,6 +170,10 @@ def test_process_handoff_writes_float_temperature_preview_and_provenance(tmp_pat
     assert metadata["radiometry"]["api_version"] == {"api": 8, "magic": "DIRP"}
     assert metadata["radiometry"]["integrity"]["status"] == "PASS"
     assert metadata["radiometry"]["integrity"]["flags"] == []
+    assert metadata["radiometry"]["integrity"]["decoded_width"] == 3
+    assert metadata["radiometry"]["integrity"]["decoded_height"] == 2
+    assert metadata["radiometry"]["integrity"]["source_image_width"] == 3
+    assert metadata["radiometry"]["integrity"]["source_image_height"] == 2
     assert manifest["capture_groups"][0]["api_version"] == {"api": 8, "magic": "DIRP"}
     assert manifest["capture_groups"][0]["radiometry_integrity"]["status"] == "PASS"
     assert metadata["analysis"]["hotspots"]["diagnostic_scope"] == "HOTSPOT_CANDIDATES_ONLY"
@@ -579,4 +587,48 @@ def test_radiometry_integrity_flags_skipped_api_version_query():
         quality["api_version_query_status"]
         == "SKIPPED_UNCONFIRMED_ABI"
     )
+
+def test_radiometry_integrity_flags_frozen_metadata_dimension_mismatch():
+    from thermal_worker.processor import _radiometry_integrity
+
+    decoded = DecodeResult(
+        temperature_c=np.zeros((512, 640), dtype=np.float32),
+        width=640,
+        height=512,
+        api_version={"api": 8, "magic": "DIRP"},
+        rjpeg_version={"rjpeg": 3, "header": 1, "curve": 1},
+        measurement_params=MeasurementParams(
+            distance_m=5.0,
+            humidity_pct=70.0,
+            emissivity=0.95,
+            reflection_c=23.0,
+            ambient_temp_c=21.0,
+        ),
+        measurement_ranges=None,
+        measurement_mode="sdk_native",
+        measurement_error_code=None,
+        sdk_label="test-sdk",
+        measurement_abi="AMBIENT_V2",
+    )
+
+    quality = _radiometry_integrity(
+        decoded,
+        {
+            "finite_pixels": 640 * 512,
+            "invalid_pixels": 0,
+        },
+        source_metadata={
+            "image": {
+                "width": 1280,
+                "height": 1024,
+            }
+        },
+    )
+
+    assert quality["status"] == "WARN"
+    assert quality["flags"] == ["SOURCE_DIMENSION_MISMATCH"]
+    assert quality["decoded_width"] == 640
+    assert quality["decoded_height"] == 512
+    assert quality["source_image_width"] == 1280
+    assert quality["source_image_height"] == 1024
 
