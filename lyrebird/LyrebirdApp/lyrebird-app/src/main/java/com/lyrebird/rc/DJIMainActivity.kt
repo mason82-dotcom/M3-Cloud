@@ -336,11 +336,13 @@ abstract class DJIMainActivity : AppCompatActivity() {
 
         val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return null
-        for (network in connectivityManager.allNetworks) {
-            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: continue
-            if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue
-            val ssid = (capabilities.transportInfo as? android.net.wifi.WifiInfo)?.ssid
-            sanitizeSsid(ssid)?.let { return it }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            for (network in connectivityManager.allNetworks) {
+                val capabilities = connectivityManager.getNetworkCapabilities(network) ?: continue
+                if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue
+                val ssid = (capabilities.transportInfo as? android.net.wifi.WifiInfo)?.ssid
+                sanitizeSsid(ssid)?.let { return it }
+            }
         }
         return null
     }
