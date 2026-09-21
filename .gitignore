@@ -12,3 +12,8 @@ build/
 .idea/
 .vscode/
 dji-thermal-sdk/
+# Local Android signing material
+*.jks
+*.keystore
+*.p12
+*.pfx
