@@ -7,8 +7,8 @@ ARG VITE_MAP_FALLBACK_TILE_URL
 ENV VITE_MAP_STYLE_URL=${VITE_MAP_STYLE_URL}
 ENV VITE_MAP_FALLBACK_TILE_URL=${VITE_MAP_FALLBACK_TILE_URL}
 
-COPY frontend/package.json ./
-RUN npm install --no-audit --no-fund
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 COPY frontend/ .
 RUN npm run build
