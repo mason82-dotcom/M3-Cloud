@@ -379,3 +379,54 @@ async def test_manual_dataset_assignment_survives_auto_matching(tmp_path: Path) 
         assert dataset.flight_id == manual_flight_id
         assert dataset.flight_assignment_source == "MANUAL"
         assert dataset.flight_match_status == "MANUAL"
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_unchanged_file_is_reindexed_when_metadata_version_changes(
+    tmp_path: Path,
+) -> None:
+    from app.media.metadata import METADATA_VERSION
+
+    async with session_factory() as session:
+        await session.execute(delete(MediaAsset))
+        await session.commit()
+
+    root = tmp_path / "media"
+    path = root / "M3T" / "survey" / "DJI_20260920120000_0001_T.JPG"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"stable-rjpeg-placeholder")
+
+    importer = MediaImporter(
+        session_factory,
+        root=str(root),
+        min_age_seconds=0,
+        filename_timezone="UTC",
+    )
+    first = await importer.scan()
+    assert first.added == 1
+
+    async with session_factory() as session:
+        asset = await session.scalar(
+            select(MediaAsset).where(
+                MediaAsset.relative_path
+                == "M3T/survey/DJI_20260920120000_0001_T.JPG"
+            )
+        )
+        assert asset is not None
+        asset.metadata_version = METADATA_VERSION - 1
+        await session.commit()
+
+    second = await importer.scan()
+
+    assert second.updated == 1
+    assert second.unchanged == 0
+
+    async with session_factory() as session:
+        asset = await session.scalar(
+            select(MediaAsset).where(
+                MediaAsset.relative_path
+                == "M3T/survey/DJI_20260920120000_0001_T.JPG"
+            )
+        )
+        assert asset is not None
+        assert asset.metadata_version == METADATA_VERSION
+
