@@ -394,6 +394,13 @@ internal object CameraLiveSourceController {
         // KeyCameraVideoStreamSource while the camera type/lens table is still coming up.
         val rangeRead = readOnce(sourceRangeKey(index), SOURCE_RANGE_TIMEOUT_MS)
         val supportedNames = rangeRead.value.orEmpty().map { it.name }
+        if (index == ComponentIndexType.LEFT_OR_MAIN) {
+            recordEvent(
+                "source-range",
+                supportedNames.joinToString(","),
+                "$reason:success=${rangeRead.success}:error=${rangeRead.error}"
+            )
+        }
         when (
             classifyCameraLiveSourceAvailability(
                 requested = requested,
@@ -447,6 +454,7 @@ internal object CameraLiveSourceController {
         val callbackSuccess = AtomicBoolean(false)
         val callbackFailed = AtomicBoolean(false)
         val callbackError = AtomicReference<String?>(null)
+        val setStartedAtMs = System.currentTimeMillis()
 
         KeyManager.getInstance().setValue(
             key(index),
@@ -454,7 +462,11 @@ internal object CameraLiveSourceController {
             object : CommonCallbacks.CompletionCallback {
                 override fun onSuccess() {
                     if (index == ComponentIndexType.LEFT_OR_MAIN) {
-                        recordEvent("set-callback-ok", requested, reason)
+                        recordEvent(
+                            "set-callback-ok",
+                            requested,
+                            "$reason:latencyMs=${System.currentTimeMillis() - setStartedAtMs}"
+                        )
                     }
                     callbackSuccess.set(true)
                     latch.countDown()
@@ -466,7 +478,7 @@ internal object CameraLiveSourceController {
                         recordEvent(
                             "set-callback-failed",
                             requested,
-                            "$reason:$diagnostic"
+                            "$reason:latencyMs=${System.currentTimeMillis() - setStartedAtMs}:$diagnostic"
                         )
                     }
                     callbackFailed.set(true)
