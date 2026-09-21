@@ -129,6 +129,14 @@ result import endpoint.
 
 ## Docker
 
+The root `compose.yaml` exposes the worker only through the optional
+`thermal` profile. After setting `DJI_TSDK_HOST_PATH` and the shared media
+paths in `.env`, start the normal stack plus the worker with:
+
+```bash
+docker compose --profile thermal up -d
+```
+
 The image does not contain DJI's SDK. Mount your SDK and the two shared
 handoff/result paths explicitly. Example:
 
