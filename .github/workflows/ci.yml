@@ -171,6 +171,9 @@ jobs:
       - name: Thermal worker tests
         run: python -m pytest -q thermal-worker/tests
 
+      - name: Validate thermal Compose profile
+        run: docker compose --profile thermal config >/dev/null
+
 
   frontend-build:
     name: M3-Cloud frontend build
